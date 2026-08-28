@@ -5,6 +5,8 @@
 ### Added
 
 - Added a persistent Homebrew installation rooted at `/home/cliweb/brew`.
+- Added the supported Linux Homebrew prefix alias and a stable `brew` command path for bottle installs.
+- Added a supported Linux Homebrew prefix alias and stable `brew` command path for bottle installs.
 
 ### Changed
 

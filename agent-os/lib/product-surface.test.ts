@@ -113,6 +113,15 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
     "the image should define the persistent Homebrew prefix"
   );
   assert.ok(
+    dockerfile.includes("HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew"),
+    "the image should use Homebrew's supported Linux prefix for bottles"
+  );
+  assert.ok(
+    dockerfile.includes("ln -s /home/cliweb/brew /home/linuxbrew/.linuxbrew") &&
+      dockerfile.includes("ln -s /home/cliweb/brew/bin/brew /usr/local/bin/brew"),
+    "the supported prefix and command should point into persistent storage"
+  );
+  assert.ok(
     compose.includes("CLIWEB_BREW_PREFIX: /home/cliweb/brew"),
     "compose should expose the persistent Homebrew prefix"
   );
@@ -121,16 +130,20 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
     "the Homebrew prefix should live inside the persistent home volume"
   );
   assert.ok(
-    entrypoint.includes('BREW_PREFIX="${CLIWEB_BREW_PREFIX:-${HOME}/brew}"'),
+    entrypoint.includes('BREW_STORAGE="${CLIWEB_BREW_PREFIX:-${HOME}/brew}"'),
     "the entrypoint should resolve the Homebrew prefix under the cliweb home"
   );
   assert.ok(
-    entrypoint.includes('export HOMEBREW_PREFIX="${BREW_PREFIX}"'),
-    "the entrypoint should configure Homebrew to use the persistent prefix"
+    entrypoint.includes('export HOMEBREW_PREFIX="${HOMEBREW_SYSTEM_PREFIX}"'),
+    "the entrypoint should configure Homebrew to use its supported prefix"
   );
   assert.ok(
     entrypoint.includes('cp -a "${BREW_SOURCE}/." "${BREW_REPOSITORY}/"'),
     "the entrypoint should seed Homebrew into the persistent prefix"
+  );
+  assert.ok(
+    entrypoint.includes('ln -sfn "${BREW_STORAGE}/bin/brew" /usr/local/bin/brew'),
+    "the entrypoint should expose Brew even when a shell resets PATH"
   );
 });
 

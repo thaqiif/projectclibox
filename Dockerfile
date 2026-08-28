@@ -54,9 +54,12 @@ RUN useradd --create-home --home-dir /home/cliweb --shell /bin/bash --uid 1001 c
         /home/cliweb/.gitstate \
         /home/cliweb/.ssh \
         /home/cliweb/brew \
+        /home/linuxbrew \
         /workspaces \
     && chmod 700 /home/cliweb/.ssh \
-    && chown -R cliweb:cliweb /home/cliweb
+    && chown -R cliweb:cliweb /home/cliweb \
+    && ln -s /home/cliweb/brew /home/linuxbrew/.linuxbrew \
+    && ln -s /home/cliweb/brew/bin/brew /usr/local/bin/brew
 
 ENV HOME=/home/cliweb \
     CLIWEB_HOME=/home/cliweb/.cliweb \
@@ -64,11 +67,14 @@ ENV HOME=/home/cliweb \
     DB_PATH=/home/cliweb/.cliweb/cliweb.db \
     CLIWEB_BREW_PREFIX=/home/cliweb/brew \
     CLIWEB_BREW_SOURCE=/opt/cliweb-brew \
+    HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew \
+    HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew/Homebrew \
+    HOMEBREW_CACHE=/home/cliweb/.cache/Homebrew \
     NODE_ENV=production \
     NPM_CONFIG_PREFIX=/home/cliweb/.local \
     PIP_USER=1 \
     PYTHONUSERBASE=/home/cliweb/.local \
-    PATH=/home/cliweb/brew/bin:/home/cliweb/brew/sbin:/home/cliweb/.local/bin:/home/cliweb/.local/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/home/linuxbrew/.linuxbrew/bin:/home/cliweb/brew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/cliweb/brew/sbin:/home/cliweb/.local/bin:/home/cliweb/.local/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
     GIT_CONFIG_GLOBAL=/home/cliweb/.gitstate/config \
     PUID=1000 \
     PGID=1000
