@@ -106,6 +106,10 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
     join(process.cwd(), "..", "docker-entrypoint.sh"),
     "utf8"
   );
+  const bootstrap = readFileSync(
+    join(process.cwd(), "..", "docker-brew-bootstrap.sh"),
+    "utf8"
+  );
 
   assert.match(dockerfile, /\sfile\s+\\/, "the image is missing Homebrew's file dependency");
   assert.ok(
@@ -138,8 +142,14 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
     "the entrypoint should configure Homebrew to use its supported prefix"
   );
   assert.ok(
-    entrypoint.includes('cp -a "${BREW_SOURCE}/." "${BREW_REPOSITORY}/"'),
-    "the entrypoint should seed Homebrew into the persistent prefix"
+    dockerfile.includes(
+      "COPY docker-brew-bootstrap.sh /usr/local/libexec/cliweb-brew-bootstrap"
+    ) && entrypoint.includes("/usr/local/libexec/cliweb-brew-bootstrap"),
+    "the image should run the tested Homebrew bootstrap"
+  );
+  assert.ok(
+    bootstrap.includes('cp -a "${brew_source}/." "${brew_storage}/"'),
+    "Homebrew source should be copied directly into the prefix root"
   );
   assert.ok(
     entrypoint.includes('ln -sfn "${BREW_STORAGE}/bin/brew" /usr/local/bin/brew'),

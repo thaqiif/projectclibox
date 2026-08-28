@@ -9,7 +9,6 @@ PGID="${PGID:-1000}"
 BREW_STORAGE="${CLIWEB_BREW_PREFIX:-${HOME}/brew}"
 BREW_SOURCE="${CLIWEB_BREW_SOURCE:-/opt/cliweb-brew}"
 HOMEBREW_SYSTEM_PREFIX="${HOMEBREW_PREFIX:-/home/linuxbrew/.linuxbrew}"
-BREW_REPOSITORY="${BREW_STORAGE}/Homebrew"
 
 if [ "$(id -g cliweb)" != "${PGID}" ]; then
     groupmod -o -g "${PGID}" cliweb
@@ -54,24 +53,14 @@ if [ ! -L "${HOMEBREW_SYSTEM_PREFIX}" ]; then
     ln -s "${BREW_STORAGE}" "${HOMEBREW_SYSTEM_PREFIX}"
 fi
 
-if [ ! -x "${BREW_STORAGE}/bin/brew" ]; then
-    if [ -n "$(find "${BREW_STORAGE}" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-        echo "CLIWeb: Homebrew storage ${BREW_STORAGE} is not empty and is not initialized" >&2
-        exit 1
-    fi
-    if [ ! -x "${BREW_SOURCE}/bin/brew" ]; then
-        echo "CLIWeb: Homebrew bootstrap source is missing at ${BREW_SOURCE}" >&2
-        exit 1
-    fi
-    mkdir -p "${BREW_REPOSITORY}" "${BREW_STORAGE}/bin"
-    cp -a "${BREW_SOURCE}/." "${BREW_REPOSITORY}/"
-    ln -s ../Homebrew/bin/brew "${BREW_STORAGE}/bin/brew"
-fi
+CLIWEB_BREW_PREFIX="${BREW_STORAGE}" \
+CLIWEB_BREW_SOURCE="${BREW_SOURCE}" \
+    /usr/local/libexec/cliweb-brew-bootstrap
 chown -R cliweb:cliweb "${BREW_STORAGE}"
 ln -sfn "${BREW_STORAGE}/bin/brew" /usr/local/bin/brew
 
 export HOMEBREW_PREFIX="${HOMEBREW_SYSTEM_PREFIX}"
-export HOMEBREW_REPOSITORY="${HOMEBREW_SYSTEM_PREFIX}/Homebrew"
+export HOMEBREW_REPOSITORY="${HOMEBREW_SYSTEM_PREFIX}"
 export HOMEBREW_CACHE="${HOME}/.cache/Homebrew"
 export PATH="${HOMEBREW_SYSTEM_PREFIX}/bin:${BREW_STORAGE}/bin:${HOMEBREW_SYSTEM_PREFIX}/sbin:${BREW_STORAGE}/sbin:${NPM_CONFIG_PREFIX}/bin:${HOME}/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 mkdir -p "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"

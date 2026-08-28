@@ -68,7 +68,7 @@ ENV HOME=/home/cliweb \
     CLIWEB_BREW_PREFIX=/home/cliweb/brew \
     CLIWEB_BREW_SOURCE=/opt/cliweb-brew \
     HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew \
-    HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew/Homebrew \
+    HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew \
     HOMEBREW_CACHE=/home/cliweb/.cache/Homebrew \
     NODE_ENV=production \
     NPM_CONFIG_PREFIX=/home/cliweb/.local \
@@ -80,7 +80,10 @@ ENV HOME=/home/cliweb \
     PGID=1000
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY docker-brew-bootstrap.sh /usr/local/libexec/cliweb-brew-bootstrap
+RUN chmod +x \
+    /usr/local/bin/docker-entrypoint.sh \
+    /usr/local/libexec/cliweb-brew-bootstrap
 
 WORKDIR /opt/agent-os
 EXPOSE 3011

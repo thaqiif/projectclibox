@@ -13,6 +13,10 @@
 - Renamed the container user and persistent home directory from `agent` to `cliweb`.
 - Renamed the application branding from AgentOS to CLIWeb.
 
+### Fixed
+
+- Corrected the persisted Homebrew repository layout and added a non-destructive migration that preserves installed Cellar packages.
+
 ### Removed
 
 - Removed dev-server management and its persistence, API, and UI surfaces.
