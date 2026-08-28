@@ -1,5 +1,5 @@
 {
-  "name": "@saadnvd1/agent-os",
+  "name": "@saadnvd1/cliweb",
   "version": "0.2.1",
   "description": "Self-hosted web UI for managing persistent project terminals",
   "files": [

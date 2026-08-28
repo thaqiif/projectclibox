@@ -1,12 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type {
-  ProjectWithRepositories,
-  DetectedDevServer,
-} from "@/lib/projects";
+import type { Project } from "@/lib/db";
 import { projectKeys } from "./keys";
 import { terminalKeys } from "../terminals/keys";
 
-async function fetchProjects(): Promise<ProjectWithRepositories[]> {
+async function fetchProjects(): Promise<Project[]> {
   const res = await fetch("/api/projects");
   if (!res.ok) throw new Error("Failed to fetch projects");
   const data = await res.json();
@@ -42,10 +39,10 @@ export function useToggleProject() {
     },
     onMutate: async ({ projectId, expanded }) => {
       await queryClient.cancelQueries({ queryKey: projectKeys.list() });
-      const previous = queryClient.getQueryData<ProjectWithRepositories[]>(
+      const previous = queryClient.getQueryData<Project[]>(
         projectKeys.list()
       );
-      queryClient.setQueryData<ProjectWithRepositories[]>(
+      queryClient.setQueryData<Project[]>(
         projectKeys.list(),
         (old) => old?.map((p) => (p.id === projectId ? { ...p, expanded } : p))
       );
@@ -139,13 +136,6 @@ export function useCreateProject() {
     mutationFn: async (data: {
       name: string;
       workingDirectory: string;
-      devServers?: Array<{
-        name: string;
-        type: string;
-        command: string;
-        port?: number;
-        portEnvVar?: string;
-      }>;
     }) => {
       const res = await fetch("/api/projects", {
         method: "POST",
@@ -160,23 +150,6 @@ export function useCreateProject() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.list() });
-    },
-  });
-}
-
-export function useDetectDevServers() {
-  return useMutation({
-    mutationFn: async (
-      workingDirectory: string
-    ): Promise<DetectedDevServer[]> => {
-      const res = await fetch("/api/projects/detect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workingDirectory }),
-      });
-      if (!res.ok) throw new Error("Failed to detect dev servers");
-      const data = await res.json();
-      return data.detected || [];
     },
   });
 }

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 
-const STORAGE_KEY = "agentOS-keybar-visible";
+const STORAGE_KEY = "cliweb-keybar-visible";
 
 /**
  * Hook to manage mobile keybar visibility with localStorage persistence.

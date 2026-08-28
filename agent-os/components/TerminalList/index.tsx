@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { ServerLogsModal } from "@/components/DevServers";
 import {
   ProjectsSection,
   NewProjectDialog,
@@ -16,12 +15,11 @@ import { ProjectSectionSkeleton } from "@/components/ui/skeleton";
 import { FolderPlus, TriangleAlert } from "lucide-react";
 import { AEmptyState } from "@/components/a/AEmptyState";
 import type { TerminalRecord } from "@/lib/terminals";
-import type { ProjectWithRepositories } from "@/lib/projects";
+import type { Project } from "@/lib/db";
 
 // Data hooks
 import { useTerminalsQuery } from "@/data/terminals";
 import { useProjectsQuery, useCreateProject } from "@/data/projects";
-import { useDevServersQuery } from "@/data/dev-servers";
 
 import type { TerminalListProps } from "./TerminalList.types";
 
@@ -32,8 +30,6 @@ export function TerminalList({
   onSelect,
   onNewTerminal,
   onCloseTerminal,
-  onStartDevServer,
-  onCreateDevServer,
   onQuickSwitch,
 }: TerminalListProps) {
   // Fetch data directly with loading states
@@ -48,8 +44,6 @@ export function TerminalList({
     isPending: isProjectsPending,
     isError: isProjectsError,
   } = useProjectsQuery();
-  const { data: devServers = [] } = useDevServersQuery();
-
   // Combined loading state for initial load
   const isInitialLoading = isTerminalsPending || isProjectsPending;
   const hasError = isTerminalsError || isProjectsError;
@@ -67,34 +61,22 @@ export function TerminalList({
 
   // Local UI state
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
-  const [newProjectMode, setNewProjectMode] = useState<"new" | "clone">("new");
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [editingProject, setEditingProject] =
-    useState<ProjectWithRepositories | null>(null);
+    useState<Project | null>(null);
   const [showKillAllConfirm, setShowKillAllConfirm] = useState(false);
-  const [logsServerId, setLogsServerId] = useState<string | null>(null);
 
   // Use projects if available
   const useProjectsView = projects.length > 0;
-
-  // Find server for logs modal
-  const logsServer = logsServerId
-    ? devServers.find((s) => s.id === logsServerId)
-    : null;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
       <TerminalListHeader
         onNewProject={() => {
-          setNewProjectMode("new");
           setShowNewProjectDialog(true);
         }}
         onOpenProject={() => setShowFolderPicker(true)}
-        onCloneFromGithub={() => {
-          setNewProjectMode("clone");
-          setShowNewProjectDialog(true);
-        }}
         onKillAll={() => setShowKillAllConfirm(true)}
         onQuickSwitch={onQuickSwitch}
       />
@@ -149,7 +131,6 @@ export function TerminalList({
               projects={projects}
               terminals={terminals}
               activeTerminalId={activeTerminalId}
-              devServers={devServers}
               onToggleProject={mutations.handleToggleProject}
               onEditProject={(projectId) => {
                 const project = projects.find((p) => p.id === projectId);
@@ -163,28 +144,13 @@ export function TerminalList({
                 onCloseTerminal ?? mutations.handleDeleteTerminal
               }
               onRenameTerminal={mutations.handleRenameTerminal}
-              onStartDevServer={onStartDevServer}
-              onStopDevServer={mutations.handleStopDevServer}
-              onRestartDevServer={mutations.handleRestartDevServer}
-              onRemoveDevServer={mutations.handleRemoveDevServer}
-              onViewDevServerLogs={setLogsServerId}
             />
           )}
         </div>
       </ScrollArea>
-      {/* Server Logs Modal */}
-      {logsServer && (
-        <ServerLogsModal
-          serverId={logsServer.id}
-          serverName={logsServer.name}
-          onClose={() => setLogsServerId(null)}
-        />
-      )}
-
       {/* New Project Dialog */}
       <NewProjectDialog
         open={showNewProjectDialog}
-        mode={newProjectMode}
         onClose={() => setShowNewProjectDialog(false)}
         onCreated={() => setShowNewProjectDialog(false)}
       />
@@ -203,7 +169,6 @@ export function TerminalList({
               {
                 name,
                 workingDirectory: path,
-                devServers: [],
               },
               {
                 onSuccess: () => setShowFolderPicker(false),
@@ -219,6 +184,7 @@ export function TerminalList({
 
       {/* Project Settings Dialog */}
       <ProjectSettingsDialog
+        key={editingProject?.id ?? "project-settings"}
         project={editingProject}
         open={editingProject !== null}
         onClose={() => setEditingProject(null)}

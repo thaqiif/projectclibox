@@ -11,13 +11,13 @@ function debugLog(message: string) {
   const entry = `[${timestamp}] ${message}`;
   debugLogs.push(entry);
   if (debugLogs.length > MAX_DEBUG_LOGS) debugLogs.shift();
-  console.log(`[AgentOS] ${message}`);
+  console.log(`[CLIWeb] ${message}`);
 }
 
 // Expose to window for debugging
 if (typeof window !== "undefined") {
-  (window as unknown as { agentOSLogs: () => void }).agentOSLogs = () => {
-    console.log("=== AgentOS Debug Logs ===");
+  (window as unknown as { cliwebLogs: () => void }).cliwebLogs = () => {
+    console.log("=== CLIWeb Debug Logs ===");
     debugLogs.forEach((log) => console.log(log));
     console.log("=== End Logs ===");
   };
@@ -28,7 +28,6 @@ import { useViewport } from "@/hooks/useViewport";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useTerminals } from "@/hooks/useTerminals";
 import { useProjects } from "@/hooks/useProjects";
-import { useDevServersManager } from "@/hooks/useDevServersManager";
 import type { TerminalRecord } from "@/lib/terminals";
 import { tmuxAttachCommand } from "@/lib/tmux-attach";
 import type { TerminalHandle } from "@/components/Terminal";
@@ -52,12 +51,6 @@ function HomeContent() {
   const { terminals, fetchTerminals, createTerminal, killTerminal } =
     useTerminals();
   const { projects, fetchProjects } = useProjects();
-  const {
-    startDevServerProjectId,
-    setStartDevServerProjectId,
-    startDevServer,
-    createDevServer,
-  } = useDevServersManager();
 
   // Set CSS variable for viewport height (handles mobile keyboard)
   useViewportHeight();
@@ -254,10 +247,6 @@ function HomeContent() {
     [fetchProjects]
   );
 
-  const startDevServerProject = startDevServerProjectId
-    ? (projects.find((p) => p.id === startDevServerProjectId) ?? null)
-    : null;
-
   // View props
   const viewProps = {
     terminals,
@@ -274,10 +263,6 @@ function HomeContent() {
     handleCloseTerminal,
     handleDetachTerminal,
     handleCreateProject,
-    handleStartDevServer: startDevServer,
-    handleCreateDevServer: createDevServer,
-    startDevServerProject,
-    setStartDevServerProjectId,
     renderPane,
   };
 

@@ -1,4 +1,4 @@
-# Minimal AgentOS workspace image
+# Minimal CLIWeb workspace image
 #
 # The image contains the web UI and a useful, non-root shell environment. It
 # deliberately does not install an AI coding CLI, harness, autopilot workflow,
@@ -30,9 +30,9 @@ RUN apt-get update \
 
 # Build the UI into /opt so the persisted home volume never masks build
 # artifacts when the image is rebuilt.
-ENV AGENT_OS_REPO=/opt/agent-os
-COPY agent-os/ "${AGENT_OS_REPO}"/
-RUN cd "${AGENT_OS_REPO}" \
+ENV CLIWEB_REPO=/opt/agent-os
+COPY agent-os/ "${CLIWEB_REPO}"/
+RUN cd "${CLIWEB_REPO}" \
     && npm install --legacy-peer-deps \
     && npm run build \
     && npm cache clean --force
@@ -41,7 +41,7 @@ RUN cd "${AGENT_OS_REPO}" \
 # in a host-mounted workspace have the host user's ownership.
 RUN useradd --create-home --shell /bin/bash --uid 1001 agent \
     && mkdir -p \
-        /home/agent/.agent-os \
+        /home/agent/.cliweb \
         /home/agent/.config \
         /home/agent/.local/bin \
         /home/agent/.local/lib \
@@ -53,9 +53,9 @@ RUN useradd --create-home --shell /bin/bash --uid 1001 agent \
     && chown -R agent:agent /home/agent
 
 ENV HOME=/home/agent \
-    AGENT_OS_HOME=/home/agent/.agent-os \
-    AGENT_OS_PORT=3011 \
-    DB_PATH=/home/agent/.agent-os/agent-os.db \
+    CLIWEB_HOME=/home/agent/.cliweb \
+    CLIWEB_PORT=3011 \
+    DB_PATH=/home/agent/.cliweb/cliweb.db \
     NODE_ENV=production \
     NPM_CONFIG_PREFIX=/home/agent/.local \
     PIP_USER=1 \

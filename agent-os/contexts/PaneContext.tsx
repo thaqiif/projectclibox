@@ -22,7 +22,6 @@ interface PaneContextValue {
   paneId: string;
   attachedTmux: string | null;
   viewMode: ViewMode;
-  gitDrawerOpen: boolean;
   shellDrawerOpen: boolean;
   isMobile: boolean;
   /** True once localStorage has been read, so we do not flash the default. */
@@ -31,7 +30,6 @@ interface PaneContextValue {
   /** Stop pointing at a terminal. The terminal itself keeps running. */
   detach: () => void;
   setViewMode: (mode: ViewMode) => void;
-  toggleGitDrawer: () => void;
   toggleShellDrawer: () => void;
   /** Ask tmux to split the attached terminal's active pane. */
   splitPane: (direction: "horizontal" | "vertical") => void;
@@ -65,17 +63,13 @@ export function PaneProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const detach = useCallback(() => {
-    // Back to the terminal view as well: files and git have no working
+    // Back to the terminal view as well: files have no working
     // directory to point at once nothing is attached.
     setState((prev) => ({ ...prev, attachedTmux: null, viewMode: "terminal" }));
   }, []);
 
   const setViewMode = useCallback((viewMode: ViewMode) => {
     setState((prev) => ({ ...prev, viewMode }));
-  }, []);
-
-  const toggleGitDrawer = useCallback(() => {
-    setState((prev) => ({ ...prev, gitDrawerOpen: !prev.gitDrawerOpen }));
   }, []);
 
   const toggleShellDrawer = useCallback(() => {
@@ -103,14 +97,12 @@ export function PaneProvider({ children }: { children: ReactNode }) {
         paneId: PANE_ID,
         attachedTmux: state.attachedTmux,
         viewMode: state.viewMode,
-        gitDrawerOpen: state.gitDrawerOpen,
         shellDrawerOpen: state.shellDrawerOpen,
         isMobile,
         hydrated,
         attach,
         detach,
         setViewMode,
-        toggleGitDrawer,
         toggleShellDrawer,
         splitPane,
       }}

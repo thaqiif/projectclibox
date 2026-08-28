@@ -1,5 +1,5 @@
 services:
-  agent-os:
+  cliweb:
     build:
       context: .
     restart: unless-stopped
@@ -8,7 +8,7 @@ services:
       - path: .env
         required: false
     environment:
-      AGENT_OS_PORT: 3011
+      CLIWEB_PORT: 3011
       SHELL: /bin/bash
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
@@ -22,8 +22,8 @@ services:
       # you intentionally want to reach the UI from another device.
       - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3011}:3011"
     volumes:
-      - agent_os_home:/home/agent
+      - cliweb_home:/home/agent
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces
 
 volumes:
-  agent_os_home:
+  cliweb_home:

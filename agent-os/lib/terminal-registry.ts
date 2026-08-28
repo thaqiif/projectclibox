@@ -52,7 +52,7 @@ export function terminalWorkingDirectory(name: string): string | null {
  * process is gone.
  *
  * Live terminals are folded back into the registry as we go, so a terminal
- * started outside AgentOS (`tmux new` in a shell) becomes a first-class
+ * started outside CLIWeb (`tmux new` in a shell) becomes a first-class
  * terminal that survives being killed, exactly like one we created.
  */
 export async function listKnownTerminals(): Promise<KnownTerminal[]> {

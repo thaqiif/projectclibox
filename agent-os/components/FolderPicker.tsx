@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import {
   X,
   Folder,
@@ -9,7 +8,6 @@ import {
   Loader2,
   Home,
   Check,
-  GitBranch,
   Search,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -50,20 +48,6 @@ export function FolderPicker({
     navigateUp,
     navigateHome,
   } = useDirectoryBrowser({ initialPath, filter: DIRS_ONLY });
-
-  // Git repo check for current directory
-  const [isGitRepo, setIsGitRepo] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/git/check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: currentPath }),
-    })
-      .then((res) => res.json())
-      .then((data) => setIsGitRepo(data.isGitRepo || false))
-      .catch(() => setIsGitRepo(false));
-  }, [currentPath]);
 
   const folderName = pathSegments[pathSegments.length - 1] || "root";
 
@@ -190,12 +174,6 @@ export function FolderPicker({
           <span className="text-foreground truncate text-[0.8125rem] font-medium">
             {folderName}
           </span>
-          {isGitRepo && (
-            <span className="text-muted-foreground flex shrink-0 items-center gap-1 rounded-full bg-[var(--fill-2)] px-2 py-0.5 text-[0.625rem] font-medium">
-              <GitBranch className="h-3 w-3" />
-              Git
-            </span>
-          )}
         </div>
         <Button onClick={() => onSelect(currentPath)} className="shrink-0 gap-2">
           <Check className="h-4 w-4" />

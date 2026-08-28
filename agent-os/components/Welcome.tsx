@@ -39,7 +39,7 @@ export function Welcome({
   return (
     <div className="ambient-canvas flex h-full w-full items-center justify-center overflow-auto p-6">
       <div className="glass-thick glass-float glass-refract lift-in w-full max-w-sm rounded-2xl p-6">
-        <h1 className="type-title-2">AgentOS Workspace</h1>
+        <h1 className="type-title-2">CLIWeb Workspace</h1>
         <p className="text-muted-foreground mt-1 text-[0.8125rem]">
           No terminal attached.
         </p>

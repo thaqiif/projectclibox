@@ -5,13 +5,13 @@ import { SerwistProvider } from "./serwist-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AgentOS Workspace",
+  title: "CLIWeb Workspace",
   description: "Persistent browser workspace for projects and terminals",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "AgentOS",
+    title: "CLIWeb",
   },
   icons: {
     icon: "/icon.svg",

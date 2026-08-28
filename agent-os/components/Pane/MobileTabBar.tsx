@@ -6,7 +6,6 @@ import {
   Menu,
   Terminal as TerminalIcon,
   FolderOpen,
-  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/db";
@@ -17,7 +16,7 @@ import { useTerminalRename } from "@/hooks/useTerminalRename";
 import type { ViewMode } from "@/lib/panes";
 
 /** Segment order, so the sliding selection knows where to sit. */
-const VIEW_MODE_ORDER: ViewMode[] = ["terminal", "files", "git"];
+const VIEW_MODE_ORDER: ViewMode[] = ["terminal", "files"];
 
 interface ViewModeButtonProps {
   mode: ViewMode;
@@ -237,12 +236,6 @@ export function MobileTabBar({
             mode="files"
             currentMode={viewMode}
             icon={FolderOpen}
-            onClick={onViewModeChange}
-          />
-          <ViewModeButton
-            mode="git"
-            currentMode={viewMode}
-            icon={GitBranch}
             onClick={onViewModeChange}
           />
         </div>

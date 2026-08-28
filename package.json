@@ -1,5 +1,5 @@
 {
-  "name": "agentos-docker",
+  "name": "cliweb-docker",
   "private": true,
   "scripts": {
     "lint": "cd agent-os && npm run lint",

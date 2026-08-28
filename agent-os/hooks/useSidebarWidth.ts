@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 
-const STORAGE_KEY = "agentOS-sidebar-width";
+const STORAGE_KEY = "cliweb-sidebar-width";
 
 export const SIDEBAR_MIN_WIDTH = 180;
 export const SIDEBAR_MAX_WIDTH = 560;

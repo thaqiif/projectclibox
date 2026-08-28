@@ -1,6 +1,6 @@
 {
-  "name": "AgentOS",
-  "short_name": "AgentOS",
+  "name": "CLIWeb",
+  "short_name": "CLIWeb",
   "description": "AI Agent Command Center",
   "start_url": "/",
   "display": "standalone",

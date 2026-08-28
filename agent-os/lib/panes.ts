@@ -9,13 +9,12 @@
  * tmux terminal the single terminal is attached to, and which view is on top.
  */
 
-export type ViewMode = "terminal" | "files" | "git";
+export type ViewMode = "terminal" | "files";
 
 export interface WorkbenchState {
   /** tmux name the terminal is attached to, if any. */
   attachedTmux: string | null;
   viewMode: ViewMode;
-  gitDrawerOpen: boolean;
   shellDrawerOpen: boolean;
 }
 
@@ -25,13 +24,12 @@ export interface WorkbenchState {
  */
 export const PANE_ID = "main";
 
-const STORAGE_KEY = "agentos.workbench";
+const STORAGE_KEY = "cliweb.workbench";
 
 export function createInitialWorkbenchState(): WorkbenchState {
   return {
     attachedTmux: null,
     viewMode: "terminal",
-    gitDrawerOpen: true,
     shellDrawerOpen: false,
   };
 }
@@ -57,14 +55,7 @@ export function loadWorkbenchState(): WorkbenchState | null {
     return {
       attachedTmux:
         typeof parsed.attachedTmux === "string" ? parsed.attachedTmux : null,
-      viewMode:
-        parsed.viewMode === "files" || parsed.viewMode === "git"
-          ? parsed.viewMode
-          : "terminal",
-      gitDrawerOpen:
-        typeof parsed.gitDrawerOpen === "boolean"
-          ? parsed.gitDrawerOpen
-          : base.gitDrawerOpen,
+      viewMode: parsed.viewMode === "files" ? parsed.viewMode : "terminal",
       shellDrawerOpen:
         typeof parsed.shellDrawerOpen === "boolean"
           ? parsed.shellDrawerOpen

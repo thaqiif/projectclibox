@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Terminal, GitBranch, Check, Search } from "lucide-react";
+import { Terminal, Check, Search } from "lucide-react";
 import type { TerminalRecord } from "@/lib/terminals";
 import { CodeSearchResults } from "@/components/CodeSearch/CodeSearchResults";
 import { useRipgrepAvailable } from "@/data/code-search";

@@ -1,6 +1,5 @@
 "use client";
 
-import { StartServerDialog } from "@/components/DevServers/StartServerDialog";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { Button } from "@/components/ui/button";
 import { PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
@@ -28,10 +27,6 @@ export function DesktopView({
   handleCloseTerminal,
   handleDetachTerminal,
   handleCreateProject,
-  handleStartDevServer,
-  handleCreateDevServer,
-  startDevServerProject,
-  setStartDevServerProjectId,
   renderPane,
 }: ViewProps) {
   const { isPinned, togglePin } = useSidebarPinned();
@@ -47,8 +42,6 @@ export function DesktopView({
         }}
         onNewTerminal={handleNewTerminal}
         onCloseTerminal={handleCloseTerminal}
-        onStartDevServer={handleStartDevServer}
-        onCreateDevServer={handleCreateDevServer}
         onQuickSwitch={() => setShowQuickSwitcher(true)}
       />
 
@@ -143,14 +136,6 @@ export function DesktopView({
           fileOpenActions.requestOpen(absolutePath, line);
         }}
       />
-      {startDevServerProject && (
-        <StartServerDialog
-          project={startDevServerProject}
-          projectDevServers={startDevServerProject.devServers}
-          onStart={handleCreateDevServer}
-          onClose={() => setStartDevServerProjectId(null)}
-        />
-      )}
     </div>
   );
 }

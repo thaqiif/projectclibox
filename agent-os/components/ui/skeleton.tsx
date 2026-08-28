@@ -83,23 +83,3 @@ export function ProjectSectionSkeleton({
     </div>
   );
 }
-
-interface DevServerSkeletonProps {
-  count?: number;
-}
-
-export function DevServerSkeleton({ count = 2 }: DevServerSkeletonProps) {
-  return (
-    <div className="flex flex-col gap-1 p-2">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="flex items-center justify-between px-2 py-2">
-          <div className="flex items-center gap-3">
-            <ShimmeringLoader className="h-2 w-2 rounded-full" delayIndex={i} />
-            <ShimmeringLoader className="h-3 w-24" delayIndex={i} />
-          </div>
-          <ShimmeringLoader className="h-5 w-16 rounded-full" delayIndex={i} />
-        </div>
-      ))}
-    </div>
-  );
-}

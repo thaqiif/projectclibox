@@ -4,7 +4,7 @@ import { listTerminals, killTerminal } from "@/lib/terminals";
 /**
  * POST /api/tmux/kill-all - close every terminal.
  *
- * This used to kill only terminals whose names matched AgentOS's own naming
+ * This used to kill only terminals whose names matched CLIWeb's own naming
  * scheme, then sweep a database table to match. Terminals are just tmux
  * workspaces now, with no rows to clean up and no notion of "managed": what
  * the sidebar lists is what this closes.

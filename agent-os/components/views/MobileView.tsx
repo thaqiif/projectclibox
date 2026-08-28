@@ -1,7 +1,6 @@
 "use client";
 
 import { TerminalList } from "@/components/TerminalList";
-import { StartServerDialog } from "@/components/DevServers/StartServerDialog";
 import { SwipeSidebar } from "@/components/mobile/SwipeSidebar";
 import { QuickSwitcher } from "@/components/QuickSwitcher";
 import type { ViewProps } from "./types";
@@ -19,10 +18,6 @@ export function MobileView({
   handleNewTerminal,
   handleCloseTerminal,
   handleCreateProject,
-  handleStartDevServer,
-  handleCreateDevServer,
-  startDevServerProject,
-  setStartDevServerProjectId,
   renderPane,
 }: ViewProps) {
   return (
@@ -39,8 +34,6 @@ export function MobileView({
               }}
               onNewTerminal={handleNewTerminal}
               onCloseTerminal={handleCloseTerminal}
-              onStartDevServer={handleStartDevServer}
-              onCreateDevServer={handleCreateDevServer}
             />
           </div>
         </div>
@@ -67,14 +60,6 @@ export function MobileView({
           fileOpenActions.requestOpen(absolutePath, line);
         }}
       />
-      {startDevServerProject && (
-        <StartServerDialog
-          project={startDevServerProject}
-          projectDevServers={startDevServerProject.devServers}
-          onStart={handleCreateDevServer}
-          onClose={() => setStartDevServerProjectId(null)}
-        />
-      )}
     </main>
   );
 }

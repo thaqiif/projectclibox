@@ -3,9 +3,6 @@
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
-  GitFork,
-  GitBranch,
-  GitPullRequest,
   Check,
   Loader2,
   MoreHorizontal,

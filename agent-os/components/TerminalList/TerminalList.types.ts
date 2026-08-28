@@ -7,15 +7,6 @@ export interface TerminalListProps {
   /** Open a new terminal, optionally in a project's working directory. */
   onNewTerminal?: (projectId?: string) => void;
   onCloseTerminal?: (name: string) => void;
-  onStartDevServer?: (projectId: string) => void;
-  onCreateDevServer?: (opts: {
-    projectId: string;
-    type: "node" | "docker";
-    name: string;
-    command: string;
-    workingDirectory: string;
-    ports?: number[];
-  }) => Promise<void>;
   onQuickSwitch?: () => void;
 }
 

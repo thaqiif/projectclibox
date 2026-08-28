@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getAllProjectsWithDevServers,
+  getAllProjects,
   createProject,
   validateWorkingDirectory,
 } from "@/lib/projects";
 
-// GET /api/projects - List all projects with dev server configs
+// GET /api/projects - List all projects
 export async function GET() {
   try {
-    const projects = getAllProjectsWithDevServers();
+    const projects = getAllProjects();
     return NextResponse.json({ projects });
   } catch (error) {
     console.error("Error getting projects:", error);
@@ -23,8 +23,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, workingDirectory, agentType, defaultModel, devServers } =
-      body;
+    const { name, workingDirectory, agentType, defaultModel } = body;
 
     if (!name || !workingDirectory) {
       return NextResponse.json(
@@ -45,7 +44,6 @@ export async function POST(request: NextRequest) {
       workingDirectory,
       agentType,
       defaultModel,
-      devServers,
     });
 
     return NextResponse.json({ project }, { status: 201 });

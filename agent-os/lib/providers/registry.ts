@@ -2,7 +2,7 @@
  * Provider registry for the workspace shell.
  *
  * This build intentionally has no bundled AI harnesses. Users can install any
- * CLI they want from the terminal; AgentOS always opens a plain shell and does
+ * CLI they want from the terminal; CLIWeb always opens a plain shell and does
  * not attempt to discover or launch those CLIs for them.
  */
 

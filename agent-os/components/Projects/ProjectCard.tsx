@@ -7,7 +7,6 @@ import {
   MoreHorizontal,
   Settings,
   Plus,
-  Server,
   Trash2,
   Pencil,
   FolderOpen,
@@ -33,16 +32,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { Project, DevServer } from "@/lib/db";
+import type { Project } from "@/lib/db";
 
 interface ProjectCardProps {
   project: Project;
-  runningDevServers?: DevServer[];
   onClick?: () => void;
   onToggleExpanded?: (expanded: boolean) => void;
   onEdit?: () => void;
   onNewTerminal?: () => void;
-  onStartDevServer?: () => void;
   onOpenInEditor?: () => void;
   onDelete?: () => void;
   onRename?: (newName: string) => void;
@@ -50,12 +47,10 @@ interface ProjectCardProps {
 
 export function ProjectCard({
   project,
-  runningDevServers = [],
   onClick,
   onToggleExpanded,
   onEdit,
   onNewTerminal,
-  onStartDevServer,
   onOpenInEditor,
   onDelete,
   onRename,
@@ -66,12 +61,11 @@ export function ProjectCard({
   /** Guards against Enter and the follow-up blur both committing. */
   const committedRef = useRef(false);
 
-  const hasRunningServers = runningDevServers.length > 0;
-  // Uncategorized can be renamed but not edited, deleted, or given a dev
-  // server. New terminal is its own button, not a menu entry.
+  // Uncategorized can be renamed but not edited or deleted. New terminal is
+  // its own button, not a menu entry.
   const hasActions = project.is_uncategorized
     ? onRename
-    : onEdit || onStartDevServer || onDelete || onRename;
+    : onEdit || onDelete || onRename;
 
   useEffect(() => {
     if (!isEditing) return;
@@ -139,15 +133,6 @@ export function ProjectCard({
             <FolderOpen className="h-4 w-4" />
             Open in editor
           </MenuItem>
-        )}
-        {onStartDevServer && (
-          <>
-            <MenuSeparator />
-            <MenuItem onClick={() => onStartDevServer()}>
-              <Server className="h-4 w-4" />
-              Start dev server
-            </MenuItem>
-          </>
         )}
         {onDelete && (
           <>
@@ -221,24 +206,6 @@ export function ProjectCard({
               times: it is the same prefix on most rows. */}
           <TooltipContent side="right">
             <p className="ui-meta">{project.working_directory}</p>
-          </TooltipContent>
-        </Tooltip>
-      )}
-
-      {/* Running servers indicator */}
-      {hasRunningServers && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              aria-label="Dev server running"
-              className="bg-status-running/70 h-1.5 w-1.5 flex-shrink-0 rounded-full"
-            />
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>
-              {runningDevServers.length} dev server
-              {runningDevServers.length > 1 ? "s" : ""} running
-            </p>
           </TooltipContent>
         </Tooltip>
       )}

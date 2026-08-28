@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 
-const STORAGE_KEY = "agentOS-sidebar-pinned";
+const STORAGE_KEY = "cliweb-sidebar-pinned";
 
 /**
  * Hook to manage desktop sidebar pin state with localStorage persistence.

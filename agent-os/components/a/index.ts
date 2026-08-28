@@ -1,13 +1,13 @@
 /**
- * AgentOS Design System
+ * CLIWeb Design System
  *
- * A collection of reusable UI components that follow AgentOS design guidelines:
+ * A collection of reusable UI components that follow CLIWeb design guidelines:
  * - Structural 1px borders instead of floating shadows
  * - Command Code workbench language: near-black canvas, burple accent
  * - Mobile-first design
  * - Consistent styling across the app
  *
- * All components are prefixed with "A" (for AgentOS).
+ * All components are prefixed with "A" (for the application design system).
  */
 
 // Core components

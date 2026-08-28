@@ -8,11 +8,6 @@ import {
   useDeleteProject,
   useRenameProject,
 } from "@/data/projects";
-import {
-  useStopDevServer,
-  useRestartDevServer,
-  useRemoveDevServer,
-} from "@/data/dev-servers";
 import { terminalKeys } from "@/data/terminals/keys";
 
 /**
@@ -32,10 +27,6 @@ export function useTerminalListMutations() {
   const toggleProjectMutation = useToggleProject();
   const deleteProjectMutation = useDeleteProject();
   const renameProjectMutation = useRenameProject();
-
-  const stopDevServerMutation = useStopDevServer();
-  const restartDevServerMutation = useRestartDevServer();
-  const removeDevServerMutation = useRemoveDevServer();
 
   const handleDeleteTerminal = useCallback(
     async (name: string) => {
@@ -68,27 +59,6 @@ export function useTerminalListMutations() {
       await renameProjectMutation.mutateAsync({ projectId, newName: name });
     },
     [renameProjectMutation]
-  );
-
-  const handleStopDevServer = useCallback(
-    async (id: string) => {
-      await stopDevServerMutation.mutateAsync(id);
-    },
-    [stopDevServerMutation]
-  );
-
-  const handleRestartDevServer = useCallback(
-    async (id: string) => {
-      await restartDevServerMutation.mutateAsync(id);
-    },
-    [restartDevServerMutation]
-  );
-
-  const handleRemoveDevServer = useCallback(
-    async (id: string) => {
-      await removeDevServerMutation.mutateAsync(id);
-    },
-    [removeDevServerMutation]
   );
 
   const handleBulkDelete = useCallback(
@@ -148,10 +118,6 @@ export function useTerminalListMutations() {
     handleToggleProject,
     handleDeleteProject,
     handleRenameProject,
-
-    handleStopDevServer,
-    handleRestartDevServer,
-    handleRemoveDevServer,
 
     handleBulkDelete,
     handleRefresh,

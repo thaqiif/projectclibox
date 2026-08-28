@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, GitBranch, FolderOpen } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import { FolderPicker } from "@/components/FolderPicker";
 import { useHomePath } from "@/hooks/useHomePath";
 
@@ -9,8 +9,6 @@ interface DirectoryFieldProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  checkingDir: boolean;
-  isGitRepo: boolean;
   recentDirs: string[];
 }
 
@@ -18,8 +16,6 @@ export function DirectoryField({
   label,
   value,
   onChange,
-  checkingDir,
-  isGitRepo,
   recentDirs,
 }: DirectoryFieldProps) {
   const [showPicker, setShowPicker] = useState(false);
@@ -41,11 +37,6 @@ export function DirectoryField({
               onChange={(e) => onChange(e.target.value)}
               placeholder="~/projects/my-app"
             />
-            {checkingDir && (
-              <div className="absolute top-1/2 right-3 -translate-y-1/2">
-                <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
-              </div>
-            )}
           </div>
           <Button
             type="button"
@@ -57,12 +48,6 @@ export function DirectoryField({
             <FolderOpen className="h-4 w-4" />
           </Button>
         </div>
-        {isGitRepo && (
-          <p className="text-muted-foreground flex items-center gap-1 text-xs">
-            <GitBranch className="h-3 w-3" />
-            Git repository
-          </p>
-        )}
         {recentDirs.length > 0 && (
           <div className="flex flex-wrap gap-1 pt-1">
             {recentDirs.map((dir) => (

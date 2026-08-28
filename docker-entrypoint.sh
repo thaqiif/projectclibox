@@ -15,7 +15,7 @@ if [ "$(id -u agent)" != "${PUID}" ]; then
 fi
 
 mkdir -p \
-    "${HOME}/.agent-os" \
+    "${HOME}/.cliweb" \
     "${HOME}/.config" \
     "${HOME}/.local/bin" \
     "${HOME}/.local/lib" \
@@ -35,13 +35,13 @@ export LOGNAME=agent
 # Ensure the persisted volume and the app's writable Next cache are usable by
 # the remapped user. /opt dependencies remain root-owned and read-only.
 chown -R agent:agent "${HOME}"
-mkdir -p "${AGENT_OS_REPO:-/opt/agent-os}/.next/cache"
-chown -R agent:agent "${AGENT_OS_REPO:-/opt/agent-os}/.next/cache"
+mkdir -p "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"
+chown -R agent:agent "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"
 
 # Keep Git identity and HTTPS credentials in the persisted home volume.
 gosu agent git config --global credential.helper \
     "store --file=${HOME}/.gitstate/credentials"
 
-export PORT="${AGENT_OS_PORT:-3011}"
-cd "${AGENT_OS_REPO:-/opt/agent-os}"
+export PORT="${CLIWEB_PORT:-3011}"
+cd "${CLIWEB_REPO:-/opt/agent-os}"
 exec setpriv --reuid=agent --regid=agent --init-groups -- npm start

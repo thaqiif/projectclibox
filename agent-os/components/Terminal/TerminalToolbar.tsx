@@ -51,37 +51,24 @@ interface Snippet {
 const SNIPPETS_STORAGE_KEY = "terminal-snippets";
 
 const DEFAULT_SNIPPETS: Snippet[] = [
-  // Git shortcuts
-  { id: "default-1", name: "Git status", content: "git status" },
-  { id: "default-2", name: "Git diff", content: "git diff" },
-  { id: "default-3", name: "Git add all", content: "git add -A" },
-  { id: "default-4", name: "Git commit", content: 'git commit -m ""' },
-  { id: "default-5", name: "Git push", content: "git push" },
-  { id: "default-6", name: "Git pull", content: "git pull" },
   // Handy shell/editor prompts
-  { id: "default-7", name: "Continue", content: "continue" },
-  { id: "default-8", name: "Yes", content: "yes" },
-  { id: "default-9", name: "No", content: "no" },
+  { id: "default-1", name: "Continue", content: "continue" },
+  { id: "default-2", name: "Yes", content: "yes" },
+  { id: "default-3", name: "No", content: "no" },
   {
-    id: "default-10",
+    id: "default-4",
     name: "Explain this",
     content: "explain what this code does",
   },
-  { id: "default-11", name: "Fix errors", content: "fix the errors" },
+  { id: "default-5", name: "Fix errors", content: "fix the errors" },
   {
-    id: "default-12",
+    id: "default-6",
     name: "Run tests",
     content: "run the tests and fix any failures",
   },
-  {
-    id: "default-13",
-    name: "Commit changes",
-    content: "commit these changes with a descriptive message",
-  },
   // Common commands
-  { id: "default-14", name: "List files", content: "ls -la" },
-  { id: "default-15", name: "NPM dev", content: "npm run dev" },
-  { id: "default-16", name: "NPM install", content: "npm install" },
+  { id: "default-7", name: "List files", content: "ls -la" },
+  { id: "default-8", name: "NPM install", content: "npm install" },
 ];
 
 function getStoredSnippets(): Snippet[] {

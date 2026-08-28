@@ -15,10 +15,6 @@ interface DesktopSidebarProps {
   onSelect: (name: string) => void;
   onNewTerminal: (projectId?: string) => void;
   onCloseTerminal: (projectId: string) => void;
-  onStartDevServer: (projectId: string) => void;
-  onCreateDevServer: React.ComponentProps<
-    typeof TerminalList
-  >["onCreateDevServer"];
 }
 
 export function DesktopSidebar({
@@ -28,8 +24,6 @@ export function DesktopSidebar({
   onSelect,
   onNewTerminal,
   onCloseTerminal,
-  onStartDevServer,
-  onCreateDevServer,
 }: DesktopSidebarProps) {
   // When unpinned, the sidebar floats and reveals on hover near the left edge
   const [revealed, setRevealed] = useState(false);
@@ -79,8 +73,6 @@ export function DesktopSidebar({
           onSelect={onSelect}
           onNewTerminal={onNewTerminal}
           onCloseTerminal={onCloseTerminal}
-          onStartDevServer={onStartDevServer}
-          onCreateDevServer={onCreateDevServer}
           onQuickSwitch={onQuickSwitch}
         />
       </div>

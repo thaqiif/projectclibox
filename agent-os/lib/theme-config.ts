@@ -1,5 +1,5 @@
 /**
- * Theme configuration for AgentOS
+ * Theme configuration for CLIWeb
  * UI theme definitions and helper functions
  */
 

@@ -3,7 +3,6 @@
 import {
   Columns2,
   FolderOpen,
-  GitBranch,
   Rows2,
   SquareTerminal,
   Terminal,
@@ -27,9 +26,8 @@ import type { ViewMode } from "@/lib/panes";
  *
  * Two different kinds of control live here and now look like it. What the
  * main surface *is* — terminal or files — is a segmented control, one choice
- * out of a set, with a selection that slides between the options. Git and
- * the shell are drawers that toggle independently, so they are separate
- * buttons rather than a fifth and sixth segment.
+ * out of a set, with a selection that slides between the options. The shell
+ * is a drawer that toggles independently, so it is a separate button.
  */
 
 const SEGMENTS: { mode: ViewMode; label: string; icon: LucideIcon }[] = [
@@ -143,16 +141,14 @@ export function WorkbenchBar() {
   const {
     attachedTmux,
     viewMode,
-    gitDrawerOpen,
     shellDrawerOpen,
     setViewMode,
-    toggleGitDrawer,
     toggleShellDrawer,
     splitPane,
   } = usePanes();
 
   // Nothing attached means the welcome screen is up: there is no terminal
-  // to split and no working directory for files or git to point at.
+  // to split and no working directory for files to point at.
   if (!attachedTmux) return null;
 
   const selectedIndex = Math.max(
@@ -193,12 +189,6 @@ export function WorkbenchBar() {
       </div>
 
       <div className="flex items-center gap-0.5">
-        <DrawerToggle
-          icon={GitBranch}
-          label="Git"
-          active={gitDrawerOpen}
-          onClick={toggleGitDrawer}
-        />
         <DrawerToggle
           icon={Terminal}
           label="Shell"

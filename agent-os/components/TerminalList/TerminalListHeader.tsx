@@ -12,7 +12,6 @@ import {
   Plus,
   FolderPlus,
   FolderOpen,
-  GitBranch,
   MoreHorizontal,
   Trash2,
   Palette,
@@ -23,7 +22,6 @@ import {
 interface TerminalListHeaderProps {
   onNewProject: () => void;
   onOpenProject: () => void;
-  onCloneFromGithub: () => void;
   onKillAll: () => void;
   onQuickSwitch?: () => void;
 }
@@ -31,7 +29,6 @@ interface TerminalListHeaderProps {
 export function TerminalListHeader({
   onNewProject,
   onOpenProject,
-  onCloneFromGithub,
   onKillAll,
   onQuickSwitch,
 }: TerminalListHeaderProps) {
@@ -60,7 +57,7 @@ export function TerminalListHeader({
             <path d="M9 13v2" />
           </svg>
           <h2 className="text-[0.9375rem] font-semibold tracking-[-0.014em]">
-            AgentOS
+            CLIWeb
           </h2>
         </div>
         <div className="flex items-center gap-0.5">
@@ -70,9 +67,6 @@ export function TerminalListHeader({
             items={[
               menuItem("New Project", onNewProject, { icon: FolderPlus }),
               menuItem("Open Project", onOpenProject, { icon: FolderOpen }),
-              menuItem("Clone from GitHub", onCloneFromGithub, {
-                icon: GitBranch,
-              }),
             ]}
           />
           <ADropdownMenu

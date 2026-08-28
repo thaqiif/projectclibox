@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { usePanes } from "@/contexts/PaneContext";
 import { useViewport } from "@/hooks/useViewport";
 import type { TerminalHandle } from "@/components/Terminal";
-import type { ProjectWithRepositories } from "@/lib/projects";
+import type { Project } from "@/lib/db";
 import type { TerminalRecord } from "@/lib/terminals";
 import { terminalStateRegistry } from "@/lib/client/terminal-state-registry";
 import { cn } from "@/lib/utils";
@@ -14,14 +14,12 @@ import { MobileTabBar } from "./MobileTabBar";
 import {
   TerminalSkeleton,
   FileExplorerSkeleton,
-  GitPanelSkeleton,
 } from "./PaneSkeletons";
 import {
   Panel as ResizablePanel,
   Group as ResizablePanelGroup,
   Separator as ResizablePanelHandle,
 } from "react-resizable-panels";
-import { GitDrawer } from "@/components/GitDrawer";
 import { ShellDrawer } from "@/components/ShellDrawer";
 import { useSnapshot } from "valtio";
 import { fileOpenStore, fileOpenActions } from "@/stores/fileOpen";
@@ -39,14 +37,9 @@ const FileExplorer = dynamic(
   { ssr: false, loading: () => <FileExplorerSkeleton /> }
 );
 
-const GitPanel = dynamic(
-  () => import("@/components/GitPanel").then((mod) => mod.GitPanel),
-  { ssr: false, loading: () => <GitPanelSkeleton /> }
-);
-
 interface PaneProps {
   terminals: TerminalRecord[];
-  projects: ProjectWithRepositories[];
+  projects: Project[];
   onRegisterTerminal: (ref: TerminalHandle | null) => void;
   onMenuClick?: () => void;
   onSelectTerminal?: (name: string) => void;
@@ -56,8 +49,8 @@ interface PaneProps {
 }
 
 /**
- * The workbench's single terminal, plus the file and git views that share
- * its working directory.
+ * The workbench's single terminal and file view that share its working
+ * directory.
  *
  * There is one terminal and one tmux attachment. Splitting is delegated to
  * tmux (see /api/tmux/split), so what used to be a tree of React panes with
@@ -77,33 +70,21 @@ export const Pane = memo(function Pane({
     paneId,
     attachedTmux,
     viewMode,
-    gitDrawerOpen,
     shellDrawerOpen,
     setViewMode,
-    toggleGitDrawer,
     toggleShellDrawer,
   } = usePanes();
 
   const terminalRef = useRef<TerminalHandle | null>(null);
 
   // The attached tmux terminal is the source of truth for which working
-  // directory the Files and Git views point at.
+  // directory the Files view points at.
   const currentTerminal = useMemo(
     () => terminals.find((t) => t.tmux_name === attachedTmux) ?? null,
     [terminals, attachedTmux]
   );
 
   const fileEditor = useFileEditor();
-
-  const currentProject = useMemo(() => {
-    if (!currentTerminal?.project_id) return null;
-    return projects.find((p) => p.id === currentTerminal.project_id) || null;
-  }, [currentTerminal, projects]);
-
-  const projectRepositories = useMemo(() => {
-    if (!currentProject) return [];
-    return currentProject.repositories;
-  }, [currentProject]);
 
   const { request: fileOpenRequest } = useSnapshot(fileOpenStore);
 
@@ -265,69 +246,37 @@ export const Pane = memo(function Pane({
             </div>
           )}
 
-          {currentTerminal?.working_directory && (
-            <div className={viewMode === "git" ? "h-full" : "hidden"}>
-              <GitPanel
-                workingDirectory={currentTerminal.working_directory}
-                projectId={currentProject?.id}
-                repositories={projectRepositories}
-              />
-            </div>
-          )}
         </div>
       ) : (
-        <ResizablePanelGroup
-          orientation="horizontal"
-          className="min-h-0 flex-1"
-        >
-          {/* Left column: main content + shell drawer */}
-          <ResizablePanel defaultSize={gitDrawerOpen ? 70 : 100} minSize={20}>
-            <ResizablePanelGroup orientation="vertical" className="h-full">
-              <ResizablePanel
-                defaultSize={shellDrawerOpen ? 70 : 100}
-                minSize={10}
-              >
-                <div className="relative h-full">
-                  <div className={viewMode === "terminal" ? "h-full" : "hidden"}>
-                    {surface}
-                  </div>
+        <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
+          <ResizablePanel
+            defaultSize={shellDrawerOpen ? 70 : 100}
+            minSize={10}
+          >
+            <div className="relative h-full">
+              <div className={viewMode === "terminal" ? "h-full" : "hidden"}>
+                {surface}
+              </div>
 
-                  {currentTerminal?.working_directory && (
-                    <div className={viewMode === "files" ? "h-full" : "hidden"}>
-                      <FileExplorer
-                        workingDirectory={currentTerminal.working_directory}
-                        fileEditor={fileEditor}
-                      />
-                    </div>
-                  )}
+              {currentTerminal?.working_directory && (
+                <div className={viewMode === "files" ? "h-full" : "hidden"}>
+                  <FileExplorer
+                    workingDirectory={currentTerminal.working_directory}
+                    fileEditor={fileEditor}
+                  />
                 </div>
-              </ResizablePanel>
-
-              {shellDrawerOpen && currentTerminal?.working_directory && (
-                <>
-                  <ResizablePanelHandle className="relative h-px cursor-row-resize bg-[var(--fill-2)] transition-colors duration-200 after:absolute after:inset-x-0 after:-top-1 after:h-3 after:content-[''] hover:bg-primary/40 active:bg-primary/60" />
-                  <ResizablePanel defaultSize={30} minSize={10}>
-                    <ShellDrawer
-                      open={true}
-                      onOpenChange={toggleShellDrawer}
-                      workingDirectory={currentTerminal.working_directory}
-                    />
-                  </ResizablePanel>
-                </>
               )}
-            </ResizablePanelGroup>
+            </div>
           </ResizablePanel>
 
-          {gitDrawerOpen && currentTerminal?.working_directory && (
+          {shellDrawerOpen && currentTerminal?.working_directory && (
             <>
-              <ResizablePanelHandle className="relative w-px cursor-col-resize bg-[var(--fill-2)] transition-colors duration-200 after:absolute after:inset-y-0 after:-left-1 after:w-3 after:content-[''] hover:bg-primary/40 active:bg-primary/60" />
+              <ResizablePanelHandle className="relative h-px cursor-row-resize bg-[var(--fill-2)] transition-colors duration-200 after:absolute after:inset-x-0 after:-top-1 after:h-3 after:content-[''] hover:bg-primary/40 active:bg-primary/60" />
               <ResizablePanel defaultSize={30} minSize={10}>
-                <GitDrawer
+                <ShellDrawer
                   open={true}
-                  onOpenChange={toggleGitDrawer}
+                  onOpenChange={toggleShellDrawer}
                   workingDirectory={currentTerminal.working_directory}
-                  projectId={currentProject?.id}
-                  repositories={projectRepositories}
                 />
               </ResizablePanel>
             </>
