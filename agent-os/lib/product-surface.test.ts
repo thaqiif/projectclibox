@@ -95,3 +95,41 @@ test("the product is branded CLIWeb", () => {
     );
   }
 });
+
+test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
+  const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
+  const compose = readFileSync(
+    join(process.cwd(), "..", "docker-compose.yml"),
+    "utf8"
+  );
+  const entrypoint = readFileSync(
+    join(process.cwd(), "..", "docker-entrypoint.sh"),
+    "utf8"
+  );
+
+  assert.match(dockerfile, /\sfile\s+\\/, "the image is missing Homebrew's file dependency");
+  assert.ok(
+    dockerfile.includes("CLIWEB_BREW_PREFIX=/home/agent/brew"),
+    "the image should define the persistent Homebrew prefix"
+  );
+  assert.ok(
+    compose.includes("CLIWEB_BREW_PREFIX: /home/agent/brew"),
+    "compose should expose the persistent Homebrew prefix"
+  );
+  assert.ok(
+    compose.includes("- cliweb_home:/home/agent"),
+    "the Homebrew prefix should live inside the persistent home volume"
+  );
+  assert.ok(
+    entrypoint.includes('BREW_PREFIX="${CLIWEB_BREW_PREFIX:-${HOME}/brew}"'),
+    "the entrypoint should resolve the Homebrew prefix under the agent home"
+  );
+  assert.ok(
+    entrypoint.includes('export HOMEBREW_PREFIX="${BREW_PREFIX}"'),
+    "the entrypoint should configure Homebrew to use the persistent prefix"
+  );
+  assert.ok(
+    entrypoint.includes('cp -a "${BREW_SOURCE}/." "${BREW_REPOSITORY}/"'),
+    "the entrypoint should seed Homebrew into the persistent prefix"
+  );
+});

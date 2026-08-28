@@ -2,6 +2,10 @@
 
 ## 2026-08-28
 
+### Added
+
+- Added a persistent Homebrew installation rooted at `/home/agent/brew`.
+
 ### Changed
 
 - Renamed the application branding from AgentOS to CLIWeb.

@@ -9,6 +9,7 @@ services:
         required: false
     environment:
       CLIWEB_PORT: 3011
+      CLIWEB_BREW_PREFIX: /home/agent/brew
       SHELL: /bin/bash
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}

@@ -6,6 +6,9 @@ set -euo pipefail
 # then launched as the unprivileged `agent` user.
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
+BREW_PREFIX="${CLIWEB_BREW_PREFIX:-${HOME}/brew}"
+BREW_SOURCE="${CLIWEB_BREW_SOURCE:-/opt/cliweb-brew}"
+BREW_REPOSITORY="${BREW_PREFIX}/Homebrew"
 
 if [ "$(id -g agent)" != "${PGID}" ]; then
     groupmod -o -g "${PGID}" agent
@@ -20,21 +23,46 @@ mkdir -p \
     "${HOME}/.local/bin" \
     "${HOME}/.local/lib" \
     "${HOME}/.cache" \
+    "${HOME}/.cache/Homebrew" \
     "${HOME}/.gitstate" \
-    "${HOME}/.ssh"
+    "${HOME}/.ssh" \
+    "${BREW_PREFIX}"
 chmod 700 "${HOME}/.ssh"
 
 # npm -g and pip --user both land in the persisted home volume. This is the
 # supported extension point for installing tools after the container starts.
 export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-${HOME}/.local}"
 export PYTHONUSERBASE="${PYTHONUSERBASE:-${HOME}/.local}"
-export PATH="${NPM_CONFIG_PREFIX}/bin:${HOME}/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 export USER=agent
 export LOGNAME=agent
 
 # Ensure the persisted volume and the app's writable Next cache are usable by
 # the remapped user. /opt dependencies remain root-owned and read-only.
 chown -R agent:agent "${HOME}"
+
+# The whole /home/agent tree is persisted by compose. Keep Homebrew's
+# repository and all formulae under /home/agent/brew so rebuilds do not remove
+# user-installed brew dependencies. The image snapshot avoids requiring a
+# network connection during the first container start.
+if [ ! -x "${BREW_PREFIX}/bin/brew" ]; then
+    if [ -n "$(find "${BREW_PREFIX}" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+        echo "CLIWeb: Homebrew prefix ${BREW_PREFIX} is not empty and is not initialized" >&2
+        exit 1
+    fi
+    if [ ! -x "${BREW_SOURCE}/bin/brew" ]; then
+        echo "CLIWeb: Homebrew bootstrap source is missing at ${BREW_SOURCE}" >&2
+        exit 1
+    fi
+    mkdir -p "${BREW_REPOSITORY}" "${BREW_PREFIX}/bin"
+    cp -a "${BREW_SOURCE}/." "${BREW_REPOSITORY}/"
+    ln -s ../Homebrew/bin/brew "${BREW_PREFIX}/bin/brew"
+fi
+chown -R agent:agent "${BREW_PREFIX}"
+
+export HOMEBREW_PREFIX="${BREW_PREFIX}"
+export HOMEBREW_REPOSITORY="${BREW_REPOSITORY}"
+export HOMEBREW_CACHE="${HOME}/.cache/Homebrew"
+export PATH="${BREW_PREFIX}/bin:${BREW_PREFIX}/sbin:${NPM_CONFIG_PREFIX}/bin:${HOME}/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 mkdir -p "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"
 chown -R agent:agent "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"
 
