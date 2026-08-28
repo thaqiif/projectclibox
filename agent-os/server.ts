@@ -54,7 +54,7 @@ app.prepare().then(() => {
         ...(process.env as { [key: string]: string }),
         PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
         HOME: process.env.HOME || "/",
-        USER: process.env.USER || "agent",
+        USER: process.env.USER || "cliweb",
         SHELL: shell,
         TERM: "xterm-256color",
         COLORTERM: "truecolor",

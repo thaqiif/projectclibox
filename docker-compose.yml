@@ -9,21 +9,21 @@ services:
         required: false
     environment:
       CLIWEB_PORT: 3011
-      CLIWEB_BREW_PREFIX: /home/agent/brew
+      CLIWEB_BREW_PREFIX: /home/cliweb/brew
       SHELL: /bin/bash
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
-      # User-local package installs are written below /home/agent, which is a
+      # User-local package installs are written below /home/cliweb, which is a
       # named volume and therefore survives container recreation and rebuilds.
-      NPM_CONFIG_PREFIX: /home/agent/.local
+      NPM_CONFIG_PREFIX: /home/cliweb/.local
       PIP_USER: "1"
-      PYTHONUSERBASE: /home/agent/.local
+      PYTHONUSERBASE: /home/cliweb/.local
     ports:
       # Localhost-only is the safe default. Set HOST_BIND=0.0.0.0 only when
       # you intentionally want to reach the UI from another device.
       - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3011}:3011"
     volumes:
-      - cliweb_home:/home/agent
+      - cliweb_home:/home/cliweb
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces
 
 volumes:

@@ -4,10 +4,11 @@
 
 ### Added
 
-- Added a persistent Homebrew installation rooted at `/home/agent/brew`.
+- Added a persistent Homebrew installation rooted at `/home/cliweb/brew`.
 
 ### Changed
 
+- Renamed the container user and persistent home directory from `agent` to `cliweb`.
 - Renamed the application branding from AgentOS to CLIWeb.
 
 ### Removed

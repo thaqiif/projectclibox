@@ -3,18 +3,18 @@ set -euo pipefail
 
 # Start as root only long enough to align the runtime user with the host and
 # prepare the persisted home volume. The web server and all terminal shells are
-# then launched as the unprivileged `agent` user.
+# then launched as the unprivileged `cliweb` user.
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 BREW_PREFIX="${CLIWEB_BREW_PREFIX:-${HOME}/brew}"
 BREW_SOURCE="${CLIWEB_BREW_SOURCE:-/opt/cliweb-brew}"
 BREW_REPOSITORY="${BREW_PREFIX}/Homebrew"
 
-if [ "$(id -g agent)" != "${PGID}" ]; then
-    groupmod -o -g "${PGID}" agent
+if [ "$(id -g cliweb)" != "${PGID}" ]; then
+    groupmod -o -g "${PGID}" cliweb
 fi
-if [ "$(id -u agent)" != "${PUID}" ]; then
-    usermod -o -u "${PUID}" agent
+if [ "$(id -u cliweb)" != "${PUID}" ]; then
+    usermod -o -u "${PUID}" cliweb
 fi
 
 mkdir -p \
@@ -33,15 +33,15 @@ chmod 700 "${HOME}/.ssh"
 # supported extension point for installing tools after the container starts.
 export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-${HOME}/.local}"
 export PYTHONUSERBASE="${PYTHONUSERBASE:-${HOME}/.local}"
-export USER=agent
-export LOGNAME=agent
+export USER=cliweb
+export LOGNAME=cliweb
 
 # Ensure the persisted volume and the app's writable Next cache are usable by
 # the remapped user. /opt dependencies remain root-owned and read-only.
-chown -R agent:agent "${HOME}"
+chown -R cliweb:cliweb "${HOME}"
 
-# The whole /home/agent tree is persisted by compose. Keep Homebrew's
-# repository and all formulae under /home/agent/brew so rebuilds do not remove
+# The whole /home/cliweb tree is persisted by compose. Keep Homebrew's
+# repository and all formulae under /home/cliweb/brew so rebuilds do not remove
 # user-installed brew dependencies. The image snapshot avoids requiring a
 # network connection during the first container start.
 if [ ! -x "${BREW_PREFIX}/bin/brew" ]; then
@@ -57,19 +57,19 @@ if [ ! -x "${BREW_PREFIX}/bin/brew" ]; then
     cp -a "${BREW_SOURCE}/." "${BREW_REPOSITORY}/"
     ln -s ../Homebrew/bin/brew "${BREW_PREFIX}/bin/brew"
 fi
-chown -R agent:agent "${BREW_PREFIX}"
+chown -R cliweb:cliweb "${BREW_PREFIX}"
 
 export HOMEBREW_PREFIX="${BREW_PREFIX}"
 export HOMEBREW_REPOSITORY="${BREW_REPOSITORY}"
 export HOMEBREW_CACHE="${HOME}/.cache/Homebrew"
 export PATH="${BREW_PREFIX}/bin:${BREW_PREFIX}/sbin:${NPM_CONFIG_PREFIX}/bin:${HOME}/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 mkdir -p "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"
-chown -R agent:agent "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"
+chown -R cliweb:cliweb "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"
 
 # Keep Git identity and HTTPS credentials in the persisted home volume.
-gosu agent git config --global credential.helper \
+gosu cliweb git config --global credential.helper \
     "store --file=${HOME}/.gitstate/credentials"
 
 export PORT="${CLIWEB_PORT:-3011}"
 cd "${CLIWEB_REPO:-/opt/agent-os}"
-exec setpriv --reuid=agent --regid=agent --init-groups -- npm start
+exec setpriv --reuid=cliweb --regid=cliweb --init-groups -- npm start

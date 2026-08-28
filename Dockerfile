@@ -44,32 +44,32 @@ RUN cd "${CLIWEB_REPO}" \
 
 # Runtime user. The entrypoint remaps this user to PUID/PGID so files created
 # in a host-mounted workspace have the host user's ownership.
-RUN useradd --create-home --shell /bin/bash --uid 1001 agent \
+RUN useradd --create-home --home-dir /home/cliweb --shell /bin/bash --uid 1001 cliweb \
     && mkdir -p \
-        /home/agent/.cliweb \
-        /home/agent/.config \
-        /home/agent/.local/bin \
-        /home/agent/.local/lib \
-        /home/agent/.cache \
-        /home/agent/.gitstate \
-        /home/agent/.ssh \
-        /home/agent/brew \
+        /home/cliweb/.cliweb \
+        /home/cliweb/.config \
+        /home/cliweb/.local/bin \
+        /home/cliweb/.local/lib \
+        /home/cliweb/.cache \
+        /home/cliweb/.gitstate \
+        /home/cliweb/.ssh \
+        /home/cliweb/brew \
         /workspaces \
-    && chmod 700 /home/agent/.ssh \
-    && chown -R agent:agent /home/agent
+    && chmod 700 /home/cliweb/.ssh \
+    && chown -R cliweb:cliweb /home/cliweb
 
-ENV HOME=/home/agent \
-    CLIWEB_HOME=/home/agent/.cliweb \
+ENV HOME=/home/cliweb \
+    CLIWEB_HOME=/home/cliweb/.cliweb \
     CLIWEB_PORT=3011 \
-    DB_PATH=/home/agent/.cliweb/cliweb.db \
-    CLIWEB_BREW_PREFIX=/home/agent/brew \
+    DB_PATH=/home/cliweb/.cliweb/cliweb.db \
+    CLIWEB_BREW_PREFIX=/home/cliweb/brew \
     CLIWEB_BREW_SOURCE=/opt/cliweb-brew \
     NODE_ENV=production \
-    NPM_CONFIG_PREFIX=/home/agent/.local \
+    NPM_CONFIG_PREFIX=/home/cliweb/.local \
     PIP_USER=1 \
-    PYTHONUSERBASE=/home/agent/.local \
-    PATH=/home/agent/brew/bin:/home/agent/brew/sbin:/home/agent/.local/bin:/home/agent/.local/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
-    GIT_CONFIG_GLOBAL=/home/agent/.gitstate/config \
+    PYTHONUSERBASE=/home/cliweb/.local \
+    PATH=/home/cliweb/brew/bin:/home/cliweb/brew/sbin:/home/cliweb/.local/bin:/home/cliweb/.local/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
+    GIT_CONFIG_GLOBAL=/home/cliweb/.gitstate/config \
     PUID=1000 \
     PGID=1000
 

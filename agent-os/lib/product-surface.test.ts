@@ -109,20 +109,20 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
 
   assert.match(dockerfile, /\sfile\s+\\/, "the image is missing Homebrew's file dependency");
   assert.ok(
-    dockerfile.includes("CLIWEB_BREW_PREFIX=/home/agent/brew"),
+    dockerfile.includes("CLIWEB_BREW_PREFIX=/home/cliweb/brew"),
     "the image should define the persistent Homebrew prefix"
   );
   assert.ok(
-    compose.includes("CLIWEB_BREW_PREFIX: /home/agent/brew"),
+    compose.includes("CLIWEB_BREW_PREFIX: /home/cliweb/brew"),
     "compose should expose the persistent Homebrew prefix"
   );
   assert.ok(
-    compose.includes("- cliweb_home:/home/agent"),
+    compose.includes("- cliweb_home:/home/cliweb"),
     "the Homebrew prefix should live inside the persistent home volume"
   );
   assert.ok(
     entrypoint.includes('BREW_PREFIX="${CLIWEB_BREW_PREFIX:-${HOME}/brew}"'),
-    "the entrypoint should resolve the Homebrew prefix under the agent home"
+    "the entrypoint should resolve the Homebrew prefix under the cliweb home"
   );
   assert.ok(
     entrypoint.includes('export HOMEBREW_PREFIX="${BREW_PREFIX}"'),
@@ -132,4 +132,41 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
     entrypoint.includes('cp -a "${BREW_SOURCE}/." "${BREW_REPOSITORY}/"'),
     "the entrypoint should seed Homebrew into the persistent prefix"
   );
+});
+
+test("the container runtime user is cliweb", () => {
+  const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
+  const entrypoint = readFileSync(
+    join(process.cwd(), "..", "docker-entrypoint.sh"),
+    "utf8"
+  );
+  const server = source("server.ts");
+
+  assert.match(
+    dockerfile,
+    /useradd --create-home --home-dir \/home\/cliweb --shell \/bin\/bash --uid 1001 cliweb/,
+    "the image should create the cliweb user"
+  );
+  assert.ok(
+    entrypoint.includes('id -g cliweb') && entrypoint.includes('groupmod -o -g "${PGID}" cliweb'),
+    "the entrypoint should remap the cliweb group"
+  );
+  assert.ok(
+    entrypoint.includes('id -u cliweb') && entrypoint.includes('usermod -o -u "${PUID}" cliweb'),
+    "the entrypoint should remap the cliweb user"
+  );
+  assert.ok(
+    entrypoint.includes("export USER=cliweb") &&
+      entrypoint.includes("export LOGNAME=cliweb") &&
+      entrypoint.includes("gosu cliweb") &&
+      entrypoint.includes("--reuid=cliweb") &&
+      entrypoint.includes("--regid=cliweb"),
+    "the entrypoint should launch processes as cliweb"
+  );
+  assert.ok(
+    dockerfile.includes("ENV HOME=/home/cliweb") &&
+      dockerfile.includes("/home/cliweb/.local"),
+    "the container home should be /home/cliweb"
+  );
+  assert.match(server, /process\.env\.USER \|\| "cliweb"/);
 });
