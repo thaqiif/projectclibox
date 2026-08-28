@@ -1,0 +1,339 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { EditorView, keymap } from "@codemirror/view";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags as t } from "@lezer/highlight";
+import { javascript } from "@codemirror/lang-javascript";
+import { python } from "@codemirror/lang-python";
+import { json } from "@codemirror/lang-json";
+import { css } from "@codemirror/lang-css";
+import { html } from "@codemirror/lang-html";
+import { markdown } from "@codemirror/lang-markdown";
+import type { Extension } from "@codemirror/state";
+import { FileCode, Eye, Code2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { MarkdownRenderer } from "./MarkdownRenderer";
+import { HtmlRenderer } from "./HtmlRenderer";
+
+interface FileEditorProps {
+  content: string;
+  language: string;
+  isBinary: boolean;
+  readOnly?: boolean;
+  dirty?: boolean;
+  saving?: boolean;
+  onChange: (content: string) => void;
+  onSave?: () => void;
+}
+
+// Theme that uses CSS variables from the app
+const editorTheme = EditorView.theme({
+  "&": {
+    fontSize: "13px",
+    height: "100%",
+    backgroundColor: "hsl(var(--background))",
+    color: "hsl(var(--foreground))",
+  },
+  ".cm-content": {
+    fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
+    padding: "8px 0",
+    caretColor: "hsl(var(--primary))",
+  },
+  ".cm-gutters": {
+    backgroundColor: "hsl(var(--background))",
+    borderRight: "none",
+    color: "hsl(var(--muted-foreground))",
+  },
+  ".cm-lineNumbers .cm-gutterElement": {
+    padding: "0 8px 0 16px",
+  },
+  ".cm-activeLineGutter": {
+    backgroundColor: "hsl(var(--accent))",
+  },
+  ".cm-activeLine": {
+    backgroundColor: "hsl(var(--accent) / 0.5)",
+  },
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
+    {
+      backgroundColor: "hsl(var(--primary) / 0.3) !important",
+    },
+  "&.cm-focused .cm-cursor": {
+    borderLeftColor: "hsl(var(--primary))",
+    borderLeftWidth: "2px",
+  },
+  ".cm-scroller": {
+    overflow: "auto",
+  },
+  ".cm-foldGutter": {
+    color: "hsl(var(--muted-foreground))",
+  },
+  ".cm-tooltip": {
+    backgroundColor: "hsl(var(--popover))",
+    boxShadow: "0 4px 12px hsl(var(--foreground) / 0.15)",
+    color: "hsl(var(--popover-foreground))",
+  },
+  ".cm-tooltip-autocomplete": {
+    "& > ul > li[aria-selected]": {
+      backgroundColor: "hsl(var(--accent))",
+      color: "hsl(var(--accent-foreground))",
+    },
+  },
+  ".cm-panels": {
+    backgroundColor: "hsl(var(--muted))",
+  },
+  ".cm-searchMatch": {
+    backgroundColor: "hsl(var(--primary) / 0.2)",
+    outline: "1px solid hsl(var(--primary) / 0.4)",
+  },
+  ".cm-searchMatch.cm-searchMatch-selected": {
+    backgroundColor: "hsl(var(--primary) / 0.4)",
+  },
+});
+
+// Syntax highlighting that adapts to both light and dark themes
+const highlightStyle = HighlightStyle.define([
+  { tag: t.keyword, color: "hsl(var(--primary))" },
+  {
+    tag: [t.name, t.deleted, t.character, t.macroName],
+    color: "hsl(var(--foreground))",
+  },
+  { tag: [t.propertyName], color: "#7dd3fc" }, // sky-300
+  { tag: [t.function(t.variableName), t.labelName], color: "#c4b5fd" }, // violet-300
+  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: "#fcd34d" }, // amber-300
+  { tag: [t.definition(t.name), t.separator], color: "hsl(var(--foreground))" },
+  {
+    tag: [
+      t.typeName,
+      t.className,
+      t.number,
+      t.changed,
+      t.annotation,
+      t.modifier,
+      t.self,
+      t.namespace,
+    ],
+    color: "#f9a8d4", // pink-300
+  },
+  {
+    tag: [
+      t.operator,
+      t.operatorKeyword,
+      t.url,
+      t.escape,
+      t.regexp,
+      t.special(t.string),
+    ],
+    color: "#67e8f9", // cyan-300
+  },
+  {
+    tag: [t.meta, t.comment],
+    color: "hsl(var(--muted-foreground))",
+    fontStyle: "italic",
+  },
+  { tag: t.strong, fontWeight: "bold" },
+  { tag: t.emphasis, fontStyle: "italic" },
+  { tag: t.strikethrough, textDecoration: "line-through" },
+  { tag: t.link, color: "#67e8f9", textDecoration: "underline" },
+  { tag: t.heading, fontWeight: "bold", color: "hsl(var(--primary))" },
+  { tag: [t.atom, t.bool], color: "#f9a8d4" }, // pink-300
+  { tag: [t.processingInstruction, t.string, t.inserted], color: "#86efac" }, // green-300
+  { tag: t.invalid, color: "#fca5a5" }, // red-300
+]);
+
+function getLanguageExtension(language: string): Extension | null {
+  switch (language) {
+    case "javascript":
+      return javascript({ jsx: true });
+    case "typescript":
+      return javascript({ jsx: true, typescript: true });
+    case "python":
+      return python();
+    case "json":
+      return json();
+    case "css":
+    case "scss":
+      return css();
+    case "html":
+    case "xml":
+      return html();
+    case "markdown":
+      return markdown();
+    default:
+      return null;
+  }
+}
+
+export function FileEditor({
+  content,
+  language,
+  isBinary,
+  readOnly = false,
+  dirty = false,
+  saving = false,
+  onChange,
+  onSave,
+}: FileEditorProps) {
+  const extensions = useMemo(() => {
+    const langExt = getLanguageExtension(language);
+    const baseExtensions: Extension[] = [
+      editorTheme,
+      syntaxHighlighting(highlightStyle),
+      EditorView.lineWrapping,
+    ];
+
+    if (onSave) {
+      baseExtensions.push(
+        keymap.of([
+          {
+            key: "Mod-s",
+            run: () => {
+              onSave();
+              return true;
+            },
+          },
+        ])
+      );
+    }
+
+    if (langExt) {
+      baseExtensions.push(langExt);
+    }
+
+    return baseExtensions;
+  }, [language, onSave]);
+  const [previewMode, setPreviewMode] = useState(false);
+  const isMarkdown = language === "markdown";
+  const isHtml = language === "html";
+  const hasPreview = isMarkdown || isHtml;
+
+  useEffect(() => {
+    if (!hasPreview) {
+      const frame = requestAnimationFrame(() => setPreviewMode(false));
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [hasPreview]);
+
+  if (isBinary) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
+        <FileCode className="text-muted-foreground/70 h-4 w-4" />
+        <p className="ui-label">Binary file</p>
+        <p className="ui-meta">no preview available</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-background flex h-full w-full flex-col overflow-hidden">
+      <div className="glass glass-edge-bottom relative z-10 flex h-8 shrink-0 items-stretch justify-between">
+        <div className="flex items-center px-2.5">
+          <span className="ui-label">
+            {"//"}
+            {language || "plaintext"}
+          </span>
+        </div>
+        <div className="flex items-stretch">
+          {hasPreview && (
+            <>
+              <button
+                onClick={() => setPreviewMode(false)}
+                title={previewMode ? "Show source" : "Source"}
+                className={cn(
+                  "relative flex items-center gap-1 px-2.5 text-[0.75rem] font-medium transition-colors",
+                  previewMode
+                    ? "text-muted-foreground hover:text-foreground"
+                    : "bg-background text-foreground"
+                )}
+              >
+                <Code2 className="h-3 w-3" />
+                source
+                {!previewMode && (
+                  <span className="bg-primary absolute inset-x-0 bottom-0 h-px" />
+                )}
+              </button>
+              <button
+                onClick={() => setPreviewMode(true)}
+                title={previewMode ? "Preview" : "Show preview"}
+                className={cn(
+                  "relative flex items-center gap-1 px-2.5 text-[0.75rem] font-medium transition-colors",
+                  previewMode
+                    ? "bg-background text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Eye className="h-3 w-3" />
+                preview
+                {previewMode && (
+                  <span className="bg-primary absolute inset-x-0 bottom-0 h-px" />
+                )}
+              </button>
+            </>
+          )}
+          {onSave && (
+            <>
+              <div className="border-[var(--fill-2)] flex items-center gap-1.5 border-l px-2.5">
+                <span
+                  className={cn(
+                    "",
+                    dirty ? "text-status-waiting" : "text-status-running"
+                  )}
+                >
+                  {dirty ? "modified ●" : "saved ●"}
+                </span>
+              </div>
+              <button
+                onClick={onSave}
+                disabled={saving}
+                title="Save (Mod-s)"
+                className={cn(
+                  "border-[var(--fill-2)] flex items-center gap-1 border-l px-2.5 text-[0.75rem] font-medium transition-colors",
+                  saving
+                    ? "text-muted-foreground opacity-50"
+                    : "text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                )}
+              >
+                save ❯
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {previewMode && isMarkdown ? (
+          <MarkdownRenderer content={content} />
+        ) : previewMode && isHtml ? (
+          <HtmlRenderer content={content} />
+        ) : (
+          <CodeMirror
+            value={content}
+            height="100%"
+            theme="none"
+            extensions={extensions}
+            onChange={onChange}
+            readOnly={readOnly}
+            basicSetup={{
+              lineNumbers: true,
+              highlightActiveLineGutter: true,
+              highlightActiveLine: true,
+              foldGutter: true,
+              dropCursor: true,
+              allowMultipleSelections: true,
+              indentOnInput: true,
+              bracketMatching: true,
+              closeBrackets: true,
+              autocompletion: true,
+              rectangularSelection: true,
+              crosshairCursor: false,
+              highlightSelectionMatches: true,
+              searchKeymap: true,
+            }}
+            className="h-full [&_.cm-editor]:h-full [&_.cm-scroller]:!overflow-auto"
+          />
+        )}
+      </div>
+    </div>
+  );
+}

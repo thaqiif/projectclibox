@@ -1,0 +1,15 @@
+# Local environment — copy .env.example to .env and edit.
+# Never commit .env: it may hold API keys for the AI agents.
+.env
+
+# Local tooling / editor state
+.claude/
+node_modules/
+**/node_modules/
+**/.next/
+**/.turbo/
+agent-os/*.db*
+agent-os/.agent-os/
+agent-os/.env.local
+workspaces/*
+!workspaces/.gitkeep

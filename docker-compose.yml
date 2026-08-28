@@ -1,0 +1,29 @@
+services:
+  agent-os:
+    build:
+      context: .
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      AGENT_OS_PORT: 3011
+      SHELL: /bin/bash
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      # User-local package installs are written below /home/agent, which is a
+      # named volume and therefore survives container recreation and rebuilds.
+      NPM_CONFIG_PREFIX: /home/agent/.local
+      PIP_USER: "1"
+      PYTHONUSERBASE: /home/agent/.local
+    ports:
+      # Localhost-only is the safe default. Set HOST_BIND=0.0.0.0 only when
+      # you intentionally want to reach the UI from another device.
+      - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3011}:3011"
+    volumes:
+      - agent_os_home:/home/agent
+      - ${WORKSPACE_DIR:-./workspaces}:/workspaces
+
+volumes:
+  agent_os_home:

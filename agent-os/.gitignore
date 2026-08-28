@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+coverage/
+.cache/
+
+# Databases (local working copies)
+.mem.db
+.mem.db-wal
+.mem.db-shm
+agent-os.db
+agent-os.db-wal
+agent-os.db-shm
+
+# TypeScript
+*.tsbuildinfo
+
+# Vercel
+.vercel
+
+# Local docs/plans (but allow docs/setup and docs/issues for public docs)
+docs/*
+!docs/setup/
+!docs/issues/
+.mcp.json
+.git-evening
+
+# Private development notes (open source repo)
+CLAUDE.md
+master.md
+progress.md
+.git-evening

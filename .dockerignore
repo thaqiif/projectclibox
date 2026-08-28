@@ -1,0 +1,10 @@
+.env
+.git
+.claude
+node_modules
+**/node_modules
+**/.next
+**/.turbo
+README.md
+agent-os/screenshot-v2.png
+agent-os/docs

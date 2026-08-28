@@ -1,0 +1,11 @@
+{
+  "name": "agentos-docker",
+  "private": true,
+  "scripts": {
+    "lint": "cd agent-os && npm run lint",
+    "test": "cd agent-os && npm test"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}
