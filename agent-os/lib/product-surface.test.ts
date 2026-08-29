@@ -96,7 +96,7 @@ test("the product is branded CLIWeb", () => {
   }
 });
 
-test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
+test("Homebrew is bootstrapped into the persistent CLIWeb host directory", () => {
   const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
   const compose = readFileSync(
     join(process.cwd(), "..", "docker-compose.yml"),
@@ -110,6 +110,7 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
     join(process.cwd(), "..", "docker-brew-bootstrap.sh"),
     "utf8"
   );
+  const envExample = readFileSync(join(process.cwd(), "..", ".env.example"), "utf8");
 
   assert.match(dockerfile, /\sfile\s+\\/, "the image is missing Homebrew's file dependency");
   assert.ok(
@@ -129,21 +130,23 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
     "compose should expose Homebrew's supported prefix"
   );
   assert.ok(
-    compose.includes("source: cliweb_home") &&
-      compose.includes("target: /home/linuxbrew/.linuxbrew") &&
-      compose.includes("subpath: brew"),
-    "the home volume's Brew directory should also mount at Homebrew's supported prefix"
+    compose.includes("source: ${CLIWEB_HOME_DIR:-/home/cliweb}") &&
+      compose.includes("target: /home/cliweb") &&
+      compose.includes("source: ${CLIWEB_HOME_DIR:-/home/cliweb}/brew") &&
+      compose.includes("target: /home/linuxbrew/.linuxbrew"),
+    "the configured host directory and its Brew folder should be bind-mounted"
   );
   assert.ok(
-    compose.includes("name: ${CLIWEB_HOME_VOLUME_NAME:-cliweb_home}") &&
+    !/^volumes:/m.test(compose) &&
+      !compose.includes("cliweb_home") &&
       !compose.includes("cliweb_brew"),
-    "home and Brew data should share one stable physical volume"
+    "persistence should not use Docker-managed named volumes"
   );
   assert.ok(
-    compose.includes("cliweb-volume-init:") &&
-      compose.includes('entrypoint: ["mkdir", "-p", "/home/cliweb/brew"]') &&
-      compose.includes("condition: service_completed_successfully"),
-    "a fresh home volume should create the Brew subdirectory before it is mounted"
+    !compose.includes("cliweb-volume-init:") &&
+      compose.includes("create_host_path: true") &&
+      envExample.includes("CLIWEB_HOME_DIR=/home/cliweb"),
+    "Compose should create the configurable host directories without an init service"
   );
   assert.ok(
     entrypoint.includes(

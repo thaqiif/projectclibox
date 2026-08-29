@@ -1,18 +1,7 @@
 services:
-  cliweb-volume-init:
-    build:
-      context: .
-    entrypoint: ["mkdir", "-p", "/home/cliweb/brew"]
-    restart: "no"
-    volumes:
-      - cliweb_home:/home/cliweb
-
   cliweb:
     build:
       context: .
-    depends_on:
-      cliweb-volume-init:
-        condition: service_completed_successfully
     restart: unless-stopped
     init: true
     env_file:
@@ -27,7 +16,7 @@ services:
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
       # User-local package installs are written below /home/cliweb, which is a
-      # named volume and therefore survives container recreation and rebuilds.
+      # host bind mount and therefore survives container recreation and rebuilds.
       NPM_CONFIG_PREFIX: /home/cliweb/.local
       PIP_USER: "1"
       PYTHONUSERBASE: /home/cliweb/.local
@@ -36,14 +25,14 @@ services:
       # you intentionally want to reach the UI from another device.
       - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3011}:3011"
     volumes:
-      - cliweb_home:/home/cliweb
-      - type: volume
-        source: cliweb_home
+      - type: bind
+        source: ${CLIWEB_HOME_DIR:-/home/cliweb}
+        target: /home/cliweb
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ${CLIWEB_HOME_DIR:-/home/cliweb}/brew
         target: /home/linuxbrew/.linuxbrew
-        volume:
-          subpath: brew
+        bind:
+          create_host_path: true
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces
-
-volumes:
-  cliweb_home:
-    name: ${CLIWEB_HOME_VOLUME_NAME:-cliweb_home}

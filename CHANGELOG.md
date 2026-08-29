@@ -4,7 +4,7 @@
 
 ### Changed
 
-- Consolidated CLIWeb home and Homebrew persistence into one stable `cliweb_home` volume while retaining Homebrew's bottle-compatible Linux prefix.
+- Replaced Docker-managed home and Brew volumes with the configurable `CLIWEB_HOME_DIR` host bind mount while retaining Homebrew's bottle-compatible Linux prefix.
 
 ### Fixed
 
