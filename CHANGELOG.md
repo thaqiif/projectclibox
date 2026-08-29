@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Assigned stable physical names to the home and Brew volumes so Compose project-name changes no longer select empty volumes.
 - Mounted persistent Homebrew data at its supported Linux bottle prefix while retaining `/home/cliweb/brew` as an alias.
 - Replaced the `/usr/local/bin/brew` symlink with a launcher so Homebrew no longer infers `/usr/local` as its prefix.
 - Standardized the container locale on `C.UTF-8` to prevent locale initialization errors.

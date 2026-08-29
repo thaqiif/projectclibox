@@ -33,4 +33,6 @@ services:
 
 volumes:
   cliweb_home:
+    name: ${CLIWEB_HOME_VOLUME_NAME:-cliweb_home}
   cliweb_brew:
+    name: ${CLIWEB_BREW_VOLUME_NAME:-cliweb_brew}

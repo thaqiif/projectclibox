@@ -136,6 +136,11 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
     "the Brew volume should be persistent, use the supported prefix, and expose the requested home path"
   );
   assert.ok(
+    compose.includes("name: ${CLIWEB_BREW_VOLUME_NAME:-cliweb_brew}") &&
+      compose.includes("name: ${CLIWEB_HOME_VOLUME_NAME:-cliweb_home}"),
+    "physical volume names should remain stable across Compose project names"
+  );
+  assert.ok(
     entrypoint.includes(
       'BREW_STORAGE="${CLIWEB_BREW_PREFIX:-/home/linuxbrew/.linuxbrew}"'
     ),
