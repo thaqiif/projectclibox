@@ -14,9 +14,9 @@ fi
 
 mkdir -p "${brew_storage}"
 
-# Copy the former home-volume installation into the dedicated Brew volume once.
-# This keeps Cellar and all user-installed data while moving Brew to the prefix
-# required by Linux bottles.
+# Seed an empty persisted Brew directory from the image snapshot. The same
+# directory is mounted at /home/cliweb/brew and at the prefix required by Linux
+# bottles.
 if [ ! -f "${storage_marker}" ]; then
     if [ -n "${brew_legacy}" ] && [ -d "${brew_legacy}" ]; then
         cp -a "${brew_legacy}/." "${brew_storage}/"

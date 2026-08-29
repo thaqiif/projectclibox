@@ -1,7 +1,18 @@
 services:
+  cliweb-volume-init:
+    build:
+      context: .
+    entrypoint: ["mkdir", "-p", "/home/cliweb/brew"]
+    restart: "no"
+    volumes:
+      - cliweb_home:/home/cliweb
+
   cliweb:
     build:
       context: .
+    depends_on:
+      cliweb-volume-init:
+        condition: service_completed_successfully
     restart: unless-stopped
     init: true
     env_file:
@@ -26,13 +37,13 @@ services:
       - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3011}:3011"
     volumes:
       - cliweb_home:/home/cliweb
-      - cliweb_brew:/home/linuxbrew/.linuxbrew
-      - cliweb_brew:/home/cliweb/brew
-      - cliweb_home:/mnt/cliweb-home:ro
+      - type: volume
+        source: cliweb_home
+        target: /home/linuxbrew/.linuxbrew
+        volume:
+          subpath: brew
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces
 
 volumes:
   cliweb_home:
     name: ${CLIWEB_HOME_VOLUME_NAME:-cliweb_home}
-  cliweb_brew:
-    name: ${CLIWEB_BREW_VOLUME_NAME:-cliweb_brew}

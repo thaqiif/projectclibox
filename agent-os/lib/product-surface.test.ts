@@ -129,16 +129,21 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
     "compose should expose Homebrew's supported prefix"
   );
   assert.ok(
-    compose.includes("- cliweb_brew:/home/linuxbrew/.linuxbrew") &&
-      compose.includes("- cliweb_brew:/home/cliweb/brew") &&
-      compose.includes("- cliweb_home:/mnt/cliweb-home:ro") &&
-      compose.includes("cliweb_brew:"),
-    "the Brew volume should be persistent, use the supported prefix, and expose the requested home path"
+    compose.includes("source: cliweb_home") &&
+      compose.includes("target: /home/linuxbrew/.linuxbrew") &&
+      compose.includes("subpath: brew"),
+    "the home volume's Brew directory should also mount at Homebrew's supported prefix"
   );
   assert.ok(
-    compose.includes("name: ${CLIWEB_BREW_VOLUME_NAME:-cliweb_brew}") &&
-      compose.includes("name: ${CLIWEB_HOME_VOLUME_NAME:-cliweb_home}"),
-    "physical volume names should remain stable across Compose project names"
+    compose.includes("name: ${CLIWEB_HOME_VOLUME_NAME:-cliweb_home}") &&
+      !compose.includes("cliweb_brew"),
+    "home and Brew data should share one stable physical volume"
+  );
+  assert.ok(
+    compose.includes("cliweb-volume-init:") &&
+      compose.includes('entrypoint: ["mkdir", "-p", "/home/cliweb/brew"]') &&
+      compose.includes("condition: service_completed_successfully"),
+    "a fresh home volume should create the Brew subdirectory before it is mounted"
   );
   assert.ok(
     entrypoint.includes(

@@ -8,7 +8,6 @@ PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 BREW_STORAGE="${CLIWEB_BREW_PREFIX:-/home/linuxbrew/.linuxbrew}"
 BREW_SOURCE="${CLIWEB_BREW_SOURCE:-/opt/cliweb-brew}"
-BREW_LEGACY="${CLIWEB_BREW_LEGACY:-/mnt/cliweb-home/brew}"
 
 if [ "$(id -g cliweb)" != "${PGID}" ]; then
     groupmod -o -g "${PGID}" cliweb
@@ -40,12 +39,11 @@ export LOGNAME=cliweb
 # the remapped user. /opt dependencies remain root-owned and read-only.
 chown -R cliweb:cliweb "${HOME}"
 
-# Homebrew's dedicated volume is mounted at its supported Linux prefix and is
-# also visible at /home/cliweb/brew. The image snapshot avoids requiring a
+# The Brew directory inside the persisted home volume is mounted again at
+# Homebrew's supported Linux prefix. The image snapshot avoids requiring a
 # network connection during the first container start.
 CLIWEB_BREW_PREFIX="${BREW_STORAGE}" \
 CLIWEB_BREW_SOURCE="${BREW_SOURCE}" \
-CLIWEB_BREW_LEGACY="${BREW_LEGACY}" \
     /usr/local/libexec/cliweb-brew-bootstrap
 chown -R cliweb:cliweb "${BREW_STORAGE}"
 

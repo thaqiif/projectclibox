@@ -2,6 +2,10 @@
 
 ## 2026-08-29
 
+### Changed
+
+- Consolidated CLIWeb home and Homebrew persistence into one stable `cliweb_home` volume while retaining Homebrew's bottle-compatible Linux prefix.
+
 ### Fixed
 
 - Assigned stable physical names to the home and Brew volumes so Compose project-name changes no longer select empty volumes.
