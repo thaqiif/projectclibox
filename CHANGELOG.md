@@ -24,6 +24,7 @@
 - Standardized the container locale on `C.UTF-8` to prevent locale initialization errors.
 - Persisted global npm installs and restored nanobrew command links across CLIWeb redeploys.
 - Switched the runtime image to Debian Trixie so nanobrew Linux bottles requiring glibc 2.38 can run.
+- Fixed ownership of the mounted `/workspaces` tree so CLIWeb can create and modify workspace directories.
 
 ### Removed
 

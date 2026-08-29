@@ -44,9 +44,9 @@ export PYTHONUSERBASE="${PYTHONUSERBASE:-${HOME}/.local}"
 export USER=cliweb
 export LOGNAME=cliweb
 
-# Ensure the persisted volumes and the app's writable Next cache are usable by
-# the remapped user. /opt dependencies remain root-owned and read-only.
-chown -R cliweb:cliweb "${HOME}" "${NANOBREW_ROOT}"
+# Ensure the persisted volumes and the mounted workspace are usable by the
+# remapped user. /opt dependencies remain root-owned and read-only.
+chown -R cliweb:cliweb "${HOME}" "${NANOBREW_ROOT}" /workspaces
 
 # nanobrew stores its package database, cache, Cellar, and command links below
 # its fixed /opt/nanobrew root. The root is a host bind mount, so nb init is

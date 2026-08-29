@@ -429,3 +429,16 @@ test("the container runtime user is cliweb", () => {
   );
   assert.match(server, /buildCliwebEnvironment/);
 });
+
+test("the mounted workspaces are writable by cliweb", () => {
+  const entrypoint = readFileSync(
+    join(process.cwd(), "..", "docker-entrypoint.sh"),
+    "utf8"
+  );
+
+  assert.match(
+    entrypoint,
+    /chown -R cliweb:cliweb .*\/workspaces/,
+    "startup should align the workspace bind mount with the runtime user"
+  );
+});
