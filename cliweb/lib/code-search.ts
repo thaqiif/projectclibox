@@ -102,7 +102,7 @@ export function searchCode(
     // ENOENT = command not found
     if ((error as any).code === "ENOENT") {
       throw new Error(
-        "ripgrep (rg) not found. Install with: brew install ripgrep"
+        "ripgrep (rg) not found. Install with: nb install ripgrep"
       );
     }
     // Other errors - return empty

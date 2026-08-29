@@ -6,8 +6,8 @@ set -euo pipefail
 # then launched as the unprivileged `cliweb` user.
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
-BREW_STORAGE="${CLIWEB_BREW_PREFIX:-/home/linuxbrew/.linuxbrew}"
-BREW_SOURCE="${CLIWEB_BREW_SOURCE:-/opt/cliweb-brew}"
+NANOBREW_ROOT="/opt/nanobrew"
+NANOBREW_BIN="${CLIWEB_NANOBREW_BIN:-/usr/local/bin/nb}"
 
 if [ "$(id -g cliweb)" != "${PGID}" ]; then
     groupmod -o -g "${PGID}" cliweb
@@ -22,10 +22,9 @@ mkdir -p \
     "${HOME}/.local/bin" \
     "${HOME}/.local/lib" \
     "${HOME}/.cache" \
-    "${HOME}/.cache/Homebrew" \
     "${HOME}/.gitstate" \
     "${HOME}/.ssh" \
-    "${BREW_STORAGE}"
+    "${NANOBREW_ROOT}"
 chmod 700 "${HOME}/.ssh"
 
 # npm -g and pip --user both land in the persisted home volume. This is the
@@ -35,22 +34,18 @@ export PYTHONUSERBASE="${PYTHONUSERBASE:-${HOME}/.local}"
 export USER=cliweb
 export LOGNAME=cliweb
 
-# Ensure the persisted volume and the app's writable Next cache are usable by
+# Ensure the persisted volumes and the app's writable Next cache are usable by
 # the remapped user. /opt dependencies remain root-owned and read-only.
-chown -R cliweb:cliweb "${HOME}"
+chown -R cliweb:cliweb "${HOME}" "${NANOBREW_ROOT}"
 
-# The Brew directory inside the persisted home volume is mounted again at
-# Homebrew's supported Linux prefix. The image snapshot avoids requiring a
-# network connection during the first container start.
-CLIWEB_BREW_PREFIX="${BREW_STORAGE}" \
-CLIWEB_BREW_SOURCE="${BREW_SOURCE}" \
-    /usr/local/libexec/cliweb-brew-bootstrap
-chown -R cliweb:cliweb "${BREW_STORAGE}"
+# nanobrew stores its package database, cache, Cellar, and command links below
+# its fixed /opt/nanobrew root. The root is a host bind mount, so nb init is
+# safe to repeat after container recreation and package installs persist.
+CLIWEB_NANOBREW_BIN="${NANOBREW_BIN}" \
+    /usr/local/libexec/cliweb-nanobrew-bootstrap
+chown -R cliweb:cliweb "${NANOBREW_ROOT}"
 
-export HOMEBREW_PREFIX="${BREW_STORAGE}"
-export HOMEBREW_REPOSITORY="${BREW_STORAGE}"
-export HOMEBREW_CACHE="${HOME}/.cache/Homebrew"
-export PATH="${BREW_STORAGE}/bin:${HOME}/brew/bin:${BREW_STORAGE}/sbin:${HOME}/brew/sbin:${NPM_CONFIG_PREFIX}/bin:${HOME}/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="${NANOBREW_ROOT}/prefix/bin:${NPM_CONFIG_PREFIX}/bin:${HOME}/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 mkdir -p "${CLIWEB_REPO:-/opt/cliweb}/.next/cache"
 chown -R cliweb:cliweb "${CLIWEB_REPO:-/opt/cliweb}/.next/cache"
 

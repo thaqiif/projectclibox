@@ -9,14 +9,15 @@ services:
         required: false
     environment:
       CLIWEB_PORT: 3011
-      CLIWEB_BREW_PREFIX: /home/linuxbrew/.linuxbrew
+      CLIWEB_NANOBREW_BIN: /usr/local/bin/nb
+      NANOBREW_NO_TELEMETRY: "1"
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
       SHELL: /bin/bash
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
-      # User-local package installs are written below /home/cliweb, which is a
-      # host bind mount and therefore survives container recreation and rebuilds.
+      # User-local package installs and nanobrew state are written below the
+      # host bind mount and therefore survive container recreation and rebuilds.
       NPM_CONFIG_PREFIX: /home/cliweb/.local
       PIP_USER: "1"
       PYTHONUSERBASE: /home/cliweb/.local
@@ -31,8 +32,8 @@ services:
         bind:
           create_host_path: true
       - type: bind
-        source: /home/cliweb/brew
-        target: /home/linuxbrew/.linuxbrew
+        source: /home/cliweb/nanobrew
+        target: /opt/nanobrew
         bind:
           create_host_path: true
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces

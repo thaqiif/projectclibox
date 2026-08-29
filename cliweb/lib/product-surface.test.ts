@@ -214,7 +214,7 @@ test("the application icon represents CLIWeb", () => {
   }
 });
 
-test("Homebrew is bootstrapped into the persistent CLIWeb host directory", () => {
+test("nanobrew is installed into the persistent CLIWeb host directory", () => {
   const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
   const compose = readFileSync(
     join(process.cwd(), "..", "docker-compose.yml"),
@@ -225,39 +225,43 @@ test("Homebrew is bootstrapped into the persistent CLIWeb host directory", () =>
     "utf8"
   );
   const bootstrap = readFileSync(
-    join(process.cwd(), "..", "docker-brew-bootstrap.sh"),
+    join(process.cwd(), "..", "docker-nanobrew-bootstrap.sh"),
     "utf8"
   );
   const envExample = readFileSync(join(process.cwd(), "..", ".env.example"), "utf8");
 
-  assert.match(dockerfile, /\sfile\s+\\/, "the image is missing Homebrew's file dependency");
   assert.ok(
-    dockerfile.includes("CLIWEB_BREW_PREFIX=/home/linuxbrew/.linuxbrew"),
-    "the image should use Homebrew's real supported Linux prefix"
+    dockerfile.includes("COPY --from=nanobrew/nb /nb /usr/local/bin/nb"),
+    "the image should use nanobrew's prebuilt Docker binary"
   );
   assert.ok(
-    dockerfile.includes("HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew"),
-    "the image should use Homebrew's supported Linux prefix for bottles"
+    dockerfile.includes("/opt/nanobrew") &&
+      dockerfile.includes("NANOBREW_NO_TELEMETRY=1"),
+    "the image should configure nanobrew's persistent root"
   );
   assert.ok(
-    dockerfile.includes("COPY docker-brew-command.sh /usr/local/bin/brew"),
-    "the image should install the Brew launcher as a regular command"
+    compose.includes("source: /home/cliweb/nanobrew") &&
+      compose.includes("target: /opt/nanobrew"),
+    "nanobrew's fixed data root should be a host bind mount"
   );
   assert.ok(
-    compose.includes("CLIWEB_BREW_PREFIX: /home/linuxbrew/.linuxbrew"),
-    "compose should expose Homebrew's supported prefix"
+    entrypoint.includes('NANOBREW_ROOT="/opt/nanobrew"') &&
+      entrypoint.includes("/usr/local/libexec/cliweb-nanobrew-bootstrap") &&
+      entrypoint.includes('export PATH="${NANOBREW_ROOT}/prefix/bin:'),
+    "the entrypoint should initialize nanobrew and expose installed commands"
   );
   assert.ok(
-    compose.includes("source: /home/cliweb") &&
-      compose.includes("target: /home/cliweb") &&
-      compose.includes("source: /home/cliweb/brew") &&
-      compose.includes("target: /home/linuxbrew/.linuxbrew"),
-    "the persistent host directory and its Brew folder should be bind-mounted"
+    dockerfile.includes(
+      "COPY docker-nanobrew-bootstrap.sh /usr/local/libexec/cliweb-nanobrew-bootstrap"
+    ) && bootstrap.includes('"${nanobrew_bin}" init'),
+    "the image should run the tested nanobrew initializer"
   );
   assert.ok(
     !/^volumes:/m.test(compose) &&
       !compose.includes("cliweb_home") &&
-      !compose.includes("cliweb_brew"),
+      !compose.includes("cliweb_brew") &&
+      !compose.includes("/home/cliweb/brew") &&
+      !compose.includes("/home/linuxbrew/.linuxbrew"),
     "persistence should not use Docker-managed named volumes"
   );
   assert.ok(
@@ -267,30 +271,15 @@ test("Homebrew is bootstrapped into the persistent CLIWeb host directory", () =>
       !envExample.includes("CLIWEB_HOME_DIR"),
     "Coolify-safe host paths should be literal and created without an init service"
   );
-  assert.ok(
-    entrypoint.includes(
-      'BREW_STORAGE="${CLIWEB_BREW_PREFIX:-/home/linuxbrew/.linuxbrew}"'
-    ),
-    "the entrypoint should resolve Homebrew at its supported Linux prefix"
-  );
-  assert.ok(
-    entrypoint.includes('export HOMEBREW_PREFIX="${BREW_STORAGE}"'),
-    "the entrypoint should configure Homebrew to use its supported prefix"
-  );
-  assert.ok(
-    dockerfile.includes(
-      "COPY docker-brew-bootstrap.sh /usr/local/libexec/cliweb-brew-bootstrap"
-    ) && entrypoint.includes("/usr/local/libexec/cliweb-brew-bootstrap"),
-    "the image should run the tested Homebrew bootstrap"
-  );
-  assert.ok(
-    bootstrap.includes('cp -a "${brew_source}/." "${brew_storage}/"'),
-    "Homebrew source should be copied directly into the prefix root"
-  );
   assert.doesNotMatch(
-    `${dockerfile}\n${entrypoint}`,
-    /ln -sfn? .*\/usr\/local\/bin\/brew/,
-    "Brew must not be symlinked into /usr/local because that changes its prefix"
+    `${dockerfile}\n${compose}\n${entrypoint}\n${bootstrap}`,
+    /\bbrew\b|\bhomebrew\b/i,
+    "the old Homebrew integration should be removed"
+  );
+  assert.match(
+    source("lib/code-search.ts"),
+    /nb install ripgrep/,
+    "missing ripgrep guidance should use nanobrew"
   );
 });
 

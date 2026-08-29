@@ -29,9 +29,10 @@ RUN apt-get update \
         util-linux \
     && rm -rf /var/lib/apt/lists/*
 
-# Keep a known-good Homebrew source snapshot in the image. The entrypoint
-# copies it into the persistent home volume on first start.
-RUN git clone --depth=1 https://github.com/Homebrew/brew.git /opt/cliweb-brew
+# nanobrew publishes a prebuilt static Linux binary for Docker. Its upstream
+# Linux integration uses the fixed /opt/nanobrew data tree, which is mounted
+# from the persistent CLIWeb host directory below.
+COPY --from=nanobrew/nb /nb /usr/local/bin/nb
 
 # Build the UI into /opt so the persisted home volume never masks build
 # artifacts when the image is rebuilt.
@@ -53,11 +54,10 @@ RUN useradd --create-home --home-dir /home/cliweb --shell /bin/bash --uid 1001 c
         /home/cliweb/.cache \
         /home/cliweb/.gitstate \
         /home/cliweb/.ssh \
-        /home/cliweb/brew \
-        /home/linuxbrew/.linuxbrew \
+        /opt/nanobrew \
         /workspaces \
     && chmod 700 /home/cliweb/.ssh \
-    && chown -R cliweb:cliweb /home/cliweb /home/linuxbrew
+    && chown -R cliweb:cliweb /home/cliweb /opt/nanobrew
 
 ENV HOME=/home/cliweb \
     LANG=C.UTF-8 \
@@ -65,27 +65,23 @@ ENV HOME=/home/cliweb \
     CLIWEB_HOME=/home/cliweb/.cliweb \
     CLIWEB_PORT=3011 \
     DB_PATH=/home/cliweb/.cliweb/cliweb.db \
-    CLIWEB_BREW_PREFIX=/home/linuxbrew/.linuxbrew \
-    CLIWEB_BREW_SOURCE=/opt/cliweb-brew \
-    HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew \
-    HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew \
-    HOMEBREW_CACHE=/home/cliweb/.cache/Homebrew \
+    CLIWEB_NANOBREW_BIN=/usr/local/bin/nb \
+    NANOBREW_NO_TELEMETRY=1 \
     NODE_ENV=production \
     NPM_CONFIG_PREFIX=/home/cliweb/.local \
     PIP_USER=1 \
     PYTHONUSERBASE=/home/cliweb/.local \
-    PATH=/home/linuxbrew/.linuxbrew/bin:/home/cliweb/brew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/cliweb/brew/sbin:/home/cliweb/.local/bin:/home/cliweb/.local/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PATH=/opt/nanobrew/prefix/bin:/home/cliweb/.local/bin:/home/cliweb/.local/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
     GIT_CONFIG_GLOBAL=/home/cliweb/.gitstate/config \
     PUID=1000 \
     PGID=1000
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-COPY docker-brew-bootstrap.sh /usr/local/libexec/cliweb-brew-bootstrap
-COPY docker-brew-command.sh /usr/local/bin/brew
+COPY docker-nanobrew-bootstrap.sh /usr/local/libexec/cliweb-nanobrew-bootstrap
 RUN chmod +x \
-    /usr/local/bin/brew \
+    /usr/local/bin/nb \
     /usr/local/bin/docker-entrypoint.sh \
-    /usr/local/libexec/cliweb-brew-bootstrap
+    /usr/local/libexec/cliweb-nanobrew-bootstrap
 
 WORKDIR /opt/cliweb
 EXPOSE 3011

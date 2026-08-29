@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Replaced the persistent Homebrew integration with nanobrew's prebuilt Docker binary and `/home/cliweb/nanobrew` host storage mounted at `/opt/nanobrew`.
 - Squashed database setup into one current baseline migration for fresh deployments.
 - Renamed the application source and runtime directory to `cliweb` and `/opt/cliweb`, standardized provider terminology, and introduced a CLIWeb browser-terminal icon.
 - Replaced Docker-managed home and Brew volumes with the Coolify-safe `/home/cliweb` host bind mount while retaining Homebrew's bottle-compatible Linux prefix.
@@ -19,6 +20,7 @@
 
 ### Removed
 
+- Removed Homebrew bootstrap, launcher, prefix environment, and persistence mount configuration.
 - Removed unused project launch-provider, model, and prompt fields from the baseline database schema, API, terminal records, and UI.
 
 ## 2026-08-28
