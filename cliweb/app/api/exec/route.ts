@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { buildCliwebEnvironment } from "@/lib/runtime-environment";
 
 const execAsync = promisify(exec);
 
@@ -20,16 +21,13 @@ export async function POST(request: NextRequest) {
     }
 
     const startTime = Date.now();
+    const environment = buildCliwebEnvironment();
 
     try {
       const { stdout, stderr } = await execAsync(command, {
         timeout: TIMEOUT,
-        shell: "/bin/zsh",
-        env: {
-          ...process.env,
-          PATH: `/usr/local/bin:/opt/homebrew/bin:${process.env.PATH}`,
-          HOME: process.env.HOME,
-        },
+        shell: environment.SHELL,
+        env: environment,
       });
 
       const duration = Date.now() - startTime;

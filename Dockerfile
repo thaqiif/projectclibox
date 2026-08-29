@@ -87,10 +87,12 @@ ENV HOME=/home/cliweb \
     CLIWEB_HOME=/home/cliweb/.cliweb \
     CLIWEB_PORT=3011 \
     DB_PATH=/home/cliweb/.cliweb/cliweb.db \
+    CLIWEB_NANOBREW_ROOT=/opt/nanobrew \
     CLIWEB_NANOBREW_BIN=/usr/local/bin/nb \
     NANOBREW_NO_TELEMETRY=1 \
     NODE_ENV=production \
     NPM_CONFIG_PREFIX=/home/cliweb/.local \
+    NPM_CONFIG_USERCONFIG=/home/cliweb/.npmrc \
     PIP_USER=1 \
     PYTHONUSERBASE=/home/cliweb/.local \
     PATH=/opt/nanobrew/prefix/bin:/home/cliweb/.local/bin:/home/cliweb/.local/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
@@ -100,10 +102,12 @@ ENV HOME=/home/cliweb \
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY docker-nanobrew-bootstrap.sh /usr/local/libexec/cliweb-nanobrew-bootstrap
+COPY docker-cliweb-persistent-env.sh /usr/local/libexec/cliweb-persistent-env
 RUN chmod +x \
     /usr/local/bin/nb \
     /usr/local/bin/docker-entrypoint.sh \
-    /usr/local/libexec/cliweb-nanobrew-bootstrap
+    /usr/local/libexec/cliweb-nanobrew-bootstrap \
+    /usr/local/libexec/cliweb-persistent-env
 
 WORKDIR /opt/cliweb
 EXPOSE 3011

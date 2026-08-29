@@ -26,7 +26,7 @@ test("initializes nanobrew in its persistent data root", () => {
   try {
     writeFileSync(
       fakeNanobrew,
-      '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$CLIWEB_TEST_LOG"\nmkdir -p "$CLIWEB_NANOBREW_ROOT/prefix/bin"\n',
+      '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$CLIWEB_TEST_LOG"\nmkdir -p "$CLIWEB_NANOBREW_ROOT/prefix/bin"\n',
       { mode: 0o755 }
     );
 
@@ -41,8 +41,49 @@ test("initializes nanobrew in its persistent data root", () => {
     });
 
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(readFileSync(invocationLog, "utf8"), "init\n");
+    assert.equal(readFileSync(invocationLog, "utf8"), "init\nlist --names\n");
     assert.ok(existsSync(root));
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("repairs links for packages already stored in the persistent root", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "cliweb-nanobrew-relink-"));
+  const root = join(fixture, "nanobrew");
+  const fakeNanobrew = join(fixture, "nb");
+  const invocationLog = join(fixture, "invocation.log");
+
+  try {
+    writeFileSync(
+      fakeNanobrew,
+      [
+        "#!/usr/bin/env bash",
+        'printf "%s\\n" "$*" >> "$CLIWEB_TEST_LOG"',
+        'if [ "$1" = "init" ]; then mkdir -p "$CLIWEB_NANOBREW_ROOT/prefix/bin"; fi',
+        'if [ "$1" = "list" ]; then printf "gh\\nnano\\n"; fi',
+        "",
+      ].join("\n"),
+      { mode: 0o755 }
+    );
+
+    const result = spawnSync("bash", [bootstrapScript], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CLIWEB_NANOBREW_ROOT: root,
+        CLIWEB_NANOBREW_BIN: fakeNanobrew,
+        CLIWEB_TEST_LOG: invocationLog,
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(readFileSync(invocationLog, "utf8").trim().split("\n"), [
+      "init",
+      "list --names",
+      "link gh",
+      "link nano",
+    ]);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }

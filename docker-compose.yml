@@ -9,6 +9,7 @@ services:
         required: false
     environment:
       CLIWEB_PORT: 3011
+      CLIWEB_NANOBREW_ROOT: /opt/nanobrew
       CLIWEB_NANOBREW_BIN: /usr/local/bin/nb
       NANOBREW_NO_TELEMETRY: "1"
       LANG: C.UTF-8
@@ -19,6 +20,7 @@ services:
       # User-local package installs and nanobrew state are written below the
       # host bind mount and therefore survive container recreation and rebuilds.
       NPM_CONFIG_PREFIX: /home/cliweb/.local
+      NPM_CONFIG_USERCONFIG: /home/cliweb/.npmrc
       PIP_USER: "1"
       PYTHONUSERBASE: /home/cliweb/.local
     ports:

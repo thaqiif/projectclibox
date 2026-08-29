@@ -6,8 +6,11 @@ set -euo pipefail
 # then launched as the unprivileged `cliweb` user.
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
-NANOBREW_ROOT="/opt/nanobrew"
+NANOBREW_ROOT="${CLIWEB_NANOBREW_ROOT:-/opt/nanobrew}"
 NANOBREW_BIN="${CLIWEB_NANOBREW_BIN:-/usr/local/bin/nb}"
+
+# Keep every shell entry point on the same persistent npm/nanobrew contract.
+. /usr/local/libexec/cliweb-persistent-env
 
 if [ "$(id -g cliweb)" != "${PGID}" ]; then
     groupmod -o -g "${PGID}" cliweb
@@ -27,6 +30,13 @@ mkdir -p \
     "${NANOBREW_ROOT}"
 chmod 700 "${HOME}/.ssh"
 
+for shell_rc in "${HOME}/.bashrc" "${HOME}/.profile"; do
+    touch "${shell_rc}"
+    if ! grep -Fqx ". /usr/local/libexec/cliweb-persistent-env" "${shell_rc}"; then
+        printf '\n# CLIWeb persistent package paths\n. /usr/local/libexec/cliweb-persistent-env\n' >> "${shell_rc}"
+    fi
+done
+
 # npm -g and pip --user both land in the persisted home volume. This is the
 # supported extension point for installing tools after the container starts.
 export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-${HOME}/.local}"
@@ -42,10 +52,15 @@ chown -R cliweb:cliweb "${HOME}" "${NANOBREW_ROOT}"
 # its fixed /opt/nanobrew root. The root is a host bind mount, so nb init is
 # safe to repeat after container recreation and package installs persist.
 CLIWEB_NANOBREW_BIN="${NANOBREW_BIN}" \
+CLIWEB_NANOBREW_ROOT="${NANOBREW_ROOT}" \
     /usr/local/libexec/cliweb-nanobrew-bootstrap
 chown -R cliweb:cliweb "${NANOBREW_ROOT}"
 
-export PATH="${NANOBREW_ROOT}/prefix/bin:${NPM_CONFIG_PREFIX}/bin:${HOME}/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Re-source after bootstrap so a custom prefix is reflected in PATH, then
+# persist npm's global prefix in the mounted user config as well as the
+# process environment. This covers npm invocations that bypass CLIWeb's PTY.
+. /usr/local/libexec/cliweb-persistent-env
+gosu cliweb /usr/local/bin/npm config set prefix "${NPM_CONFIG_PREFIX}" --location=user
 mkdir -p "${CLIWEB_REPO:-/opt/cliweb}/.next/cache"
 chown -R cliweb:cliweb "${CLIWEB_REPO:-/opt/cliweb}/.next/cache"
 

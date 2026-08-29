@@ -14,6 +14,7 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
+import { buildCliwebEnvironment } from "./runtime-environment";
 
 const execFileAsync = promisify(execFile);
 
@@ -39,13 +40,37 @@ export interface Terminal {
 
 async function tmux(args: string[]): Promise<string> {
   try {
-    const { stdout } = await execFileAsync("tmux", args);
+    const { stdout } = await execFileAsync("tmux", args, {
+      env: buildCliwebEnvironment(),
+    });
     return stdout;
   } catch {
     // No server running, or the terminal vanished between calls. Both are
     // ordinary states, not errors.
     return "";
   }
+}
+
+/**
+ * tmux servers keep their own environment. Explicitly seed each new session
+ * so a server created before a package install still sees persistent tools.
+ */
+export function tmuxSessionEnvironmentArgs(
+  input: Record<string, string | undefined> = process.env
+): string[] {
+  const environment = buildCliwebEnvironment(input);
+
+  return [
+    "PATH",
+    "HOME",
+    "NPM_CONFIG_PREFIX",
+    "NPM_CONFIG_USERCONFIG",
+    "PYTHONUSERBASE",
+    "CLIWEB_NANOBREW_ROOT",
+    "SHELL",
+    "USER",
+    "LOGNAME",
+  ].flatMap((key) => ["-e", `${key}=${environment[key]}`]);
 }
 
 /**
@@ -122,8 +147,21 @@ export async function terminalExists(name: string): Promise<boolean> {
  */
 export async function createTerminal(cwd: string): Promise<Terminal> {
   const name = `term-${randomUUID()}`;
+  const environment = buildCliwebEnvironment();
 
-  await execFileAsync("tmux", ["new-session", "-d", "-s", name, "-c", cwd]);
+  await execFileAsync(
+    "tmux",
+    [
+      "new-session",
+      "-d",
+      ...tmuxSessionEnvironmentArgs(environment),
+      "-s",
+      name,
+      "-c",
+      cwd,
+    ],
+    { env: environment }
+  );
 
   // Mouse mode makes tmux's own splits usable in the browser: scrolling,
   // pane focus and divider dragging all work without a prefix key.

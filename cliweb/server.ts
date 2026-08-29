@@ -3,6 +3,7 @@ import { parse } from "url";
 import next from "next";
 import { WebSocketServer, WebSocket } from "ws";
 import * as pty from "node-pty";
+import { buildCliwebEnvironment } from "./lib/runtime-environment";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "0.0.0.0";
@@ -46,27 +47,23 @@ app.prepare().then(() => {
   terminalWss.on("connection", (ws: WebSocket) => {
     let ptyProcess: pty.IPty;
     try {
-      const shell = process.env.SHELL || "/bin/zsh";
+      const shellEnv = buildCliwebEnvironment();
+      const shell = shellEnv.SHELL || "/bin/bash";
       // Pass the container environment through to the shell so user-provided
       // API keys and the persistent npm/pip install settings are available in
       // every terminal. Override the interactive values needed by xterm.
-      const shellEnv: { [key: string]: string } = {
-        ...(process.env as { [key: string]: string }),
-        PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
-        HOME: process.env.HOME || "/",
-        USER: process.env.USER || "cliweb",
-        SHELL: shell,
+      const terminalEnv: { [key: string]: string } = {
+        ...shellEnv,
         TERM: "xterm-256color",
         COLORTERM: "truecolor",
-        LANG: process.env.LANG || "C.UTF-8",
       };
 
       ptyProcess = pty.spawn(shell, [], {
         name: "xterm-256color",
         cols: 80,
         rows: 24,
-        cwd: process.env.HOME || "/",
-        env: shellEnv,
+        cwd: shellEnv.HOME,
+        env: terminalEnv,
       });
     } catch (err) {
       console.error("Failed to spawn pty:", err);

@@ -18,6 +18,7 @@
 - Mounted persistent Homebrew data at its supported Linux bottle prefix while retaining `/home/cliweb/brew` as an alias.
 - Replaced the `/usr/local/bin/brew` symlink with a launcher so Homebrew no longer infers `/usr/local` as its prefix.
 - Standardized the container locale on `C.UTF-8` to prevent locale initialization errors.
+- Persisted global npm installs and restored nanobrew command links across CLIWeb redeploys.
 
 ### Removed
 

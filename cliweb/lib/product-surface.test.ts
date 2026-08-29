@@ -6,10 +6,7 @@ import test from "node:test";
 const source = (relativePath: string) =>
   readFileSync(join(process.cwd(), relativePath), "utf8");
 const retiredProductStem = ["ag", "ent"].join("");
-const retiredIdentity = new RegExp(
-  `${retiredProductStem}(?:[-_ ]?os)?`,
-  "i"
-);
+const retiredIdentity = new RegExp(`${retiredProductStem}(?:[-_ ]?os)?`, "i");
 
 test("removed integrations are no longer shipped", () => {
   const removedPaths = [
@@ -117,7 +114,11 @@ test("the product is branded CLIWeb", () => {
 
   for (const relativePath of brandedFiles) {
     const contents = source(relativePath);
-    assert.match(contents, /CLIWeb/, `${relativePath} is missing CLIWeb branding`);
+    assert.match(
+      contents,
+      /CLIWeb/,
+      `${relativePath} is missing CLIWeb branding`
+    );
     assert.doesNotMatch(
       contents,
       retiredIdentity,
@@ -215,7 +216,10 @@ test("the application icon represents CLIWeb", () => {
 });
 
 test("nanobrew is installed into the persistent CLIWeb host directory", () => {
-  const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
+  const dockerfile = readFileSync(
+    join(process.cwd(), "..", "Dockerfile"),
+    "utf8"
+  );
   const compose = readFileSync(
     join(process.cwd(), "..", "docker-compose.yml"),
     "utf8"
@@ -228,7 +232,10 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
     join(process.cwd(), "..", "docker-nanobrew-bootstrap.sh"),
     "utf8"
   );
-  const envExample = readFileSync(join(process.cwd(), "..", ".env.example"), "utf8");
+  const envExample = readFileSync(
+    join(process.cwd(), "..", ".env.example"),
+    "utf8"
+  );
 
   assert.ok(
     dockerfile.includes("ARG NANOBREW_VERSION=0.1.208") &&
@@ -245,7 +252,8 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
   );
   assert.ok(
     dockerfile.includes("/opt/nanobrew") &&
-      dockerfile.includes("NANOBREW_NO_TELEMETRY=1"),
+      dockerfile.includes("NANOBREW_NO_TELEMETRY=1") &&
+      dockerfile.includes("CLIWEB_NANOBREW_ROOT=/opt/nanobrew"),
     "the image should configure nanobrew's persistent root"
   );
   assert.ok(
@@ -254,10 +262,13 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
     "nanobrew's fixed data root should be a host bind mount"
   );
   assert.ok(
-    entrypoint.includes('NANOBREW_ROOT="/opt/nanobrew"') &&
+    entrypoint.includes(
+      'NANOBREW_ROOT="${CLIWEB_NANOBREW_ROOT:-/opt/nanobrew}"'
+    ) &&
       entrypoint.includes("/usr/local/libexec/cliweb-nanobrew-bootstrap") &&
-      entrypoint.includes('export PATH="${NANOBREW_ROOT}/prefix/bin:'),
-    "the entrypoint should initialize nanobrew and expose installed commands"
+      bootstrap.includes("list --names") &&
+      bootstrap.includes('"${nanobrew_bin}" link "${package}"'),
+    "startup should initialize nanobrew, repair links, and expose installed commands"
   );
   assert.ok(
     dockerfile.includes(
@@ -292,8 +303,45 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
   );
 });
 
+test("global npm installs are configured in the persistent home", () => {
+  const dockerfile = readFileSync(
+    join(process.cwd(), "..", "Dockerfile"),
+    "utf8"
+  );
+  const compose = readFileSync(
+    join(process.cwd(), "..", "docker-compose.yml"),
+    "utf8"
+  );
+  const entrypoint = readFileSync(
+    join(process.cwd(), "..", "docker-entrypoint.sh"),
+    "utf8"
+  );
+
+  assert.ok(
+    dockerfile.includes("NPM_CONFIG_PREFIX=/home/cliweb/.local") &&
+      dockerfile.includes("NPM_CONFIG_USERCONFIG=/home/cliweb/.npmrc") &&
+      dockerfile.includes(
+        "COPY docker-cliweb-persistent-env.sh /usr/local/libexec/cliweb-persistent-env"
+      ),
+    "the image should point npm global installs at the mounted home"
+  );
+  assert.ok(
+    compose.includes("NPM_CONFIG_PREFIX: /home/cliweb/.local") &&
+      compose.includes("NPM_CONFIG_USERCONFIG: /home/cliweb/.npmrc"),
+    "compose should preserve the npm prefix contract"
+  );
+  assert.ok(
+    entrypoint.includes("npm config set prefix") &&
+      entrypoint.includes("cliweb-persistent-env"),
+    "startup should persist npm's prefix and shell environment"
+  );
+});
+
 test("the container uses an available UTF-8 locale", () => {
-  const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
+  const dockerfile = readFileSync(
+    join(process.cwd(), "..", "Dockerfile"),
+    "utf8"
+  );
   const compose = readFileSync(
     join(process.cwd(), "..", "docker-compose.yml"),
     "utf8"
@@ -301,18 +349,22 @@ test("the container uses an available UTF-8 locale", () => {
   const server = source("server.ts");
 
   assert.ok(
-    dockerfile.includes("LANG=C.UTF-8") && dockerfile.includes("LC_ALL=C.UTF-8"),
+    dockerfile.includes("LANG=C.UTF-8") &&
+      dockerfile.includes("LC_ALL=C.UTF-8"),
     "the image should use Debian's built-in UTF-8 locale"
   );
   assert.ok(
     compose.includes("LANG: C.UTF-8") && compose.includes("LC_ALL: C.UTF-8"),
     "compose should provide the same locale to terminals"
   );
-  assert.match(server, /LANG: process\.env\.LANG \|\| "C\.UTF-8"/);
+  assert.match(server, /buildCliwebEnvironment/);
 });
 
 test("the container runtime user is cliweb", () => {
-  const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
+  const dockerfile = readFileSync(
+    join(process.cwd(), "..", "Dockerfile"),
+    "utf8"
+  );
   const entrypoint = readFileSync(
     join(process.cwd(), "..", "docker-entrypoint.sh"),
     "utf8"
@@ -325,11 +377,13 @@ test("the container runtime user is cliweb", () => {
     "the image should create the cliweb user"
   );
   assert.ok(
-    entrypoint.includes('id -g cliweb') && entrypoint.includes('groupmod -o -g "${PGID}" cliweb'),
+    entrypoint.includes("id -g cliweb") &&
+      entrypoint.includes('groupmod -o -g "${PGID}" cliweb'),
     "the entrypoint should remap the cliweb group"
   );
   assert.ok(
-    entrypoint.includes('id -u cliweb') && entrypoint.includes('usermod -o -u "${PUID}" cliweb'),
+    entrypoint.includes("id -u cliweb") &&
+      entrypoint.includes('usermod -o -u "${PUID}" cliweb'),
     "the entrypoint should remap the cliweb user"
   );
   assert.ok(
@@ -345,5 +399,5 @@ test("the container runtime user is cliweb", () => {
       dockerfile.includes("/home/cliweb/.local"),
     "the container home should be /home/cliweb"
   );
-  assert.match(server, /process\.env\.USER \|\| "cliweb"/);
+  assert.match(server, /buildCliwebEnvironment/);
 });
