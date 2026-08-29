@@ -130,11 +130,11 @@ test("Homebrew is bootstrapped into the persistent CLIWeb host directory", () =>
     "compose should expose Homebrew's supported prefix"
   );
   assert.ok(
-    compose.includes("source: ${CLIWEB_HOME_DIR:-/home/cliweb}") &&
+    compose.includes("source: /home/cliweb") &&
       compose.includes("target: /home/cliweb") &&
-      compose.includes("source: ${CLIWEB_HOME_DIR:-/home/cliweb}/brew") &&
+      compose.includes("source: /home/cliweb/brew") &&
       compose.includes("target: /home/linuxbrew/.linuxbrew"),
-    "the configured host directory and its Brew folder should be bind-mounted"
+    "the persistent host directory and its Brew folder should be bind-mounted"
   );
   assert.ok(
     !/^volumes:/m.test(compose) &&
@@ -145,8 +145,9 @@ test("Homebrew is bootstrapped into the persistent CLIWeb host directory", () =>
   assert.ok(
     !compose.includes("cliweb-volume-init:") &&
       compose.includes("create_host_path: true") &&
-      envExample.includes("CLIWEB_HOME_DIR=/home/cliweb"),
-    "Compose should create the configurable host directories without an init service"
+      !compose.match(/source:.*\$\{/) &&
+      !envExample.includes("CLIWEB_HOME_DIR"),
+    "Coolify-safe host paths should be literal and created without an init service"
   );
   assert.ok(
     entrypoint.includes(

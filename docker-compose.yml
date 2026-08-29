@@ -26,12 +26,12 @@ services:
       - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3011}:3011"
     volumes:
       - type: bind
-        source: ${CLIWEB_HOME_DIR:-/home/cliweb}
+        source: /home/cliweb
         target: /home/cliweb
         bind:
           create_host_path: true
       - type: bind
-        source: ${CLIWEB_HOME_DIR:-/home/cliweb}/brew
+        source: /home/cliweb/brew
         target: /home/linuxbrew/.linuxbrew
         bind:
           create_host_path: true
