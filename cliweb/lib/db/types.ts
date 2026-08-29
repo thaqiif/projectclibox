@@ -1,4 +1,4 @@
-import type { AgentType } from "../providers";
+import type { ProviderId } from "../providers";
 
 
 
@@ -13,7 +13,7 @@ export interface Project {
   id: string;
   name: string;
   working_directory: string;
-  agent_type: AgentType;
+  provider_id: ProviderId;
   default_model: string;
   initial_prompt: string | null;
   expanded: boolean;

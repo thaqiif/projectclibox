@@ -80,7 +80,7 @@ export function QuickSwitcher({
     return (
       terminal.name?.toLowerCase().includes(q) ||
       terminal.working_directory?.toLowerCase().includes(q) ||
-      terminal.agent_type?.toLowerCase().includes(q)
+      terminal.provider_id?.toLowerCase().includes(q)
     );
   });
 
@@ -266,7 +266,7 @@ export function QuickSwitcher({
                         )}
                       </div>
                       <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 truncate text-[0.75rem]">
-                        <span>{terminal.agent_type || "shell"}</span>
+                        <span>{terminal.provider_id || "shell"}</span>
                         <span className="text-muted-foreground/70">·</span>
                         <span className="truncate">
                           {terminal.working_directory?.split("/").pop() || "~"}

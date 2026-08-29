@@ -1,8 +1,8 @@
-# AgentOS Workspace
+# CLIWeb Workspace
 
-A small, self-hosted browser workspace built from the AgentOS UI. It gives you
+A small, self-hosted browser workspace built from the CLIWeb UI. It gives you
 projects, a persistent web terminal, file browsing/editing, themes, font-scale
-controls, and PWA support—without bundling an AI coding agent or exposing the
+controls, and PWA support—without bundling an AI coding CLI or exposing the
 host Docker daemon.
 
 ## Start
@@ -27,7 +27,7 @@ controls.
   host directory selected with `WORKSPACE_DIR`). Use the container path
   `/workspaces/<project>` in the project dialog.
 - Browser terminals backed by tmux, with terminal metadata stored in SQLite.
-- File tree, editor, code search, Git views, themes, font scaling, mobile
+- File tree, editor, code search, themes, font scaling, mobile
   keyboard controls, and PWA assets.
 - A non-root runtime user with host-matched `PUID`/`PGID`.
 - Node/npm, Python/pip, git, SSH, tmux, ripgrep, jq, curl, and build tools.
@@ -46,13 +46,13 @@ CLIs.
 
 ## Persistence
 
-The named `agent_os_home` volume is mounted at `/home/agent`. It stores the
-SQLite database, shell configuration, Git identity/credentials, npm global
-packages, pip user packages, and other user-local tools. These survive
-container restarts, `docker compose down` followed by `up`, and image rebuilds
-as long as the volume is retained.
+The host directory `/home/cliweb` is bind-mounted at the same path in the
+container. It stores the SQLite database, shell configuration, Git
+identity/credentials, npm global packages, pip user packages, Homebrew, and
+other user-local tools. These survive container restarts, redeployments, and
+image rebuilds as long as `/home/cliweb` is backed by persistent host storage.
 
-`npm -g` is configured to install under `/home/agent/.local`, so it works as a
+`npm -g` is configured to install under `/home/cliweb/.local`, so it works as a
 non-root user and persists. Use `pip install --user ...` for Python packages.
 System-level `apt` installs are intentionally unavailable to the non-root
 terminal and are not part of the persistence contract; add them to the
@@ -71,7 +71,7 @@ See [.env.example](.env.example) for the small set of supported settings:
 
 - `WORKSPACE_DIR` — host folder mounted as `/workspaces`.
 - `HOST_PORT` / `HOST_BIND` — web UI port and bind address.
-- `PUID` / `PGID` — host ownership for files created in the workspace.
+- `PUID` / `PGID` — host ownership for `/home/cliweb` and workspace files.
 - Any additional variables in `.env` are passed through to terminal shells,
   which is useful for API keys or project-specific configuration.
 
@@ -81,11 +81,11 @@ named home volume; host project files are not deleted.
 ## Fresh database
 
 The database uses one baseline migration in
-`agent-os/lib/db/migrations.ts`. It creates the final workspace schema directly
-and intentionally has no compatibility path for older AgentOS volumes.
+`cliweb/lib/db/migrations.ts`. It creates the final workspace schema directly
+and intentionally has no compatibility path for older CLIWeb volumes.
 
 ## Credits
 
 The frontend and terminal experience are based on
-[AgentOS](https://github.com/saadnvd1/agent-os). This repository packages a
+[CLIWeb](https://github.com/saadnvd1/cliweb). This repository packages a
 fresh, shell-only workspace variant for self-hosting.

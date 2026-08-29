@@ -1,4 +1,4 @@
-# AgentOS Workspace UI
+# CLIWeb Workspace UI
 
 This directory contains the web application packaged by the repository root's
 Dockerfile. It is configured as a shell-only workspace: projects, tmux-backed

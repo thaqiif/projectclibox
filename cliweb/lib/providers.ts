@@ -1,5 +1,5 @@
 /**
- * Agent provider abstraction.
+ * Terminal provider abstraction.
  *
  * The workspace image ships only a shell. AI CLIs are intentionally installed
  * manually by the user in the web terminal, so there are no built-in harness
@@ -14,10 +14,8 @@ import {
   isValidProviderId,
 } from "./providers/registry";
 
-export type AgentType = ProviderId;
-
-export interface AgentProvider {
-  id: AgentType;
+export interface TerminalProvider {
+  id: ProviderId;
   name: string;
   description: string;
   command: string;
@@ -36,7 +34,7 @@ export interface BuildFlagsOptions {
   initialPrompt?: string;
 }
 
-export const shellProvider: AgentProvider = {
+export const shellProvider: TerminalProvider = {
   id: "shell",
   name: "Terminal",
   description: "Plain shell terminal",
@@ -49,19 +47,19 @@ export const shellProvider: AgentProvider = {
   },
 };
 
-export const providers: Record<AgentType, AgentProvider> = {
+export const providers: Record<ProviderId, TerminalProvider> = {
   shell: shellProvider,
 };
 
-export function getProvider(_agentType: AgentType): AgentProvider {
+export function getProvider(_providerId: ProviderId): TerminalProvider {
   return shellProvider;
 }
 
-export function getAllProviders(): AgentProvider[] {
+export function getAllProviders(): TerminalProvider[] {
   return [shellProvider];
 }
 
-export function isValidAgentType(value: string): value is AgentType {
+export function isValidProvider(value: string): value is ProviderId {
   return isValidProviderId(value);
 }
 

@@ -2,8 +2,8 @@
   "name": "cliweb-docker",
   "private": true,
   "scripts": {
-    "lint": "cd agent-os && npm run lint",
-    "test": "cd agent-os && npm test"
+    "lint": "cd cliweb && npm run lint",
+    "test": "cd cliweb && npm test"
   },
   "devDependencies": {
     "esbuild": "0.28.1"

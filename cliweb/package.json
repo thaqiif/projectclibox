@@ -25,7 +25,7 @@
     "dev": "tsx server.ts",
     "build": "next build --webpack",
     "start": "NODE_ENV=production tsx server.ts",
-    "test": "tsx --test components/Terminal/hooks/*.test.ts lib/*.test.ts",
+    "test": "tsx --test components/Terminal/hooks/*.test.ts lib/*.test.ts lib/db/*.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
@@ -33,7 +33,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/saadnvd1/agent-os.git"
+    "url": "git+https://github.com/thaqiif/projectclibox.git"
   },
   "keywords": [
     "terminal",
@@ -47,9 +47,9 @@
     "node": ">=20"
   },
   "bugs": {
-    "url": "https://github.com/saadnvd1/agent-os/issues"
+    "url": "https://github.com/thaqiif/projectclibox/issues"
   },
-  "homepage": "https://github.com/saadnvd1/agent-os#readme",
+  "homepage": "https://github.com/thaqiif/projectclibox",
   "dependencies": {
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",

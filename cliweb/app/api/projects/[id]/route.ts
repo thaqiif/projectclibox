@@ -38,7 +38,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const {
       name,
       workingDirectory,
-      agentType,
+      providerId,
       defaultModel,
       initialPrompt,
       expanded,
@@ -53,14 +53,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (
       name ||
       workingDirectory ||
-      agentType ||
+      providerId ||
       defaultModel ||
       initialPrompt !== undefined
     ) {
       const project = updateProject(id, {
         name,
         working_directory: workingDirectory,
-        agent_type: agentType,
+        provider_id: providerId,
         default_model: defaultModel,
         initial_prompt: initialPrompt,
       });

@@ -11,13 +11,13 @@ import {
   queries,
   type Project,
 } from "./db";
-import { resolveModelForAgent } from "./model-catalog";
-import type { AgentType } from "./providers";
+import { resolveModelForProvider } from "./model-catalog";
+import type { ProviderId } from "./providers";
 
 export interface CreateProjectOptions {
   name: string;
   workingDirectory: string;
-  agentType?: AgentType;
+  providerId?: ProviderId;
   defaultModel?: string;
   initialPrompt?: string;
 }
@@ -40,7 +40,7 @@ export function createProject(opts: CreateProjectOptions): Project {
   const maxOrder = projects.reduce((max, project) =>
     Math.max(max, project.sort_order), 0
   );
-  const agentType = opts.agentType || "shell";
+  const providerId = opts.providerId || "shell";
 
   queries
     .createProject(db)
@@ -48,8 +48,8 @@ export function createProject(opts: CreateProjectOptions): Project {
       id,
       opts.name,
       opts.workingDirectory,
-      agentType,
-      resolveModelForAgent(agentType, opts.defaultModel),
+      providerId,
+      resolveModelForProvider(providerId, opts.defaultModel),
       opts.initialPrompt || null,
       maxOrder + 1
     );
@@ -73,7 +73,7 @@ export function updateProject(
       Project,
       | "name"
       | "working_directory"
-      | "agent_type"
+      | "provider_id"
       | "default_model"
       | "initial_prompt"
     >
@@ -82,15 +82,15 @@ export function updateProject(
   const project = getProject(id);
   if (!project || project.is_uncategorized) return undefined;
 
-  const agentType = updates.agent_type ?? project.agent_type;
+  const providerId = updates.provider_id ?? project.provider_id;
   queries
     .updateProject(db)
     .run(
       updates.name ?? project.name,
       updates.working_directory ?? project.working_directory,
-      agentType,
-      resolveModelForAgent(
-        agentType,
+      providerId,
+      resolveModelForProvider(
+        providerId,
         updates.default_model ?? project.default_model
       ),
       updates.initial_prompt !== undefined

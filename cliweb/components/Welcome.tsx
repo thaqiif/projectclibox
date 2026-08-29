@@ -89,7 +89,7 @@ export function Welcome({
                   </span>
                   <span className="text-muted-foreground ml-auto shrink-0 text-[0.6875rem]">
                     {terminal.alive
-                      ? terminal.agent_type || "shell"
+                      ? terminal.provider_id || "shell"
                       : "stopped"}
                   </span>
                 </button>

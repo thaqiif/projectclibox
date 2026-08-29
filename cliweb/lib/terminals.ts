@@ -183,7 +183,7 @@ export interface TerminalRecord {
   tmux_name: string;
   working_directory: string;
   project_id: string | null;
-  agent_type: ProviderId | null;
+  provider_id: ProviderId | null;
   panes: number;
   attached: boolean;
   activity: number;
@@ -202,7 +202,7 @@ export function toRecord(
     tmux_name: terminal.name,
     working_directory: terminal.path,
     project_id: projectId,
-    agent_type: terminal.provider,
+    provider_id: terminal.provider,
     panes: terminal.panes,
     attached: terminal.attached,
     activity: terminal.activity,

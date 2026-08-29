@@ -51,13 +51,13 @@ export HOMEBREW_PREFIX="${BREW_STORAGE}"
 export HOMEBREW_REPOSITORY="${BREW_STORAGE}"
 export HOMEBREW_CACHE="${HOME}/.cache/Homebrew"
 export PATH="${BREW_STORAGE}/bin:${HOME}/brew/bin:${BREW_STORAGE}/sbin:${HOME}/brew/sbin:${NPM_CONFIG_PREFIX}/bin:${HOME}/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
-mkdir -p "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"
-chown -R cliweb:cliweb "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"
+mkdir -p "${CLIWEB_REPO:-/opt/cliweb}/.next/cache"
+chown -R cliweb:cliweb "${CLIWEB_REPO:-/opt/cliweb}/.next/cache"
 
 # Keep Git identity and HTTPS credentials in the persisted home volume.
 gosu cliweb git config --global credential.helper \
     "store --file=${HOME}/.gitstate/credentials"
 
 export PORT="${CLIWEB_PORT:-3011}"
-cd "${CLIWEB_REPO:-/opt/agent-os}"
+cd "${CLIWEB_REPO:-/opt/cliweb}"
 exec setpriv --reuid=cliweb --regid=cliweb --init-groups -- npm start

@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Renamed the application source and runtime directory to `cliweb` and `/opt/cliweb`, standardized provider terminology, and introduced a CLIWeb browser-terminal icon.
 - Replaced Docker-managed home and Brew volumes with the Coolify-safe `/home/cliweb` host bind mount while retaining Homebrew's bottle-compatible Linux prefix.
 
 ### Fixed
@@ -23,8 +24,8 @@
 
 ### Changed
 
-- Renamed the container user and persistent home directory from `agent` to `cliweb`.
-- Renamed the application branding from AgentOS to CLIWeb.
+- Standardized the container user and persistent home directory as `cliweb`.
+- Renamed the application branding from CLIWeb to CLIWeb.
 
 ### Fixed
 

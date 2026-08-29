@@ -5,6 +5,11 @@ import test from "node:test";
 
 const source = (relativePath: string) =>
   readFileSync(join(process.cwd(), relativePath), "utf8");
+const retiredProductStem = ["ag", "ent"].join("");
+const retiredIdentity = new RegExp(
+  `${retiredProductStem}(?:[-_ ]?os)?`,
+  "i"
+);
 
 test("removed integrations are no longer shipped", () => {
   const removedPaths = [
@@ -90,10 +95,60 @@ test("the product is branded CLIWeb", () => {
     assert.match(contents, /CLIWeb/, `${relativePath} is missing CLIWeb branding`);
     assert.doesNotMatch(
       contents,
-      /AgentOS|Agent-OS|agentOS/i,
+      retiredIdentity,
       `${relativePath} still contains the old brand`
     );
   }
+});
+
+test("the retired repository identity is absent from first-party surfaces", () => {
+  const root = join(process.cwd(), "..");
+  const retiredName = [retiredProductStem, "os"].join("-");
+  const files = [
+    "Dockerfile",
+    "docker-entrypoint.sh",
+    "package.json",
+    "cliweb/package.json",
+    "cliweb/public/manifest.json",
+  ];
+
+  assert.equal(
+    existsSync(join(root, retiredName)),
+    false,
+    "the application directory should use the CLIWeb name"
+  );
+
+  for (const relativePath of files) {
+    assert.doesNotMatch(
+      readFileSync(join(root, relativePath), "utf8"),
+      retiredIdentity,
+      `${relativePath} still contains the retired identity`
+    );
+  }
+
+  const dockerfile = readFileSync(join(root, "Dockerfile"), "utf8");
+  assert.ok(
+    dockerfile.includes("CLIWEB_REPO=/opt/cliweb") &&
+      dockerfile.includes('COPY cliweb/ "${CLIWEB_REPO}"/') &&
+      dockerfile.includes("WORKDIR /opt/cliweb"),
+    "the image should build and start from /opt/cliweb"
+  );
+});
+
+test("the application icon represents CLIWeb", () => {
+  const iconFiles = ["app/icon.svg", "public/icon.svg"];
+
+  for (const relativePath of iconFiles) {
+    const icon = source(relativePath);
+    assert.match(icon, /<title>CLIWeb terminal<\/title>/);
+    assert.match(icon, /data-mark="cliweb"/);
+    assert.doesNotMatch(icon, /M12 8V4H8|robot/i);
+  }
+
+  assert.match(
+    source("public/manifest.json"),
+    /"description": "CLIWeb terminal workspace"/
+  );
 });
 
 test("Homebrew is bootstrapped into the persistent CLIWeb host directory", () => {

@@ -35,8 +35,8 @@ RUN git clone --depth=1 https://github.com/Homebrew/brew.git /opt/cliweb-brew
 
 # Build the UI into /opt so the persisted home volume never masks build
 # artifacts when the image is rebuilt.
-ENV CLIWEB_REPO=/opt/agent-os
-COPY agent-os/ "${CLIWEB_REPO}"/
+ENV CLIWEB_REPO=/opt/cliweb
+COPY cliweb/ "${CLIWEB_REPO}"/
 RUN cd "${CLIWEB_REPO}" \
     && npm install --legacy-peer-deps \
     && npm run build \
@@ -87,6 +87,6 @@ RUN chmod +x \
     /usr/local/bin/docker-entrypoint.sh \
     /usr/local/libexec/cliweb-brew-bootstrap
 
-WORKDIR /opt/agent-os
+WORKDIR /opt/cliweb
 EXPOSE 3011
 ENTRYPOINT ["docker-entrypoint.sh"]

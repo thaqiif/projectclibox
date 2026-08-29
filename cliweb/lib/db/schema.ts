@@ -20,7 +20,7 @@ export function createSchema(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       working_directory TEXT NOT NULL,
-      agent_type TEXT NOT NULL DEFAULT 'shell',
+      provider_id TEXT NOT NULL DEFAULT 'shell',
       default_model TEXT NOT NULL DEFAULT '',
       initial_prompt TEXT,
       expanded INTEGER NOT NULL DEFAULT 1,

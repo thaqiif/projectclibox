@@ -1,7 +1,7 @@
 {
   "name": "CLIWeb",
   "short_name": "CLIWeb",
-  "description": "AI Agent Command Center",
+  "description": "CLIWeb terminal workspace",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",
