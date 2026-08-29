@@ -5,6 +5,7 @@
 ### Added
 
 - Added the Linux Docker host gateway alias so CLIWeb can reach APIs exposed by sibling containers through their published host ports.
+- Added Debian's `ruby-full` package to provide Ruby, RubyGems, and the standard Ruby libraries in the container.
 
 ### Changed
 

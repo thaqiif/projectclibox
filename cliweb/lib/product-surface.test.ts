@@ -318,6 +318,20 @@ test("the image libc can run nanobrew Linux bottles", () => {
   );
 });
 
+test("the container includes the full Ruby runtime", () => {
+  const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
+  const aptPackages = dockerfile.slice(
+    dockerfile.indexOf("apt-get install"),
+    dockerfile.indexOf("&& rm -rf /var/lib/apt/lists/*")
+  );
+
+  assert.match(
+    aptPackages,
+    /^\s+ruby-full\s+\\$/m,
+    "the image should install Debian's complete Ruby package"
+  );
+});
+
 test("the container can reach APIs published on the Docker host", () => {
   const compose = readFileSync(
     join(process.cwd(), "..", "docker-compose.yml"),
