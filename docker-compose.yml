@@ -27,6 +27,10 @@ services:
       # Localhost-only is the safe default. Set HOST_BIND=0.0.0.0 only when
       # you intentionally want to reach the UI from another device.
       - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3011}:3011"
+    extra_hosts:
+      # Linux does not provide host.docker.internal automatically. This lets
+      # CLIWeb call APIs from sibling containers through their host ports.
+      - "host.docker.internal:host-gateway"
     volumes:
       - type: bind
         source: /home/cliweb

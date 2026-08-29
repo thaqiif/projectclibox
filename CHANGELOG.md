@@ -2,6 +2,10 @@
 
 ## 2026-08-29
 
+### Added
+
+- Added the Linux Docker host gateway alias so CLIWeb can reach APIs exposed by sibling containers through their published host ports.
+
 ### Changed
 
 - Replaced the persistent Homebrew integration with nanobrew's prebuilt Docker binary and `/home/cliweb/nanobrew` host storage mounted at `/opt/nanobrew`.

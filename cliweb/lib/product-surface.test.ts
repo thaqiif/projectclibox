@@ -318,6 +318,19 @@ test("the image libc can run nanobrew Linux bottles", () => {
   );
 });
 
+test("the container can reach APIs published on the Docker host", () => {
+  const compose = readFileSync(
+    join(process.cwd(), "..", "docker-compose.yml"),
+    "utf8"
+  );
+
+  assert.match(
+    compose,
+    /extra_hosts:\n(?:\s+#.*\n)*\s+- "host\.docker\.internal:host-gateway"/,
+    "Compose should provide a Linux host gateway for sibling container APIs"
+  );
+});
+
 test("global npm installs are configured in the persistent home", () => {
   const dockerfile = readFileSync(
     join(process.cwd(), "..", "Dockerfile"),
