@@ -84,7 +84,6 @@ export async function listKnownTerminals(): Promise<KnownTerminal[]> {
       path: row.working_directory,
       activity: Math.floor(new Date(`${row.last_seen_at}Z`).getTime() / 1000),
       attached: false,
-      provider: null,
       panes: 0,
       alive: false,
     });

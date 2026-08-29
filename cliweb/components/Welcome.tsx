@@ -88,9 +88,7 @@ export function Welcome({
                     {terminal.name}
                   </span>
                   <span className="text-muted-foreground ml-auto shrink-0 text-[0.6875rem]">
-                    {terminal.alive
-                      ? terminal.provider_id || "shell"
-                      : "stopped"}
+                    {terminal.alive ? "shell" : "stopped"}
                   </span>
                 </button>
               ))}

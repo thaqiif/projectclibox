@@ -44,8 +44,8 @@ export const queries = {
   createProject: (db: Database.Database) =>
     getStmt(
       db,
-      `INSERT INTO projects (id, name, working_directory, provider_id, default_model, initial_prompt, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO projects (id, name, working_directory, sort_order)
+       VALUES (?, ?, ?, ?)`
     ),
 
   getProject: (db: Database.Database) =>
@@ -60,7 +60,7 @@ export const queries = {
   updateProject: (db: Database.Database) =>
     getStmt(
       db,
-      `UPDATE projects SET name = ?, working_directory = ?, provider_id = ?, default_model = ?, initial_prompt = ?, updated_at = datetime('now') WHERE id = ?`
+      `UPDATE projects SET name = ?, working_directory = ?, updated_at = datetime('now') WHERE id = ?`
     ),
 
   updateProjectExpanded: (db: Database.Database) =>

@@ -11,15 +11,10 @@ import {
   queries,
   type Project,
 } from "./db";
-import { resolveModelForProvider } from "./model-catalog";
-import type { ProviderId } from "./providers";
 
 export interface CreateProjectOptions {
   name: string;
   workingDirectory: string;
-  providerId?: ProviderId;
-  defaultModel?: string;
-  initialPrompt?: string;
 }
 
 function normalizeProject(project: Project): Project {
@@ -40,17 +35,12 @@ export function createProject(opts: CreateProjectOptions): Project {
   const maxOrder = projects.reduce((max, project) =>
     Math.max(max, project.sort_order), 0
   );
-  const providerId = opts.providerId || "shell";
-
   queries
     .createProject(db)
     .run(
       id,
       opts.name,
       opts.workingDirectory,
-      providerId,
-      resolveModelForProvider(providerId, opts.defaultModel),
-      opts.initialPrompt || null,
       maxOrder + 1
     );
 
@@ -69,33 +59,17 @@ export function getAllProjects(): Project[] {
 export function updateProject(
   id: string,
   updates: Partial<
-    Pick<
-      Project,
-      | "name"
-      | "working_directory"
-      | "provider_id"
-      | "default_model"
-      | "initial_prompt"
-    >
+    Pick<Project, "name" | "working_directory">
   >
 ): Project | undefined {
   const project = getProject(id);
   if (!project || project.is_uncategorized) return undefined;
 
-  const providerId = updates.provider_id ?? project.provider_id;
   queries
     .updateProject(db)
     .run(
       updates.name ?? project.name,
       updates.working_directory ?? project.working_directory,
-      providerId,
-      resolveModelForProvider(
-        providerId,
-        updates.default_model ?? project.default_model
-      ),
-      updates.initial_prompt !== undefined
-        ? updates.initial_prompt
-        : project.initial_prompt,
       id
     );
 

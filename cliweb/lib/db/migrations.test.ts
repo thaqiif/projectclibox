@@ -6,7 +6,7 @@ import test from "node:test";
 import Database from "better-sqlite3";
 import { runMigrations } from "./migrations";
 
-test("renames the legacy project provider column without losing data", () => {
+test("removes obsolete project launch fields without losing project data", () => {
   const directory = mkdtempSync(join(tmpdir(), "cliweb-migration-"));
   const database = new Database(join(directory, "cliweb.db"));
   const legacyProviderColumn = ["ag", "ent_type"].join("");
@@ -41,15 +41,30 @@ test("renames the legacy project provider column without losing data", () => {
     const columns = database
       .prepare("PRAGMA table_info(projects)")
       .all() as Array<{ name: string }>;
-    assert.ok(columns.some((column) => column.name === "provider_id"));
-    assert.ok(
-      !columns.some((column) => column.name === legacyProviderColumn)
+    assert.deepEqual(
+      columns.map((column) => column.name),
+      [
+        "id",
+        "name",
+        "working_directory",
+        "expanded",
+        "sort_order",
+        "is_uncategorized",
+        "created_at",
+        "updated_at",
+      ]
     );
     assert.deepEqual(
       database
-        .prepare("SELECT id, provider_id FROM projects WHERE id = 'existing'")
+        .prepare(
+          "SELECT id, name, working_directory FROM projects WHERE id = 'existing'"
+        )
         .get(),
-      { id: "existing", provider_id: "shell" }
+      {
+        id: "existing",
+        name: "Existing project",
+        working_directory: "/workspaces/existing",
+      }
     );
   } finally {
     database.close();

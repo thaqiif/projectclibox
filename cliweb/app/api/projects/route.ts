@@ -23,7 +23,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, workingDirectory, providerId, defaultModel } = body;
+    const { name, workingDirectory } = body;
 
     if (!name || !workingDirectory) {
       return NextResponse.json(
@@ -42,8 +42,6 @@ export async function POST(request: NextRequest) {
     const project = createProject({
       name,
       workingDirectory,
-      providerId,
-      defaultModel,
     });
 
     return NextResponse.json({ project }, { status: 201 });

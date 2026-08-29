@@ -1,7 +1,3 @@
-import type { ProviderId } from "../providers";
-
-
-
 export interface TerminalRow {
   name: string;
   working_directory: string;
@@ -13,9 +9,6 @@ export interface Project {
   id: string;
   name: string;
   working_directory: string;
-  provider_id: ProviderId;
-  default_model: string;
-  initial_prompt: string | null;
   expanded: boolean;
   sort_order: number;
   is_uncategorized: boolean;

@@ -14,7 +14,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
-import type { ProviderId } from "@/lib/providers/registry";
 
 const execFileAsync = promisify(execFile);
 
@@ -34,14 +33,8 @@ export interface Terminal {
   activity: number;
   /** Whether any client is currently attached. */
   attached: boolean;
-  /** Always null for this shell-only build. */
-  provider: ProviderId | null;
   /** Number of tmux panes, so the UI can show that a terminal is split. */
   panes: number;
-}
-
-export function providerForCommand(_command: string): ProviderId | null {
-  return null;
 }
 
 async function tmux(args: string[]): Promise<string> {
@@ -61,33 +54,16 @@ async function tmux(args: string[]): Promise<string> {
  * One `list-panes -a` covers every terminal, so this stays a single tmux
  * call however many terminals are open.
  */
-async function paneInfo(): Promise<
-  Map<string, { provider: ProviderId | null; panes: number }>
-> {
-  const out = await tmux([
-    "list-panes",
-    "-a",
-    "-F",
-    `#{session_name}${SEP}#{pane_current_command}`,
-  ]);
+async function paneCounts(): Promise<Map<string, number>> {
+  const out = await tmux(["list-panes", "-a", "-F", "#{session_name}"]);
+  const counts = new Map<string, number>();
 
-  const info = new Map<
-    string,
-    { provider: ProviderId | null; panes: number }
-  >();
-
-  for (const line of out.split("\n")) {
-    if (!line.trim()) continue;
-    const idx = line.lastIndexOf(SEP);
-    if (idx === -1) continue;
-
-    const name = line.slice(0, idx);
-    const existing = info.get(name) ?? { provider: null, panes: 0 };
-    existing.panes += 1;
-    info.set(name, existing);
+  for (const name of out.split("\n")) {
+    if (!name.trim()) continue;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
   }
 
-  return info;
+  return counts;
 }
 
 export async function listTerminals(): Promise<Terminal[]> {
@@ -99,7 +75,7 @@ export async function listTerminals(): Promise<Terminal[]> {
 
   if (!out.trim()) return [];
 
-  const info = await paneInfo();
+  const panes = await paneCounts();
   const terminals: Terminal[] = [];
 
   for (const line of out.split("\n")) {
@@ -115,15 +91,12 @@ export async function listTerminals(): Promise<Terminal[]> {
     const path = parts.pop()!;
     const name = parts.join(SEP);
 
-    const detected = info.get(name);
-
     terminals.push({
       name,
       path,
       activity: parseInt(activity, 10) || 0,
       attached: attached.trim() !== "0",
-      provider: detected?.provider ?? null,
-      panes: detected?.panes ?? 1,
+      panes: panes.get(name) ?? 1,
     });
   }
 
@@ -165,7 +138,6 @@ export async function createTerminal(cwd: string): Promise<Terminal> {
     path: cwd,
     activity: Math.floor(Date.now() / 1000),
     attached: false,
-    provider: null,
     panes: 1,
   };
 }
@@ -183,7 +155,6 @@ export interface TerminalRecord {
   tmux_name: string;
   working_directory: string;
   project_id: string | null;
-  provider_id: ProviderId | null;
   panes: number;
   attached: boolean;
   activity: number;
@@ -202,7 +173,6 @@ export function toRecord(
     tmux_name: terminal.name,
     working_directory: terminal.path,
     project_id: projectId,
-    provider_id: terminal.provider,
     panes: terminal.panes,
     attached: terminal.attached,
     activity: terminal.activity,

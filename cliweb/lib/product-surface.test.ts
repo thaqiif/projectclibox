@@ -22,6 +22,9 @@ test("removed integrations are no longer shipped", () => {
     "components/GitDrawer/index.tsx",
     "components/DiffViewer/index.tsx",
     "components/PRCreationModal.tsx",
+    "lib/model-catalog.ts",
+    "lib/providers.ts",
+    "lib/providers/registry.ts",
     "data/git/queries.ts",
     "data/repositories/index.ts",
     "app/api/git/status/route.ts",
@@ -32,6 +35,28 @@ test("removed integrations are no longer shipped", () => {
       existsSync(join(process.cwd(), relativePath)),
       false,
       `${relativePath} should be removed`
+    );
+  }
+});
+
+test("obsolete project launch metadata is removed", () => {
+  const files = [
+    "lib/db/schema.ts",
+    "lib/db/queries.ts",
+    "lib/db/types.ts",
+    "lib/projects.ts",
+    "lib/terminals.ts",
+    "app/api/projects/route.ts",
+    "app/api/projects/[id]/route.ts",
+    "components/Welcome.tsx",
+    "components/QuickSwitcher.tsx",
+  ];
+
+  for (const relativePath of files) {
+    assert.doesNotMatch(
+      source(relativePath),
+      /provider_id|default_model|initial_prompt|providerId|defaultModel|initialPrompt/i,
+      `${relativePath} still contains obsolete launch metadata`
     );
   }
 });

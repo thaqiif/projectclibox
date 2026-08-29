@@ -35,14 +35,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const {
-      name,
-      workingDirectory,
-      providerId,
-      defaultModel,
-      initialPrompt,
-      expanded,
-    } = body;
+    const { name, workingDirectory, expanded } = body;
 
     // Handle expanded toggle separately
     if (typeof expanded === "boolean") {
@@ -50,19 +43,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     // Update other fields if provided
-    if (
-      name ||
-      workingDirectory ||
-      providerId ||
-      defaultModel ||
-      initialPrompt !== undefined
-    ) {
+    if (name || workingDirectory) {
       const project = updateProject(id, {
         name,
         working_directory: workingDirectory,
-        provider_id: providerId,
-        default_model: defaultModel,
-        initial_prompt: initialPrompt,
       });
 
       if (!project) {

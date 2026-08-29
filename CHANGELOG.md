@@ -14,6 +14,10 @@
 - Replaced the `/usr/local/bin/brew` symlink with a launcher so Homebrew no longer infers `/usr/local` as its prefix.
 - Standardized the container locale on `C.UTF-8` to prevent locale initialization errors.
 
+### Removed
+
+- Removed unused project launch-provider, model, and prompt fields from the database, API, terminal records, and UI while preserving existing project data through migration.
+
 ## 2026-08-28
 
 ### Added
@@ -25,7 +29,7 @@
 ### Changed
 
 - Standardized the container user and persistent home directory as `cliweb`.
-- Renamed the application branding from CLIWeb to CLIWeb.
+- Standardized the application branding as CLIWeb.
 
 ### Fixed
 

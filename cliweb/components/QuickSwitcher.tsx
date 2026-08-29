@@ -79,8 +79,7 @@ export function QuickSwitcher({
     const q = query.toLowerCase();
     return (
       terminal.name?.toLowerCase().includes(q) ||
-      terminal.working_directory?.toLowerCase().includes(q) ||
-      terminal.provider_id?.toLowerCase().includes(q)
+      terminal.working_directory?.toLowerCase().includes(q)
     );
   });
 
@@ -266,7 +265,7 @@ export function QuickSwitcher({
                         )}
                       </div>
                       <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 truncate text-[0.75rem]">
-                        <span>{terminal.provider_id || "shell"}</span>
+                        <span>shell</span>
                         <span className="text-muted-foreground/70">·</span>
                         <span className="truncate">
                           {terminal.working_directory?.split("/").pop() || "~"}
