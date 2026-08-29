@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Replaced the remaining inline robot mark in the terminal list header with the shared CLIWeb icon.
 - Moved favicon, Apple touch icon, and PWA icon references to CLIWeb-specific URLs so deployments cannot reuse the retired cached icon.
 - Assigned stable physical names to the home and Brew volumes so Compose project-name changes no longer select empty volumes.
 - Mounted persistent Homebrew data at its supported Linux bottle prefix while retaining `/home/cliweb/brew` as an alias.

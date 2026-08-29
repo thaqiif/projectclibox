@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import {
   ADropdownMenu,
@@ -39,23 +40,14 @@ export function TerminalListHeader({
     <div className="px-3 pt-3 pb-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            className="text-primary h-[1.125rem] w-[1.125rem]"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          >
-            <path d="M12 8V4H8" />
-            <rect width="16" height="12" x="4" y="8" rx="1" />
-            <path d="M2 14h2" />
-            <path d="M20 14h2" />
-            <path d="M15 13v2" />
-            <path d="M9 13v2" />
-          </svg>
+          <Image
+            src="/branding/cliweb-terminal.svg"
+            alt=""
+            width={18}
+            height={18}
+            aria-hidden="true"
+            className="h-[1.125rem] w-[1.125rem]"
+          />
           <h2 className="text-[0.9375rem] font-semibold tracking-[-0.014em]">
             CLIWeb
           </h2>

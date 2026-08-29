@@ -184,6 +184,20 @@ test("the application icon represents CLIWeb", () => {
   assert.match(manifest, /"src": "\/branding\/cliweb-terminal-192\.png"/);
   assert.match(manifest, /"src": "\/branding\/cliweb-terminal-512\.png"/);
 
+  const terminalListHeader = source(
+    "components/TerminalList/TerminalListHeader.tsx"
+  );
+  assert.match(
+    terminalListHeader,
+    /src="\/branding\/cliweb-terminal\.svg"/,
+    "the CLIWeb title should use the shared brand icon"
+  );
+  assert.doesNotMatch(
+    terminalListHeader,
+    /M12 8V4H8|<svg[\s\S]*?M12 8V4H8/,
+    "the old inline robot icon should be removed"
+  );
+
   for (const stalePath of [
     "app/icon.svg",
     "app/icon.png",
