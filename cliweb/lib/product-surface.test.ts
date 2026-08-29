@@ -111,7 +111,7 @@ test("the product is branded CLIWeb", () => {
     "app/page.tsx",
     "components/Welcome.tsx",
     "components/TerminalList/TerminalListHeader.tsx",
-    "public/manifest.json",
+    "public/cliweb.webmanifest",
     "server.ts",
   ];
 
@@ -134,7 +134,7 @@ test("the retired repository identity is absent from first-party surfaces", () =
     "docker-entrypoint.sh",
     "package.json",
     "cliweb/package.json",
-    "cliweb/public/manifest.json",
+    "cliweb/public/cliweb.webmanifest",
   ];
 
   assert.equal(
@@ -161,7 +161,7 @@ test("the retired repository identity is absent from first-party surfaces", () =
 });
 
 test("the application icon represents CLIWeb", () => {
-  const iconFiles = ["app/icon.svg", "public/icon.svg"];
+  const iconFiles = ["public/branding/cliweb-terminal.svg"];
 
   for (const relativePath of iconFiles) {
     const icon = source(relativePath);
@@ -171,9 +171,33 @@ test("the application icon represents CLIWeb", () => {
   }
 
   assert.match(
-    source("public/manifest.json"),
+    source("public/cliweb.webmanifest"),
     /"description": "CLIWeb terminal workspace"/
   );
+
+  const layout = source("app/layout.tsx");
+  const manifest = source("public/cliweb.webmanifest");
+
+  assert.match(layout, /manifest: "\/cliweb\.webmanifest"/);
+  assert.match(layout, /url: "\/branding\/cliweb-terminal\.svg"/);
+  assert.match(layout, /apple: "\/branding\/cliweb-terminal-192\.png"/);
+  assert.match(manifest, /"src": "\/branding\/cliweb-terminal-192\.png"/);
+  assert.match(manifest, /"src": "\/branding\/cliweb-terminal-512\.png"/);
+
+  for (const stalePath of [
+    "app/icon.svg",
+    "app/icon.png",
+    "public/icon.svg",
+    "public/icons/icon-192.png",
+    "public/icons/icon-512.png",
+    "public/manifest.json",
+  ]) {
+    assert.equal(
+      existsSync(join(process.cwd(), stalePath)),
+      false,
+      `${stalePath} keeps the old icon URL cacheable`
+    );
+  }
 });
 
 test("Homebrew is bootstrapped into the persistent CLIWeb host directory", () => {

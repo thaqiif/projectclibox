@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Moved favicon, Apple touch icon, and PWA icon references to CLIWeb-specific URLs so deployments cannot reuse the retired cached icon.
 - Assigned stable physical names to the home and Brew volumes so Compose project-name changes no longer select empty volumes.
 - Mounted persistent Homebrew data at its supported Linux bottle prefix while retaining `/home/cliweb/brew` as an alias.
 - Replaced the `/usr/local/bin/brew` symlink with a launcher so Homebrew no longer infers `/usr/local` as its prefix.

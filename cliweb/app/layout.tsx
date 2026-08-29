@@ -7,15 +7,18 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "CLIWeb Workspace",
   description: "Persistent browser workspace for projects and terminals",
-  manifest: "/manifest.json",
+  manifest: "/cliweb.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "CLIWeb",
   },
   icons: {
-    icon: "/icon.svg",
-    apple: "/icons/icon-192.png",
+    icon: {
+      url: "/branding/cliweb-terminal.svg",
+      type: "image/svg+xml",
+    },
+    apple: "/branding/cliweb-terminal-192.png",
   },
 };
 
