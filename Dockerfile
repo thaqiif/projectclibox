@@ -29,10 +29,32 @@ RUN apt-get update \
         util-linux \
     && rm -rf /var/lib/apt/lists/*
 
-# nanobrew publishes a prebuilt static Linux binary for Docker. Its upstream
-# Linux integration uses the fixed /opt/nanobrew data tree, which is mounted
-# from the persistent CLIWeb host directory below.
-COPY --from=nanobrew/nb /nb /usr/local/bin/nb
+# nanobrew publishes verified architecture-specific Linux release tarballs.
+# Its Linux integration uses the fixed /opt/nanobrew data tree, which is
+# mounted from the persistent CLIWeb host directory below.
+ARG NANOBREW_VERSION=0.1.208
+ARG TARGETARCH
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) \
+            nanobrew_arch="x86_64"; \
+            nanobrew_sha="de31e7768cb2f875cfa3a1e962e8d57761f81a1bd4f34a3f0e8f993005028cb4"; \
+            ;; \
+        arm64) \
+            nanobrew_arch="aarch64"; \
+            nanobrew_sha="a5be2e0884e1880e7fa4b1805c1d28328692d9ff720e20eabb809b1f9af9e2e8"; \
+            ;; \
+        *) \
+            echo "Unsupported nanobrew target architecture: ${TARGETARCH}" >&2; \
+            exit 1; \
+            ;; \
+    esac; \
+    nanobrew_url="https://github.com/justrach/nanobrew/releases/download/v${NANOBREW_VERSION}/nb-${nanobrew_arch}-linux.tar.gz"; \
+    curl -fsSL --retry 3 "${nanobrew_url}" -o /tmp/nanobrew.tar.gz; \
+    echo "${nanobrew_sha}  /tmp/nanobrew.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/nanobrew.tar.gz -C /tmp; \
+    install -m 0755 /tmp/nb /usr/local/bin/nb; \
+    rm -f /tmp/nanobrew.tar.gz /tmp/nb /tmp/._nb
 
 # Build the UI into /opt so the persisted home volume never masks build
 # artifacts when the image is rebuilt.

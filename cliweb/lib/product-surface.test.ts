@@ -231,8 +231,17 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
   const envExample = readFileSync(join(process.cwd(), "..", ".env.example"), "utf8");
 
   assert.ok(
-    dockerfile.includes("COPY --from=nanobrew/nb /nb /usr/local/bin/nb"),
-    "the image should use nanobrew's prebuilt Docker binary"
+    dockerfile.includes("ARG NANOBREW_VERSION=0.1.208") &&
+      dockerfile.includes('nanobrew_arch="x86_64"') &&
+      dockerfile.includes('nanobrew_arch="aarch64"') &&
+      dockerfile.includes("nb-${nanobrew_arch}-linux.tar.gz") &&
+      dockerfile.includes("sha256sum -c"),
+    "the image should download and verify nanobrew's prebuilt release binary"
+  );
+  assert.doesNotMatch(
+    dockerfile,
+    /COPY --from=nanobrew\/nb/,
+    "the image should not depend on the unavailable nanobrew Docker image"
   );
   assert.ok(
     dockerfile.includes("/opt/nanobrew") &&
