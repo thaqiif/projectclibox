@@ -303,6 +303,21 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
   );
 });
 
+test("the image libc can run nanobrew Linux bottles", () => {
+  const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
+
+  assert.match(
+    dockerfile,
+    /^FROM node:22-trixie-slim$/m,
+    "nanobrew bottles need the newer glibc supplied by Debian Trixie"
+  );
+  assert.doesNotMatch(
+    dockerfile,
+    /^FROM node:22-bookworm-slim$/m,
+    "Debian Bookworm's glibc cannot run current nanobrew bottles"
+  );
+});
+
 test("global npm installs are configured in the persistent home", () => {
   const dockerfile = readFileSync(
     join(process.cwd(), "..", "Dockerfile"),

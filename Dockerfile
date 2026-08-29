@@ -5,7 +5,7 @@
 # browser bundle, Docker client, or Docker socket. Install tools from the web
 # terminal as needed; user-local installs live in the persisted home volume.
 
-FROM node:22-bookworm-slim
+FROM node:22-trixie-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

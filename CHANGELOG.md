@@ -19,6 +19,7 @@
 - Replaced the `/usr/local/bin/brew` symlink with a launcher so Homebrew no longer infers `/usr/local` as its prefix.
 - Standardized the container locale on `C.UTF-8` to prevent locale initialization errors.
 - Persisted global npm installs and restored nanobrew command links across CLIWeb redeploys.
+- Switched the runtime image to Debian Trixie so nanobrew Linux bottles requiring glibc 2.38 can run.
 
 ### Removed
 
