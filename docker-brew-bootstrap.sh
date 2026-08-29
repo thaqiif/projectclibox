@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-brew_storage="${CLIWEB_BREW_PREFIX:-/home/cliweb/brew}"
+brew_storage="${CLIWEB_BREW_PREFIX:-/home/linuxbrew/.linuxbrew}"
 brew_source="${CLIWEB_BREW_SOURCE:-/opt/cliweb-brew}"
+brew_legacy="${CLIWEB_BREW_LEGACY:-}"
 source_marker="${brew_source}/Library/Homebrew/brew.sh"
 storage_marker="${brew_storage}/Library/Homebrew/brew.sh"
 
@@ -13,14 +14,22 @@ fi
 
 mkdir -p "${brew_storage}"
 
-# Older CLIWeb images incorrectly nested the Homebrew repository one directory
-# too deep. Seed the repository at the prefix root while leaving Cellar and all
-# other user-installed data untouched.
+# Copy the former home-volume installation into the dedicated Brew volume once.
+# This keeps Cellar and all user-installed data while moving Brew to the prefix
+# required by Linux bottles.
 if [ ! -f "${storage_marker}" ]; then
+    if [ -n "${brew_legacy}" ] && [ -d "${brew_legacy}" ]; then
+        cp -a "${brew_legacy}/." "${brew_storage}/"
+    fi
+
+    # Older CLIWeb images also nested the repository one directory too deep.
+    # Replace only that broken launcher before seeding the repository at root.
     if [ -L "${brew_storage}/bin/brew" ]; then
         unlink "${brew_storage}/bin/brew"
     fi
-    cp -a "${brew_source}/." "${brew_storage}/"
+    if [ ! -f "${storage_marker}" ]; then
+        cp -a "${brew_source}/." "${brew_storage}/"
+    fi
 fi
 
 if [ ! -f "${storage_marker}" ] || [ ! -x "${brew_storage}/bin/brew" ]; then

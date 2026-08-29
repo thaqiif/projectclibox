@@ -58,7 +58,7 @@ app.prepare().then(() => {
         SHELL: shell,
         TERM: "xterm-256color",
         COLORTERM: "truecolor",
-        LANG: process.env.LANG || "en_US.UTF-8",
+        LANG: process.env.LANG || "C.UTF-8",
       };
 
       ptyProcess = pty.spawn(shell, [], {

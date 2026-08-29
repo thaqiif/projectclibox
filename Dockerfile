@@ -54,18 +54,18 @@ RUN useradd --create-home --home-dir /home/cliweb --shell /bin/bash --uid 1001 c
         /home/cliweb/.gitstate \
         /home/cliweb/.ssh \
         /home/cliweb/brew \
-        /home/linuxbrew \
+        /home/linuxbrew/.linuxbrew \
         /workspaces \
     && chmod 700 /home/cliweb/.ssh \
-    && chown -R cliweb:cliweb /home/cliweb \
-    && ln -s /home/cliweb/brew /home/linuxbrew/.linuxbrew \
-    && ln -s /home/cliweb/brew/bin/brew /usr/local/bin/brew
+    && chown -R cliweb:cliweb /home/cliweb /home/linuxbrew
 
 ENV HOME=/home/cliweb \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
     CLIWEB_HOME=/home/cliweb/.cliweb \
     CLIWEB_PORT=3011 \
     DB_PATH=/home/cliweb/.cliweb/cliweb.db \
-    CLIWEB_BREW_PREFIX=/home/cliweb/brew \
+    CLIWEB_BREW_PREFIX=/home/linuxbrew/.linuxbrew \
     CLIWEB_BREW_SOURCE=/opt/cliweb-brew \
     HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew \
     HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew \
@@ -81,7 +81,9 @@ ENV HOME=/home/cliweb \
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY docker-brew-bootstrap.sh /usr/local/libexec/cliweb-brew-bootstrap
+COPY docker-brew-command.sh /usr/local/bin/brew
 RUN chmod +x \
+    /usr/local/bin/brew \
     /usr/local/bin/docker-entrypoint.sh \
     /usr/local/libexec/cliweb-brew-bootstrap
 

@@ -6,9 +6,9 @@ set -euo pipefail
 # then launched as the unprivileged `cliweb` user.
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
-BREW_STORAGE="${CLIWEB_BREW_PREFIX:-${HOME}/brew}"
+BREW_STORAGE="${CLIWEB_BREW_PREFIX:-/home/linuxbrew/.linuxbrew}"
 BREW_SOURCE="${CLIWEB_BREW_SOURCE:-/opt/cliweb-brew}"
-HOMEBREW_SYSTEM_PREFIX="${HOMEBREW_PREFIX:-/home/linuxbrew/.linuxbrew}"
+BREW_LEGACY="${CLIWEB_BREW_LEGACY:-/mnt/cliweb-home/brew}"
 
 if [ "$(id -g cliweb)" != "${PGID}" ]; then
     groupmod -o -g "${PGID}" cliweb
@@ -40,29 +40,19 @@ export LOGNAME=cliweb
 # the remapped user. /opt dependencies remain root-owned and read-only.
 chown -R cliweb:cliweb "${HOME}"
 
-# The whole /home/cliweb tree is persisted by compose. Keep Homebrew's
-# repository and all formulae under /home/cliweb/brew so rebuilds do not remove
-# user-installed brew dependencies. The image snapshot avoids requiring a
+# Homebrew's dedicated volume is mounted at its supported Linux prefix and is
+# also visible at /home/cliweb/brew. The image snapshot avoids requiring a
 # network connection during the first container start.
-if [ ! -L "${HOMEBREW_SYSTEM_PREFIX}" ]; then
-    if [ -e "${HOMEBREW_SYSTEM_PREFIX}" ]; then
-        echo "CLIWeb: Homebrew system prefix ${HOMEBREW_SYSTEM_PREFIX} already exists" >&2
-        exit 1
-    fi
-    mkdir -p "$(dirname "${HOMEBREW_SYSTEM_PREFIX}")"
-    ln -s "${BREW_STORAGE}" "${HOMEBREW_SYSTEM_PREFIX}"
-fi
-
 CLIWEB_BREW_PREFIX="${BREW_STORAGE}" \
 CLIWEB_BREW_SOURCE="${BREW_SOURCE}" \
+CLIWEB_BREW_LEGACY="${BREW_LEGACY}" \
     /usr/local/libexec/cliweb-brew-bootstrap
 chown -R cliweb:cliweb "${BREW_STORAGE}"
-ln -sfn "${BREW_STORAGE}/bin/brew" /usr/local/bin/brew
 
-export HOMEBREW_PREFIX="${HOMEBREW_SYSTEM_PREFIX}"
-export HOMEBREW_REPOSITORY="${HOMEBREW_SYSTEM_PREFIX}"
+export HOMEBREW_PREFIX="${BREW_STORAGE}"
+export HOMEBREW_REPOSITORY="${BREW_STORAGE}"
 export HOMEBREW_CACHE="${HOME}/.cache/Homebrew"
-export PATH="${HOMEBREW_SYSTEM_PREFIX}/bin:${BREW_STORAGE}/bin:${HOMEBREW_SYSTEM_PREFIX}/sbin:${BREW_STORAGE}/sbin:${NPM_CONFIG_PREFIX}/bin:${HOME}/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="${BREW_STORAGE}/bin:${HOME}/brew/bin:${BREW_STORAGE}/sbin:${HOME}/brew/sbin:${NPM_CONFIG_PREFIX}/bin:${HOME}/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
 mkdir -p "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"
 chown -R cliweb:cliweb "${CLIWEB_REPO:-/opt/agent-os}/.next/cache"
 

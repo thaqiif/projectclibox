@@ -9,7 +9,9 @@ services:
         required: false
     environment:
       CLIWEB_PORT: 3011
-      CLIWEB_BREW_PREFIX: /home/cliweb/brew
+      CLIWEB_BREW_PREFIX: /home/linuxbrew/.linuxbrew
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
       SHELL: /bin/bash
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
@@ -24,7 +26,11 @@ services:
       - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3011}:3011"
     volumes:
       - cliweb_home:/home/cliweb
+      - cliweb_brew:/home/linuxbrew/.linuxbrew
+      - cliweb_brew:/home/cliweb/brew
+      - cliweb_home:/mnt/cliweb-home:ro
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces
 
 volumes:
   cliweb_home:
+  cliweb_brew:

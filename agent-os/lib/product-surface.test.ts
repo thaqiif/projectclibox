@@ -113,32 +113,36 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
 
   assert.match(dockerfile, /\sfile\s+\\/, "the image is missing Homebrew's file dependency");
   assert.ok(
-    dockerfile.includes("CLIWEB_BREW_PREFIX=/home/cliweb/brew"),
-    "the image should define the persistent Homebrew prefix"
+    dockerfile.includes("CLIWEB_BREW_PREFIX=/home/linuxbrew/.linuxbrew"),
+    "the image should use Homebrew's real supported Linux prefix"
   );
   assert.ok(
     dockerfile.includes("HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew"),
     "the image should use Homebrew's supported Linux prefix for bottles"
   );
   assert.ok(
-    dockerfile.includes("ln -s /home/cliweb/brew /home/linuxbrew/.linuxbrew") &&
-      dockerfile.includes("ln -s /home/cliweb/brew/bin/brew /usr/local/bin/brew"),
-    "the supported prefix and command should point into persistent storage"
+    dockerfile.includes("COPY docker-brew-command.sh /usr/local/bin/brew"),
+    "the image should install the Brew launcher as a regular command"
   );
   assert.ok(
-    compose.includes("CLIWEB_BREW_PREFIX: /home/cliweb/brew"),
-    "compose should expose the persistent Homebrew prefix"
+    compose.includes("CLIWEB_BREW_PREFIX: /home/linuxbrew/.linuxbrew"),
+    "compose should expose Homebrew's supported prefix"
   );
   assert.ok(
-    compose.includes("- cliweb_home:/home/cliweb"),
-    "the Homebrew prefix should live inside the persistent home volume"
+    compose.includes("- cliweb_brew:/home/linuxbrew/.linuxbrew") &&
+      compose.includes("- cliweb_brew:/home/cliweb/brew") &&
+      compose.includes("- cliweb_home:/mnt/cliweb-home:ro") &&
+      compose.includes("cliweb_brew:"),
+    "the Brew volume should be persistent, use the supported prefix, and expose the requested home path"
   );
   assert.ok(
-    entrypoint.includes('BREW_STORAGE="${CLIWEB_BREW_PREFIX:-${HOME}/brew}"'),
-    "the entrypoint should resolve the Homebrew prefix under the cliweb home"
+    entrypoint.includes(
+      'BREW_STORAGE="${CLIWEB_BREW_PREFIX:-/home/linuxbrew/.linuxbrew}"'
+    ),
+    "the entrypoint should resolve Homebrew at its supported Linux prefix"
   );
   assert.ok(
-    entrypoint.includes('export HOMEBREW_PREFIX="${HOMEBREW_SYSTEM_PREFIX}"'),
+    entrypoint.includes('export HOMEBREW_PREFIX="${BREW_STORAGE}"'),
     "the entrypoint should configure Homebrew to use its supported prefix"
   );
   assert.ok(
@@ -151,10 +155,30 @@ test("Homebrew is bootstrapped into the persistent CLIWeb home volume", () => {
     bootstrap.includes('cp -a "${brew_source}/." "${brew_storage}/"'),
     "Homebrew source should be copied directly into the prefix root"
   );
-  assert.ok(
-    entrypoint.includes('ln -sfn "${BREW_STORAGE}/bin/brew" /usr/local/bin/brew'),
-    "the entrypoint should expose Brew even when a shell resets PATH"
+  assert.doesNotMatch(
+    `${dockerfile}\n${entrypoint}`,
+    /ln -sfn? .*\/usr\/local\/bin\/brew/,
+    "Brew must not be symlinked into /usr/local because that changes its prefix"
   );
+});
+
+test("the container uses an available UTF-8 locale", () => {
+  const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
+  const compose = readFileSync(
+    join(process.cwd(), "..", "docker-compose.yml"),
+    "utf8"
+  );
+  const server = source("server.ts");
+
+  assert.ok(
+    dockerfile.includes("LANG=C.UTF-8") && dockerfile.includes("LC_ALL=C.UTF-8"),
+    "the image should use Debian's built-in UTF-8 locale"
+  );
+  assert.ok(
+    compose.includes("LANG: C.UTF-8") && compose.includes("LC_ALL: C.UTF-8"),
+    "compose should provide the same locale to terminals"
+  );
+  assert.match(server, /LANG: process\.env\.LANG \|\| "C\.UTF-8"/);
 });
 
 test("the container runtime user is cliweb", () => {
