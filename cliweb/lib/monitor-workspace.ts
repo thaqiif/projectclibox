@@ -118,3 +118,109 @@ export function removeMonitorPane(
   };
 }
 
+export type MonitorDropSide = "before" | "center" | "after";
+export const MONITOR_EDGE_ZONE = 0.25;
+
+export function dropSideFromRatio(ratio: number): MonitorDropSide {
+  if (ratio < MONITOR_EDGE_ZONE) return "before";
+  if (ratio > 1 - MONITOR_EDGE_ZONE) return "after";
+  return "center";
+}
+
+function equalizeWidths(panes: MonitorPaneState[]): MonitorPaneState[] {
+  const width = 1 / panes.length;
+  return panes.map((pane) => ({ ...pane, width }));
+}
+
+function newPaneId(): string {
+  return `monitor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function clearMonitorTerminal(
+  workspace: MonitorWorkspaceState,
+  terminalId: string
+): MonitorWorkspaceState {
+  return {
+    ...workspace,
+    panes: workspace.panes.map((pane) =>
+      pane.terminalId === terminalId ? { ...pane, terminalId: null } : pane
+    ),
+  };
+}
+
+export function placeMonitorTerminal(
+  workspace: MonitorWorkspaceState,
+  paneId: string,
+  terminalId: string
+): MonitorWorkspaceState {
+  return assignMonitorTerminal(
+    clearMonitorTerminal(workspace, terminalId),
+    paneId,
+    terminalId
+  );
+}
+
+export function insertMonitorPane(
+  workspace: MonitorWorkspaceState,
+  anchorPaneId: string,
+  side: Exclude<MonitorDropSide, "center">,
+  terminalId: string
+): MonitorWorkspaceState {
+  const anchorIndex = workspace.panes.findIndex(
+    (pane) => pane.id === anchorPaneId
+  );
+  if (anchorIndex < 0) return workspace;
+  if (workspace.panes.length >= MAX_MONITOR_PANES) {
+    return placeMonitorTerminal(workspace, anchorPaneId, terminalId);
+  }
+
+  const cleared = clearMonitorTerminal(workspace, terminalId);
+  const insertAt = side === "before" ? anchorIndex : anchorIndex + 1;
+  const panes = [...cleared.panes];
+  panes.splice(insertAt, 0, {
+    id: newPaneId(),
+    terminalId,
+    width: 1,
+  });
+  return { ...cleared, panes: equalizeWidths(panes) };
+}
+
+export function dropMonitorTerminal(
+  workspace: MonitorWorkspaceState,
+  paneId: string,
+  terminalId: string,
+  side: MonitorDropSide
+): MonitorWorkspaceState {
+  const target = workspace.panes.find((pane) => pane.id === paneId);
+  if (!target) return workspace;
+  if (side !== "center" && target.terminalId) {
+    return insertMonitorPane(workspace, paneId, side, terminalId);
+  }
+  return placeMonitorTerminal(workspace, paneId, terminalId);
+}
+
+export function moveMonitorPane(
+  workspace: MonitorWorkspaceState,
+  sourcePaneId: string,
+  anchorPaneId: string,
+  side: MonitorDropSide
+): MonitorWorkspaceState {
+  if (sourcePaneId === anchorPaneId) return workspace;
+  const sourceIndex = workspace.panes.findIndex(
+    (pane) => pane.id === sourcePaneId
+  );
+  const anchorIndex = workspace.panes.findIndex(
+    (pane) => pane.id === anchorPaneId
+  );
+  if (sourceIndex < 0 || anchorIndex < 0) return workspace;
+
+  const panes = [...workspace.panes];
+  const [moved] = panes.splice(sourceIndex, 1);
+  let insertAt = side === "before" ? anchorIndex : anchorIndex + 1;
+  if (sourceIndex < insertAt) insertAt -= 1;
+  if (side === "center") insertAt = panes.findIndex((pane) => pane.id === anchorPaneId);
+  if (insertAt < 0) insertAt = 0;
+  panes.splice(insertAt, 0, moved);
+  return { ...workspace, panes: equalizeWidths(panes) };
+}
+

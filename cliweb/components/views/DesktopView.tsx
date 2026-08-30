@@ -148,6 +148,7 @@ export function DesktopView({
               terminals={terminals}
               projects={projects}
               onAssignTerminal={monitor.assignTerminal}
+              onMovePane={monitor.movePane}
               onRemovePane={monitor.removePane}
               onResize={monitor.resize}
               onTerminalsChanged={fetchTerminals}

@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  assignMonitorTerminal,
   DEFAULT_MONITOR_WORKSPACE,
+  dropMonitorTerminal,
+  moveMonitorPane,
   removeMonitorPane,
+  type MonitorDropSide,
   type MonitorWorkspaceState,
 } from "@/lib/monitor-workspace";
 
@@ -116,9 +118,17 @@ export function useMonitorWorkspace() {
   );
 
   const assignTerminal = useCallback(
-    (paneId: string, terminalId: string) => {
+    (paneId: string, terminalId: string, side: MonitorDropSide = "center") => {
       const current = latest.current;
-      if (current) commit(assignMonitorTerminal(current, paneId, terminalId));
+      if (current) commit(dropMonitorTerminal(current, paneId, terminalId, side));
+    },
+    [commit]
+  );
+
+  const movePane = useCallback(
+    (sourcePaneId: string, anchorPaneId: string, side: MonitorDropSide) => {
+      const current = latest.current;
+      if (current) commit(moveMonitorPane(current, sourcePaneId, anchorPaneId, side));
     },
     [commit]
   );
@@ -153,5 +163,5 @@ export function useMonitorWorkspace() {
     [persistLatest]
   );
 
-  return { workspace, toggle, addPane, removePane, assignTerminal, resize };
+  return { workspace, toggle, addPane, removePane, assignTerminal, movePane, resize };
 }
