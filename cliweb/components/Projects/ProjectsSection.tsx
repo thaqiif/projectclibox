@@ -8,7 +8,7 @@ import { selectionStore, selectionActions } from "@/stores/terminalSelection";
 import type { Project } from "@/lib/db";
 import type { TerminalRecord } from "@/lib/terminals";
 
-export interface ProjectsSectionProps {
+interface ProjectsSectionProps {
   projects: Project[];
   terminals: TerminalRecord[];
   /** tmux name of the terminal currently attached. */

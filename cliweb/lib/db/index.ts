@@ -48,7 +48,7 @@ function withInitLock<T>(fn: () => T): T {
 }
 
 // Initialize database with schema
-export function initDb(): Database.Database {
+function initDb(): Database.Database {
   return withInitLock(() => {
     const db = new Database(DB_PATH, { timeout: 10000 });
 

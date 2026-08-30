@@ -9,7 +9,7 @@ import { getTerminalThemeForApp } from "../constants";
 import { DEFAULT_FONT_SCALE } from "../../../lib/font-scale";
 import { getTerminalFontSize } from "./terminal-font-size";
 
-export interface TerminalInstance {
+interface TerminalInstance {
   term: XTerm;
   fitAddon: FitAddon;
   searchAddon: SearchAddon;

@@ -1,6 +1,6 @@
 import { proxy } from "valtio";
 
-export interface FileOpenRequest {
+interface FileOpenRequest {
   path: string;
   line: number;
   timestamp: number;

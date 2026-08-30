@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type ThemeMode = "light" | "dark" | "system";
+type ThemeMode = "light" | "dark" | "system";
 export type DarkThemeVariant =
   | "deep"
   | "charcoal"

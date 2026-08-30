@@ -38,7 +38,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import type { TerminalRecord } from "@/lib/terminals";
 
-export interface TerminalCardProps {
+interface TerminalCardProps {
   terminal: TerminalRecord;
   isActive?: boolean;
   // Selection props

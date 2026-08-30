@@ -13,7 +13,7 @@
  * (`bounce`) — not as stiffness/mass/damping.
  */
 
-export interface SpringOptions {
+interface SpringOptions {
   /** Seconds to visually reach the target. Smaller is snappier. */
   response?: number;
   /** Overshoot: 0 is critically damped, 0.15–0.25 is lively. */

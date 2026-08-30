@@ -12,14 +12,14 @@ export function isRipgrepAvailable(): boolean {
   }
 }
 
-export interface SearchOptions {
+interface SearchOptions {
   maxResults?: number;
   contextLines?: number;
   filePattern?: string;
   caseSensitive?: boolean;
 }
 
-export interface SearchMatch {
+interface SearchMatch {
   type: "match";
   data: {
     path: { text: string };
