@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
 import { FileTree } from "./FileTree";
-import { FileEditor } from "./FileEditor";
 import { FileTabs } from "./FileTabs";
 import type { UseFileEditorReturn } from "@/hooks/useFileEditor";
 import { useViewport } from "@/hooks/useViewport";
@@ -18,6 +18,21 @@ import {
 } from "@/components/ui/dialog";
 import type { FileNode } from "@/lib/file-utils";
 import type { OpenFile } from "@/hooks/useFileEditor";
+
+// The CodeMirror stack is heavy and only loads once a file is actually
+// opened, not when the explorer pane first appears.
+const FileEditor = dynamic(
+  () => import("./FileEditor").then((m) => m.FileEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center gap-2">
+        <Loader2 className="text-muted-foreground h-3.5 w-3.5 animate-spin" />
+        <span className="ui-label">Loading</span>
+      </div>
+    ),
+  }
+);
 
 interface FileExplorerProps {
   workingDirectory: string;

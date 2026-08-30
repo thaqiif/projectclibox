@@ -19,7 +19,7 @@ export function useTerminalsQuery() {
   return useQuery({
     queryKey: terminalKeys.list(),
     queryFn: fetchTerminals,
-    refetchInterval: 5000,
+    refetchInterval: 15000,
     placeholderData: (prev) => prev,
   });
 }

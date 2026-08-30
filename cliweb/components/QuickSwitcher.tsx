@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
 import {
   Dialog,
   DialogContent,
@@ -9,13 +10,29 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Terminal, Check, Search } from "lucide-react";
+import { Terminal, Check, Search, Loader2 } from "lucide-react";
 import type { TerminalRecord } from "@/lib/terminals";
-import { CodeSearchResults } from "@/components/CodeSearch/CodeSearchResults";
 import { useRipgrepAvailable } from "@/data/code-search";
 import { AEmptyState } from "@/components/a/AEmptyState";
 
-export interface QuickSwitcherProps {
+// The Prism highlighter stack is heavy and only the rarely used code-search
+// tab needs it, so it stays out of the dialog's initial chunk.
+const CodeSearchResults = dynamic(
+  () =>
+    import("@/components/CodeSearch/CodeSearchResults").then(
+      (m) => m.CodeSearchResults
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-40 items-center justify-center">
+        <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+      </div>
+    ),
+  }
+);
+
+interface QuickSwitcherProps {
   terminals: TerminalRecord[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
