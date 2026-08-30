@@ -31,6 +31,7 @@ export function TerminalList({
   onCloseTerminal,
   onQuickSwitch,
   enableTerminalDrag = false,
+  onClosedAllTerminals,
 }: TerminalListProps) {
   const {
     data: terminalsData,
@@ -78,7 +79,10 @@ export function TerminalList({
       {showKillAllConfirm && (
         <KillAllConfirm
           onCancel={() => setShowKillAllConfirm(false)}
-          onComplete={() => setShowKillAllConfirm(false)}
+          onComplete={() => {
+            setShowKillAllConfirm(false);
+            onClosedAllTerminals?.();
+          }}
         />
       )}
 

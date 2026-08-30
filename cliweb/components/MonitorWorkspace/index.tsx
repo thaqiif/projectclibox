@@ -86,8 +86,10 @@ function MonitorPane({
   onTerminalsChanged: () => Promise<void>;
 }) {
   const [restart, setRestart] = useState(false);
+  const [isOver, setIsOver] = useState(false);
   const onDrop = (event: React.DragEvent) => {
     event.preventDefault();
+    setIsOver(false);
     const id = event.dataTransfer.getData("application/x-cliweb-terminal");
     if (id) {
       // A fresh assignment cancels any pending restart of the old terminal.
@@ -97,12 +99,21 @@ function MonitorPane({
   };
 
   const title = terminal?.name ?? terminalId;
+  const occupied = Boolean(terminal && (terminal.alive || restart));
 
   return (
     <div
       className="bg-background relative flex h-full min-w-0 flex-col overflow-hidden border border-[var(--fill-2)]"
       data-monitor-pane={paneId}
-      onDragOver={(event) => event.preventDefault()}
+      onDragOver={(event) => {
+        event.preventDefault();
+        setIsOver(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+          setIsOver(false);
+        }
+      }}
       onDrop={onDrop}
     >
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--fill-2)] px-2">
@@ -164,11 +175,19 @@ function MonitorPane({
             </p>
           </div>
         ) : (
-          <div className="text-muted-foreground flex h-full items-center justify-center p-6 text-center text-sm">
-            Drag a terminal here
+          <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 border-2 border-dashed border-[var(--fill-3)] p-6 text-center text-sm">
+            <TerminalSquare className="h-8 w-8" />
+            <p>Drop a terminal here</p>
           </div>
         )}
       </div>
+      {isOver && occupied && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[var(--fill-1)]/80">
+          <div className="rounded-lg border-2 border-dashed border-[var(--fill-3)] bg-background/90 px-4 py-3 text-center text-sm font-medium">
+            Drop to replace this terminal
+          </div>
+        </div>
+      )}
     </div>
   );
 }

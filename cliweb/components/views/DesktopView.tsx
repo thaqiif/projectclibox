@@ -34,6 +34,7 @@ export function DesktopView({
   handleNewTerminal,
   handleCloseTerminal,
   fetchTerminals,
+  handleDetachTerminal,
   handleCreateProject,
   renderPane,
 }: ViewProps) {
@@ -49,6 +50,7 @@ export function DesktopView({
         onSelect={(id) => attachToTerminal(id)}
         onNewTerminal={handleNewTerminal}
         onCloseTerminal={handleCloseTerminal}
+        onClosedAllTerminals={handleDetachTerminal}
         onQuickSwitch={() => setShowQuickSwitcher(true)}
       />
 

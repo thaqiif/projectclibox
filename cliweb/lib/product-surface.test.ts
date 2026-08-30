@@ -484,12 +484,18 @@ test("desktop monitor workspace stays isolated from mobile", () => {
   assert.match(monitor, /tmuxAttachCommand\(name, cwd\)/);
   assert.match(monitor, /projectNameFor/);
   assert.match(monitor, /Remove monitor pane/);
+  assert.match(monitor, /Drop a terminal here/);
+  assert.match(monitor, /Drop to replace this terminal/);
   assert.match(fileDrop, /isTerminalDrag\(e\)\) return/);
   assert.match(hook, /pendingWrite/);
   assert.match(hook, /skipResizePersist/);
   assert.match(hook, /RESIZE_PERSIST_MS/);
   assert.match(hook, /removeMonitorPane/);
   assert.match(route, /Error resetting monitor workspace/);
+  assert.match(
+    source("app/api/tmux/kill-all/route.ts"),
+    /forgetTerminal\(terminal\.name\)/
+  );
   assert.match(page, /if \(attachedTmux === name\) detach\(\)/);
   assert.doesNotMatch(
     mobile,
