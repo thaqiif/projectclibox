@@ -17,7 +17,6 @@ import { AEmptyState } from "@/components/a/AEmptyState";
 import type { TerminalRecord } from "@/lib/terminals";
 import type { Project } from "@/lib/db";
 
-// Data hooks
 import { useTerminalsQuery } from "@/data/terminals";
 import { useProjectsQuery, useCreateProject } from "@/data/projects";
 
@@ -31,8 +30,8 @@ export function TerminalList({
   onNewTerminal,
   onCloseTerminal,
   onQuickSwitch,
+  enableTerminalDrag = false,
 }: TerminalListProps) {
-  // Fetch data directly with loading states
   const {
     data: terminalsData,
     isPending: isTerminalsPending,
@@ -44,7 +43,6 @@ export function TerminalList({
     isPending: isProjectsPending,
     isError: isProjectsError,
   } = useProjectsQuery();
-  // Combined loading state for initial load
   const isInitialLoading = isTerminalsPending || isProjectsPending;
   const hasError = isTerminalsError || isProjectsError;
 
@@ -55,18 +53,13 @@ export function TerminalList({
 
   // All mutations via custom hook
   const mutations = useTerminalListMutations();
-
-  // Project creation mutation for folder picker
   const createProject = useCreateProject();
 
-  // Local UI state
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
-  const [editingProject, setEditingProject] =
-    useState<Project | null>(null);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [showKillAllConfirm, setShowKillAllConfirm] = useState(false);
 
-  // Use projects if available
   const useProjectsView = projects.length > 0;
 
   return (
@@ -144,6 +137,7 @@ export function TerminalList({
                 onCloseTerminal ?? mutations.handleDeleteTerminal
               }
               onRenameTerminal={mutations.handleRenameTerminal}
+              enableTerminalDrag={enableTerminalDrag}
             />
           )}
         </div>

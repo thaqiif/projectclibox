@@ -21,6 +21,7 @@ interface ProjectsSectionProps {
   onSelectTerminal: (name: string) => void;
   onCloseTerminal?: (name: string) => void;
   onRenameTerminal?: (name: string, newName: string) => void;
+  enableTerminalDrag?: boolean;
 }
 
 export function ProjectsSection({
@@ -35,11 +36,12 @@ export function ProjectsSection({
   onSelectTerminal,
   onCloseTerminal,
   onRenameTerminal,
+  enableTerminalDrag = false,
 }: ProjectsSectionProps) {
   const { selectedIds } = useSnapshot(selectionStore);
   const isInSelectMode = selectedIds.size > 0;
 
-  // Flatten all terminal IDs for range selection (respecting render order)
+  // Terminal IDs in render order, used for shift-click range selection.
   const allTerminalIds = useMemo(() => {
     const ids: string[] = [];
     for (const project of projects) {
@@ -51,7 +53,6 @@ export function ProjectsSection({
     return ids;
   }, [projects, terminals]);
 
-  // Handler for toggling terminal selection
   const handleToggleSelect = useCallback(
     (terminalId: string, shiftKey: boolean) => {
       selectionActions.toggle(terminalId, shiftKey, allTerminalIds);
@@ -77,7 +78,6 @@ export function ProjectsSection({
 
         return (
           <div key={project.id} className="flex flex-col gap-0.5">
-            {/* Project header */}
             <ProjectCard
               project={project}
               onToggleExpanded={(expanded) =>
@@ -106,7 +106,6 @@ export function ProjectsSection({
             {/* Project contents when expanded */}
             {project.expanded && (
               <div className="ml-4 flex flex-col gap-0.5 pb-1 pl-1.5">
-                {/* Project terminals */}
                 {projectTerminals.length === 0 ? (
                   <p className="text-muted-foreground px-2.5 py-1.5 text-[0.75rem]">
                     No terminals yet
@@ -116,6 +115,7 @@ export function ProjectsSection({
                     <div key={terminal.id} className="min-w-0">
                       <TerminalCard
                         terminal={terminal}
+                        draggable={enableTerminalDrag}
                         isActive={terminal.id === activeTerminalId}
                         isSelected={selectedIds.has(terminal.id)}
                         isInSelectMode={isInSelectMode}

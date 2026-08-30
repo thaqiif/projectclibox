@@ -6,4 +6,5 @@ export interface TerminalListProps {
   onNewTerminal?: (projectId?: string) => void;
   onCloseTerminal?: (name: string) => void;
   onQuickSwitch?: () => void;
+  enableTerminalDrag?: boolean;
 }

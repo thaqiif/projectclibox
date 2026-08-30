@@ -304,7 +304,10 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
 });
 
 test("the image libc can run nanobrew Linux bottles", () => {
-  const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
+  const dockerfile = readFileSync(
+    join(process.cwd(), "..", "Dockerfile"),
+    "utf8"
+  );
 
   assert.match(
     dockerfile,
@@ -319,7 +322,10 @@ test("the image libc can run nanobrew Linux bottles", () => {
 });
 
 test("the container includes the full Ruby runtime", () => {
-  const dockerfile = readFileSync(join(process.cwd(), "..", "Dockerfile"), "utf8");
+  const dockerfile = readFileSync(
+    join(process.cwd(), "..", "Dockerfile"),
+    "utf8"
+  );
   const aptPackages = dockerfile.slice(
     dockerfile.indexOf("apt-get install"),
     dockerfile.indexOf("&& rm -rf /var/lib/apt/lists/*")
@@ -454,5 +460,42 @@ test("the mounted workspaces are writable by cliweb", () => {
     entrypoint,
     /chown -R cliweb:cliweb .*\/workspaces/,
     "startup should align the workspace bind mount with the runtime user"
+  );
+});
+
+test("desktop monitor workspace stays isolated from mobile", () => {
+  const page = source("app/page.tsx");
+  const desktop = source("components/views/DesktopView.tsx");
+  const mobile = source("components/views/MobileView.tsx");
+  const monitor = source("components/MonitorWorkspace/index.tsx");
+  const fileDrop = source("hooks/useFileDrop.ts");
+  const hook = source("hooks/useMonitorWorkspace.ts");
+  const route = source("app/api/monitor-workspace/route.ts");
+
+  assert.match(page, /if \(isMobile\)[\s\S]*?<MobileView[\s\S]*?<DesktopView/);
+  assert.match(desktop, /useMonitorWorkspace\(\)/);
+  assert.match(desktop, /Toggle monitor workspace/);
+  assert.match(monitor, /application\/x-cliweb-terminal/);
+  assert.match(monitor, /tmuxAttachCommand/);
+  assert.match(monitor, /key=\{terminal\.id\}/);
+  assert.match(monitor, /key=\{terminalId\}/);
+  assert.match(monitor, /tmuxAttachCommand\(name, cwd\)/);
+  assert.match(fileDrop, /isTerminalDrag\(e\)\) return/);
+  assert.match(hook, /pendingWrite/);
+  assert.match(hook, /skipResizePersist/);
+  assert.match(hook, /RESIZE_PERSIST_MS/);
+  assert.match(route, /Error resetting monitor workspace/);
+  assert.doesNotMatch(
+    mobile,
+    /MonitorWorkspace|useMonitorWorkspace|monitor pane/i
+  );
+});
+
+test("terminal cards expose desktop drag identities", () => {
+  const card = source("components/TerminalCard.tsx");
+  assert.match(card, /draggable=\{draggable && !isEditing\}/);
+  assert.match(
+    card,
+    /setData\(\s*"application\/x-cliweb-terminal",\s*terminal\.id\s*\)/
   );
 });

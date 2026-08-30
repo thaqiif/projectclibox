@@ -1,0 +1,105 @@
+export const MONITOR_WORKSPACE_SETTING_KEY = "desktopMonitorWorkspace";
+export const MIN_MONITOR_PANES = 1;
+export const MAX_MONITOR_PANES = 3;
+
+export interface MonitorPaneState {
+  id: string;
+  terminalId: string | null;
+  width: number;
+}
+
+export interface MonitorWorkspaceState {
+  enabled: boolean;
+  panes: MonitorPaneState[];
+}
+
+export const DEFAULT_MONITOR_WORKSPACE: MonitorWorkspaceState = {
+  enabled: false,
+  panes: [{ id: "monitor-1", terminalId: null, width: 1 }],
+};
+
+/** Validate and normalize a stored client payload: pane count, unique ids, unique terminal ownership, positive widths renormalized to sum to 1. */
+export function normalizeMonitorWorkspace(
+  input: unknown
+): MonitorWorkspaceState {
+  if (!input || typeof input !== "object") {
+    throw new Error("Workspace must be an object");
+  }
+
+  const candidate = input as { enabled?: unknown; panes?: unknown };
+  if (
+    typeof candidate.enabled !== "boolean" ||
+    !Array.isArray(candidate.panes)
+  ) {
+    throw new Error("Workspace requires enabled and panes");
+  }
+  if (
+    candidate.panes.length < MIN_MONITOR_PANES ||
+    candidate.panes.length > MAX_MONITOR_PANES
+  ) {
+    throw new Error("Workspace must contain one to three panes");
+  }
+
+  const terminalIds = new Set<string>();
+  const paneIds = new Set<string>();
+  const panes = candidate.panes.map((value) => {
+    if (!value || typeof value !== "object") throw new Error("Invalid pane");
+    const pane = value as {
+      id?: unknown;
+      terminalId?: unknown;
+      width?: unknown;
+    };
+    if (typeof pane.id !== "string" || !pane.id.trim()) {
+      throw new Error("Each pane requires an id");
+    }
+    const id = pane.id.trim();
+    if (paneIds.has(id)) {
+      throw new Error("Duplicate pane id");
+    }
+    paneIds.add(id);
+    if (pane.terminalId !== null && typeof pane.terminalId !== "string") {
+      throw new Error("Invalid terminal identity");
+    }
+    if (pane.terminalId) {
+      if (terminalIds.has(pane.terminalId)) {
+        throw new Error("A terminal can only occupy one pane");
+      }
+      terminalIds.add(pane.terminalId);
+    }
+    if (
+      typeof pane.width !== "number" ||
+      !Number.isFinite(pane.width) ||
+      pane.width <= 0
+    ) {
+      throw new Error("Pane widths must be positive numbers");
+    }
+    return {
+      id,
+      terminalId: pane.terminalId || null,
+      width: pane.width,
+    };
+  });
+
+  const total = panes.reduce((sum, pane) => sum + pane.width, 0);
+  return {
+    enabled: candidate.enabled,
+    panes: panes.map((pane) => ({ ...pane, width: pane.width / total })),
+  };
+}
+
+export function assignMonitorTerminal(
+  workspace: MonitorWorkspaceState,
+  paneId: string,
+  terminalId: string
+): MonitorWorkspaceState {
+  const occupyingPane = workspace.panes.find(
+    (pane) => pane.terminalId === terminalId && pane.id !== paneId
+  );
+  if (occupyingPane) return workspace;
+  return {
+    ...workspace,
+    panes: workspace.panes.map((pane) =>
+      pane.id === paneId ? { ...pane, terminalId } : pane
+    ),
+  };
+}

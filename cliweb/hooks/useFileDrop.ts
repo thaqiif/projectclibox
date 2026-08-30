@@ -13,6 +13,12 @@ interface DragHandlers {
   onDrop: (e: React.DragEvent) => void;
 }
 
+const TERMINAL_DRAG_TYPE = "application/x-cliweb-terminal";
+
+function isTerminalDrag(event: React.DragEvent) {
+  return Array.from(event.dataTransfer.types).includes(TERMINAL_DRAG_TYPE);
+}
+
 /**
  * Hook for handling file drag and drop on a container element.
  *
@@ -38,6 +44,9 @@ export function useFileDrop(
 
   const handleDragOver = useCallback(
     (e: React.DragEvent) => {
+      // Monitor pane drops use a custom MIME type. Let those events bubble so
+      // an occupied pane can still receive a replacement terminal.
+      if (isTerminalDrag(e)) return;
       e.preventDefault();
       e.stopPropagation();
       if (!options?.disabled) {
@@ -49,10 +58,11 @@ export function useFileDrop(
 
   const handleDragLeave = useCallback(
     (e: React.DragEvent) => {
+      if (isTerminalDrag(e)) return;
       e.preventDefault();
       e.stopPropagation();
-      // Only set to false if leaving the container entirely
-      // This prevents flickering when moving over nested elements
+      // Only clear when the pointer leaves the container entirely, so moving
+      // across nested elements does not flicker the overlay.
       if (!containerRef.current?.contains(e.relatedTarget as Node)) {
         setIsDragging(false);
       }
@@ -62,11 +72,11 @@ export function useFileDrop(
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
+      if (isTerminalDrag(e)) return;
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
 
-      // Don't process drops if disabled
       if (options?.disabled) return;
 
       const files = Array.from(e.dataTransfer.files);
