@@ -4,7 +4,6 @@ import { DesktopSidebar } from "./DesktopSidebar";
 import { Button } from "@/components/ui/button";
 import {
   Columns3,
-  Minus,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -35,7 +34,6 @@ export function DesktopView({
   handleNewTerminal,
   handleCloseTerminal,
   fetchTerminals,
-  handleDetachTerminal,
   handleCreateProject,
   renderPane,
 }: ViewProps) {
@@ -84,14 +82,12 @@ export function DesktopView({
               </TooltipContent>
             </Tooltip>
 
-            {activeTerminal && (
+            {activeTerminal && !monitor.workspace?.enabled && (
               <div className="ml-1 flex min-w-0 items-center gap-1 rounded-full bg-[var(--fill-4)] py-1 pr-1 pl-3">
                 <WorkbenchTitle
                   name={activeTerminal.name}
                   onRename={renameTerminal}
                 />
-                {/* Detach, not kill: the terminal and everything in it keep
-                    running, the workbench just stops looking at it. */}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -99,7 +95,7 @@ export function DesktopView({
                       size="icon-sm"
                       aria-label="Close terminal"
                       className="h-6 w-6 shrink-0 rounded-full"
-                      onClick={handleDetachTerminal}
+                      onClick={() => void handleCloseTerminal(activeTerminal.name)}
                     >
                       <X className="h-3.5 w-3.5" />
                     </Button>
@@ -107,7 +103,7 @@ export function DesktopView({
                   <TooltipContent>
                     <p>Close terminal</p>
                     <p className="text-muted-foreground text-[0.6875rem]">
-                      Keeps it running in tmux
+                      Kills anything running in it
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -117,26 +113,15 @@ export function DesktopView({
 
           <div className="flex shrink-0 items-center gap-1">
             {monitor.workspace?.enabled && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Remove monitor pane"
-                  disabled={monitor.workspace.panes.length <= 1}
-                  onClick={monitor.removePane}
-                >
-                  <Minus className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Add monitor pane"
-                  disabled={monitor.workspace.panes.length >= 3}
-                  onClick={monitor.addPane}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Add monitor pane"
+                disabled={monitor.workspace.panes.length >= 3}
+                onClick={monitor.addPane}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
             )}
             <Button
               variant={monitor.workspace?.enabled ? "secondary" : "ghost"}
@@ -159,7 +144,9 @@ export function DesktopView({
             <MonitorWorkspace
               workspace={monitor.workspace}
               terminals={terminals}
+              projects={projects}
               onAssignTerminal={monitor.assignTerminal}
+              onRemovePane={monitor.removePane}
               onResize={monitor.resize}
               onTerminalsChanged={fetchTerminals}
             />

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   assignMonitorTerminal,
   DEFAULT_MONITOR_WORKSPACE,
+  removeMonitorPane,
   type MonitorWorkspaceState,
 } from "@/lib/monitor-workspace";
 
@@ -106,16 +107,13 @@ export function useMonitorWorkspace() {
     });
   }, [commit]);
 
-  const removePane = useCallback(() => {
-    const current = latest.current;
-    if (!current || current.panes.length <= 1) return;
-    const panes = current.panes.slice(0, -1);
-    const total = panes.reduce((sum, pane) => sum + pane.width, 0);
-    commit({
-      ...current,
-      panes: panes.map((pane) => ({ ...pane, width: pane.width / total })),
-    });
-  }, [commit]);
+  const removePane = useCallback(
+    (paneId: string) => {
+      const current = latest.current;
+      if (current) commit(removeMonitorPane(current, paneId));
+    },
+    [commit]
+  );
 
   const assignTerminal = useCallback(
     (paneId: string, terminalId: string) => {

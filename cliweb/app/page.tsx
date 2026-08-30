@@ -193,9 +193,10 @@ function HomeContent() {
   const handleCloseTerminal = useCallback(
     async (name: string) => {
       await killTerminal(name);
+      if (attachedTmux === name) detach();
       await fetchTerminals();
     },
-    [killTerminal, fetchTerminals]
+    [killTerminal, attachedTmux, detach, fetchTerminals]
   );
 
   // Pane renderer. Declared after the handlers it hands to the welcome

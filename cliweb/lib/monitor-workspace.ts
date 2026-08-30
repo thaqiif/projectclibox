@@ -103,3 +103,18 @@ export function assignMonitorTerminal(
     ),
   };
 }
+
+export function removeMonitorPane(
+  workspace: MonitorWorkspaceState,
+  paneId: string
+): MonitorWorkspaceState {
+  if (workspace.panes.length <= MIN_MONITOR_PANES) return workspace;
+  if (!workspace.panes.some((pane) => pane.id === paneId)) return workspace;
+  const panes = workspace.panes.filter((pane) => pane.id !== paneId);
+  const total = panes.reduce((sum, pane) => sum + pane.width, 0);
+  return {
+    ...workspace,
+    panes: panes.map((pane) => ({ ...pane, width: pane.width / total })),
+  };
+}
+

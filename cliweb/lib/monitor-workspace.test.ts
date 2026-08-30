@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   assignMonitorTerminal,
   normalizeMonitorWorkspace,
+  removeMonitorPane,
 } from "./monitor-workspace";
 
 test("normalizes one to three ordered pane widths", () => {
@@ -66,4 +67,28 @@ test("duplicate assignment is prevented while replacement is allowed", () => {
     assignMonitorTerminal(state, "b", "two").panes[1].terminalId,
     "two"
   );
+});
+
+test("removeMonitorPane drops a chosen pane and renormalizes remaining widths", () => {
+  const state = normalizeMonitorWorkspace({
+    enabled: true,
+    panes: [
+      { id: "left", terminalId: "term-a", width: 1 },
+      { id: "middle", terminalId: "term-b", width: 1 },
+      { id: "right", terminalId: "term-c", width: 1 },
+    ],
+  });
+  const removed = removeMonitorPane(state, "left");
+  assert.deepEqual(
+    removed.panes.map((pane) => pane.id),
+    ["middle", "right"]
+  );
+  assert.deepEqual(
+    removed.panes.map((pane) => pane.width),
+    [0.5, 0.5]
+  );
+  assert.equal(removeMonitorPane(removed, "missing"), removed);
+  const last = removeMonitorPane(removed, "middle");
+  assert.equal(last.panes.length, 1);
+  assert.equal(removeMonitorPane(last, "right"), last);
 });
