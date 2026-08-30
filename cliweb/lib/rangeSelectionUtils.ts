@@ -7,7 +7,7 @@
 /**
  * Toggle a single item's selection
  */
-export function toggleSelection(
+function toggleSelection(
   selectedSet: Set<string>,
   itemId: string
 ): Set<string> {
@@ -23,7 +23,7 @@ export function toggleSelection(
 /**
  * Select a range of items between lastSelectedId and current itemId
  */
-export function selectRange(
+function selectRange(
   selectedSet: Set<string>,
   itemId: string,
   lastSelectedId: string,

@@ -12,7 +12,7 @@ import {
   type Project,
 } from "./db";
 
-export interface CreateProjectOptions {
+interface CreateProjectOptions {
   name: string;
   workingDirectory: string;
 }

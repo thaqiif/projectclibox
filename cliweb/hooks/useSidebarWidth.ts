@@ -4,9 +4,9 @@ import { useState, useCallback, useEffect, useRef } from "react";
 
 const STORAGE_KEY = "cliweb-sidebar-width";
 
-export const SIDEBAR_MIN_WIDTH = 180;
-export const SIDEBAR_MAX_WIDTH = 560;
-export const SIDEBAR_DEFAULT_WIDTH = 240;
+const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_MAX_WIDTH = 560;
+const SIDEBAR_DEFAULT_WIDTH = 240;
 
 function clamp(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));

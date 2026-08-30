@@ -18,7 +18,7 @@ import { getDb, queries, type TerminalRow } from "@/lib/db";
 import { listTerminals, type Terminal } from "@/lib/terminals";
 
 /** A terminal, whether or not tmux currently has a process for it. */
-export interface KnownTerminal extends Terminal {
+interface KnownTerminal extends Terminal {
   /** False when the tmux process is gone and selecting it would restart it. */
   alive: boolean;
 }
@@ -39,12 +39,6 @@ export function renameTerminalRow(name: string, newName: string): void {
 export function terminalRowExists(name: string): boolean {
   const rows = queries.getAllTerminals(getDb()).all() as TerminalRow[];
   return rows.some((r) => r.name === name);
-}
-
-/** Working directory last recorded for a terminal, if we know it. */
-export function terminalWorkingDirectory(name: string): string | null {
-  const rows = queries.getAllTerminals(getDb()).all() as TerminalRow[];
-  return rows.find((r) => r.name === name)?.working_directory ?? null;
 }
 
 /**

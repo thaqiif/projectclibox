@@ -3,7 +3,7 @@
 import type { Terminal as XTerm } from "@xterm/xterm";
 import { WS_RECONNECT_BASE_DELAY, WS_RECONNECT_MAX_DELAY } from "../constants";
 
-export interface WebSocketCallbacks {
+interface WebSocketCallbacks {
   onConnected?: () => void;
   onDisconnected?: () => void;
   onConnectionStateChange: (
@@ -12,7 +12,7 @@ export interface WebSocketCallbacks {
   onSetConnected: (connected: boolean) => void;
 }
 
-export interface WebSocketManager {
+interface WebSocketManager {
   ws: WebSocket;
   sendInput: (data: string) => void;
   sendCommand: (command: string) => void;

@@ -1,5 +1,3 @@
-import type { TerminalRecord } from "@/lib/terminals";
-
 export interface TerminalListProps {
   /** tmux name of the terminal currently attached. */
   activeTerminalId?: string;
@@ -8,9 +6,4 @@ export interface TerminalListProps {
   onNewTerminal?: (projectId?: string) => void;
   onCloseTerminal?: (name: string) => void;
   onQuickSwitch?: () => void;
-}
-
-export interface TerminalHoverHandlers {
-  onHoverStart: (terminal: TerminalRecord, rect: DOMRect) => void;
-  onHoverEnd: () => void;
 }
