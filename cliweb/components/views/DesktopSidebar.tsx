@@ -15,6 +15,7 @@ interface DesktopSidebarProps {
   onSelect: (name: string) => void;
   onNewTerminal: (projectId?: string) => void;
   onCloseTerminal: (projectId: string) => void;
+  onClosedAllTerminals?: () => void;
 }
 
 export function DesktopSidebar({
@@ -24,6 +25,7 @@ export function DesktopSidebar({
   onSelect,
   onNewTerminal,
   onCloseTerminal,
+  onClosedAllTerminals,
 }: DesktopSidebarProps) {
   // When unpinned, the sidebar floats and reveals on hover near the left edge
   const [revealed, setRevealed] = useState(false);
@@ -70,10 +72,12 @@ export function DesktopSidebar({
       <div className="min-h-0 flex-1 overflow-hidden">
         <TerminalList
           activeTerminalId={activeTerminalId}
+          enableTerminalDrag
           onSelect={onSelect}
           onNewTerminal={onNewTerminal}
           onCloseTerminal={onCloseTerminal}
           onQuickSwitch={onQuickSwitch}
+          onClosedAllTerminals={onClosedAllTerminals}
         />
       </div>
     </div>
@@ -102,9 +106,7 @@ export function DesktopSidebar({
           "z-20 h-full overflow-hidden",
           "transition-[width,transform] duration-300 ease-[cubic-bezier(0.23,1,0.32,1)]",
           isPinned
-            ? [
-                "glass glass-edge-right relative flex-shrink-0 translate-x-0",
-              ]
+            ? ["glass glass-edge-right relative flex-shrink-0 translate-x-0"]
             : [
                 "glass-thick glass-float fixed top-0 left-0 z-40",
                 revealed ? "translate-x-0" : "-translate-x-full",

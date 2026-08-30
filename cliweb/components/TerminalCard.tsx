@@ -3,14 +3,9 @@
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
-  Check,
-  Loader2,
   MoreHorizontal,
-  FolderInput,
   Trash2,
-  Copy,
   Pencil,
-  Sparkles,
   Square,
   CheckSquare,
 } from "lucide-react";
@@ -35,7 +30,6 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "./ui/context-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import type { TerminalRecord } from "@/lib/terminals";
 
 interface TerminalCardProps {
@@ -51,6 +45,7 @@ interface TerminalCardProps {
   onRename?: (newName: string) => void;
   onHoverStart?: (rect: DOMRect) => void;
   onHoverEnd?: () => void;
+  draggable?: boolean;
 }
 
 export function TerminalCard({
@@ -64,6 +59,7 @@ export function TerminalCard({
   onRename,
   onHoverStart,
   onHoverEnd,
+  draggable = false,
 }: TerminalCardProps) {
   // tmux reports last activity in seconds since the epoch.
   const timeAgo = getTimeAgo(terminal.activity);
@@ -74,6 +70,13 @@ export function TerminalCard({
   const cardRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const justStartedEditingRef = useRef(false);
+
+  const cancelHoverPreview = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+  };
 
   const handleMouseEnter = () => {
     if (!onHoverStart || !cardRef.current || menuOpen) return;
@@ -86,21 +89,14 @@ export function TerminalCard({
   };
 
   const handleMouseLeave = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
+    cancelHoverPreview();
     onHoverEnd?.();
   };
 
   const handleMenuOpenChange = (open: boolean) => {
     setMenuOpen(open);
     if (open) {
-      // Cancel hover preview when menu opens
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-        hoverTimeoutRef.current = null;
-      }
+      cancelHoverPreview();
       onHoverEnd?.();
     }
   };
@@ -123,7 +119,7 @@ export function TerminalCard({
   }, [isEditing]);
 
   const handleRename = () => {
-    // Ignore blur events that happen immediately after starting to edit
+    // Ignore blur events that happen immediately after starting to edit.
     if (justStartedEditingRef.current) return;
 
     if (editName.trim() && editName !== terminal.name && onRename) {
@@ -205,6 +201,14 @@ export function TerminalCard({
   const cardContent = (
     <div
       ref={cardRef}
+      draggable={draggable && !isEditing}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData(
+          "application/x-cliweb-terminal",
+          terminal.id
+        );
+      }}
       onClick={handleCardClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
@@ -219,7 +223,7 @@ export function TerminalCard({
             : "hover:bg-[var(--fill-4)]"
       )}
     >
-      {/* Selection checkbox - visible when in select mode */}
+      {/* Selection checkbox */}
       {isInSelectMode && onToggleSelect && (
         <button
           onClick={handleCheckboxClick}
@@ -286,7 +290,7 @@ export function TerminalCard({
             {timeAgo}
           </span>
 
-          {/* Actions menu (button) */}
+          {/* Actions menu */}
           {hasActions && (
             <DropdownMenu onOpenChange={handleMenuOpenChange}>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -313,7 +317,6 @@ export function TerminalCard({
     </div>
   );
 
-  // Wrap with context menu if actions are available
   if (hasActions) {
     return (
       <ContextMenu>

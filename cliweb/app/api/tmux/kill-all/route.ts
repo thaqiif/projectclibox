@@ -1,26 +1,28 @@
 import { NextResponse } from "next/server";
-import { listTerminals, killTerminal } from "@/lib/terminals";
+import { killTerminal } from "@/lib/terminals";
+import { forgetTerminal, listKnownTerminals } from "@/lib/terminal-registry";
 
 /**
- * POST /api/tmux/kill-all - close every terminal.
+ * POST /api/tmux/kill-all - close every terminal for good.
  *
- * This used to kill only terminals whose names matched CLIWeb's own naming
- * scheme, then sweep a database table to match. Terminals are just tmux
- * workspaces now, with no rows to clean up and no notion of "managed": what
- * the sidebar lists is what this closes.
+ * Closing a single terminal kills tmux and forgets the registry entry so it
+ * leaves the sidebar. Close-all used to kill tmux only, which left every
+ * terminal sitting in the list as a restartable ghost. Forget the same
+ * entries the sidebar is showing, live or already stopped.
  */
 export async function POST() {
   try {
-    const terminals = await listTerminals();
+    const terminals = await listKnownTerminals();
     const killed: string[] = [];
 
     for (const terminal of terminals) {
       try {
         await killTerminal(terminal.name);
-        killed.push(terminal.name);
       } catch {
         // Already gone, or died while we were iterating. Either is fine.
       }
+      forgetTerminal(terminal.name);
+      killed.push(terminal.name);
     }
 
     return NextResponse.json({ killed: killed.length, terminals: killed });

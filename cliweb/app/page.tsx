@@ -1,6 +1,17 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { PaneProvider, usePanes } from "@/contexts/PaneContext";
+import { Pane } from "@/components/Pane";
+import { useViewport } from "@/hooks/useViewport";
+import { useViewportHeight } from "@/hooks/useViewportHeight";
+import { useTerminals } from "@/hooks/useTerminals";
+import { useProjects } from "@/hooks/useProjects";
+import type { TerminalRecord } from "@/lib/terminals";
+import { tmuxAttachCommand } from "@/lib/tmux-attach";
+import type { TerminalHandle } from "@/components/Terminal";
+import { DesktopView } from "@/components/views/DesktopView";
+import { MobileView } from "@/components/views/MobileView";
 
 // Debug log buffer - persists even if console is closed
 const debugLogs: string[] = [];
@@ -22,17 +33,6 @@ if (typeof window !== "undefined") {
     console.log("=== End Logs ===");
   };
 }
-import { PaneProvider, usePanes } from "@/contexts/PaneContext";
-import { Pane } from "@/components/Pane";
-import { useViewport } from "@/hooks/useViewport";
-import { useViewportHeight } from "@/hooks/useViewportHeight";
-import { useTerminals } from "@/hooks/useTerminals";
-import { useProjects } from "@/hooks/useProjects";
-import type { TerminalRecord } from "@/lib/terminals";
-import { tmuxAttachCommand } from "@/lib/tmux-attach";
-import type { TerminalHandle } from "@/components/Terminal";
-import { DesktopView } from "@/components/views/DesktopView";
-import { MobileView } from "@/components/views/MobileView";
 
 function HomeContent() {
   // UI State
@@ -47,13 +47,13 @@ function HomeContent() {
   const { attachedTmux, attach, detach } = usePanes();
   const { isMobile, isHydrated } = useViewport();
 
+  // Set CSS variable for viewport height (handles mobile keyboard)
+  useViewportHeight();
+
   // Data hooks
   const { terminals, fetchTerminals, createTerminal, killTerminal } =
     useTerminals();
   const { projects, fetchProjects } = useProjects();
-
-  // Set CSS variable for viewport height (handles mobile keyboard)
-  useViewportHeight();
 
   // Terminal ref management. There is exactly one terminal in the
   // workbench now, so this is a single slot rather than a keyed map.
@@ -145,9 +145,6 @@ function HomeContent() {
   // viewport state through an effect. Once the user explicitly changes it,
   // that choice wins on both viewport sizes.
   const sidebarOpen = sidebarOpenState ?? (isHydrated && !isMobile);
-  const setSidebarOpen = useCallback((open: boolean) => {
-    setSidebarOpenState(open);
-  }, []);
 
   // Keyboard shortcut: Cmd+K to open quick switcher
   useEffect(() => {
@@ -196,9 +193,10 @@ function HomeContent() {
   const handleCloseTerminal = useCallback(
     async (name: string) => {
       await killTerminal(name);
+      if (attachedTmux === name) detach();
       await fetchTerminals();
     },
-    [killTerminal, fetchTerminals]
+    [killTerminal, attachedTmux, detach, fetchTerminals]
   );
 
   // Pane renderer. Declared after the handlers it hands to the welcome
@@ -209,7 +207,7 @@ function HomeContent() {
         terminals={terminals}
         projects={projects}
         onRegisterTerminal={registerTerminalRef}
-        onMenuClick={isMobile ? () => setSidebarOpen(true) : undefined}
+        onMenuClick={isMobile ? () => setSidebarOpenState(true) : undefined}
         onSelectTerminal={handleSelectTerminal}
         onNewTerminal={() => void handleNewTerminal()}
         onQuickSwitch={() => setShowQuickSwitcher(true)}
@@ -220,7 +218,6 @@ function HomeContent() {
       projects,
       registerTerminalRef,
       isMobile,
-      setSidebarOpen,
       handleSelectTerminal,
       handleNewTerminal,
     ]
@@ -228,10 +225,7 @@ function HomeContent() {
 
   // Project created handler (shared between desktop/mobile)
   const handleCreateProject = useCallback(
-    async (
-      name: string,
-      workingDirectory: string
-    ): Promise<string | null> => {
+    async (name: string, workingDirectory: string): Promise<string | null> => {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -252,7 +246,7 @@ function HomeContent() {
     terminals,
     projects,
     sidebarOpen,
-    setSidebarOpen,
+    setSidebarOpen: setSidebarOpenState,
     activeTerminal: activeTerminal as TerminalRecord | undefined,
     copiedTerminalId,
     setCopiedTerminalId,
@@ -261,6 +255,7 @@ function HomeContent() {
     attachToTerminal,
     handleNewTerminal,
     handleCloseTerminal,
+    fetchTerminals,
     handleDetachTerminal,
     handleCreateProject,
     renderPane,
