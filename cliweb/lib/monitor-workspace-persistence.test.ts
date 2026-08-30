@@ -70,7 +70,7 @@ test("GET returns the default workspace when nothing is stored", async () => {
   ]);
 });
 
-test("PUT persists enabled flag, pane order, terminal identities, and normalized width proportions", async () => {
+test("PUT persists enabled flag, pane order, terminal identities, and equal pane widths", async () => {
   resetSettings();
 
   const response = await PUT(
@@ -86,26 +86,26 @@ test("PUT persists enabled flag, pane order, terminal identities, and normalized
   assert.deepEqual(await response.json(), {
     enabled: true,
     panes: [
-      { id: "monitor-left", terminalId: "term-alpha", width: 0.25 },
-      { id: "monitor-right", terminalId: "term-beta", width: 0.75 },
+      { id: "monitor-left", terminalId: "term-alpha", width: 0.5 },
+      { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
     ],
   });
 
-  // The stored row itself holds the normalized proportions (1:3 -> 0.25/0.75).
+  // Stored widths are equal shares, independent of the submitted 1:3 ratio.
   assert.deepEqual(JSON.parse(readStoredRaw()!), {
     enabled: true,
     panes: [
-      { id: "monitor-left", terminalId: "term-alpha", width: 0.25 },
-      { id: "monitor-right", terminalId: "term-beta", width: 0.75 },
+      { id: "monitor-left", terminalId: "term-alpha", width: 0.5 },
+      { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
     ],
   });
 
-  // GET serves the persisted, normalized state back.
+  // GET serves the persisted, equal-width state back.
   assert.deepEqual(await getBody(), {
     enabled: true,
     panes: [
-      { id: "monitor-left", terminalId: "term-alpha", width: 0.25 },
-      { id: "monitor-right", terminalId: "term-beta", width: 0.75 },
+      { id: "monitor-left", terminalId: "term-alpha", width: 0.5 },
+      { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
     ],
   });
 });
@@ -206,8 +206,8 @@ test("PUT with enabled false preserves pane assignments and widths", async () =>
     putRequest({
       enabled: false,
       panes: [
-        { id: "monitor-left", terminalId: "term-alpha", width: 0.25 },
-        { id: "monitor-right", terminalId: "term-beta", width: 0.75 },
+        { id: "monitor-left", terminalId: "term-alpha", width: 0.5 },
+        { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
       ],
     })
   );
@@ -216,8 +216,8 @@ test("PUT with enabled false preserves pane assignments and widths", async () =>
   const state = await getBody();
   assert.equal(state.enabled, false);
   assert.deepEqual(state.panes, [
-    { id: "monitor-left", terminalId: "term-alpha", width: 0.25 },
-    { id: "monitor-right", terminalId: "term-beta", width: 0.75 },
+    { id: "monitor-left", terminalId: "term-alpha", width: 0.5 },
+    { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
   ]);
 });
 
@@ -279,8 +279,8 @@ test("a saved pane referencing an unavailable terminal is kept as-is by the mode
   const saved: MonitorWorkspaceState = {
     enabled: true,
     panes: [
-      { id: "monitor-left", terminalId: "gone-terminal", width: 0.25 },
-      { id: "monitor-right", terminalId: "term-beta", width: 0.75 },
+      { id: "monitor-left", terminalId: "gone-terminal", width: 0.5 },
+      { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
     ],
   };
 
@@ -297,7 +297,7 @@ test("a saved pane referencing an unavailable terminal is kept as-is by the mode
   assert.deepEqual(unavailablePane, {
     id: "monitor-left",
     terminalId: "gone-terminal",
-    width: 0.25,
+    width: 0.5,
   });
 });
 
@@ -305,8 +305,8 @@ test("assignMonitorTerminal replaces an unavailable terminal's pane but still re
   const saved: MonitorWorkspaceState = {
     enabled: true,
     panes: [
-      { id: "monitor-left", terminalId: "gone-terminal", width: 0.25 },
-      { id: "monitor-right", terminalId: "term-beta", width: 0.75 },
+      { id: "monitor-left", terminalId: "gone-terminal", width: 0.5 },
+      { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
     ],
   };
 
@@ -314,8 +314,8 @@ test("assignMonitorTerminal replaces an unavailable terminal's pane but still re
   // only changes that pane's terminalId.
   const replaced = assignMonitorTerminal(saved, "monitor-left", "term-gamma");
   assert.deepEqual(replaced.panes, [
-    { id: "monitor-left", terminalId: "term-gamma", width: 0.25 },
-    { id: "monitor-right", terminalId: "term-beta", width: 0.75 },
+    { id: "monitor-left", terminalId: "term-gamma", width: 0.5 },
+    { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
   ]);
 
   // Assigning "term-beta" (already on another pane) to monitor-left is a
@@ -343,8 +343,8 @@ test("per-pane failure isolation is a component-level behavior, not a pure-model
   const saved: MonitorWorkspaceState = {
     enabled: true,
     panes: [
-      { id: "monitor-left", terminalId: "gone-terminal", width: 0.25 },
-      { id: "monitor-right", terminalId: "term-beta", width: 0.75 },
+      { id: "monitor-left", terminalId: "gone-terminal", width: 0.5 },
+      { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
     ],
   };
   const normalized = normalizeMonitorWorkspace(saved);
@@ -352,7 +352,7 @@ test("per-pane failure isolation is a component-level behavior, not a pure-model
   assert.deepEqual(normalized.panes[1], {
     id: "monitor-right",
     terminalId: "term-beta",
-    width: 0.75,
+    width: 0.5,
   });
 });
 

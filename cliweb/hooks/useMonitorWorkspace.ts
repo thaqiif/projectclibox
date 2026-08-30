@@ -10,8 +10,6 @@ import {
   type MonitorWorkspaceState,
 } from "@/lib/monitor-workspace";
 
-const RESIZE_PERSIST_MS = 250;
-
 export function useMonitorWorkspace() {
   const [workspace, setWorkspace] = useState<MonitorWorkspaceState | null>(
     null
@@ -23,8 +21,6 @@ export function useMonitorWorkspace() {
   // PUTs are chained: each one waits for the previous to settle, so they can
   // never arrive out of order and leave the server holding an older layout.
   const pendingWrite = useRef<Promise<void>>(Promise.resolve());
-  const resizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const skipResizePersist = useRef(true);
 
   const persistLatest = useCallback(() => {
     if (!loaded.current) return;
@@ -47,10 +43,6 @@ export function useMonitorWorkspace() {
     (next: MonitorWorkspaceState) => {
       latest.current = next;
       setWorkspace(next);
-      if (resizeTimer.current) {
-        clearTimeout(resizeTimer.current);
-        resizeTimer.current = null;
-      }
       persistLatest();
     },
     [persistLatest]
@@ -67,7 +59,6 @@ export function useMonitorWorkspace() {
         if (!cancelled) {
           loaded.current = true;
           latest.current = state;
-          skipResizePersist.current = true;
           setWorkspace(state);
         }
       })
@@ -75,7 +66,6 @@ export function useMonitorWorkspace() {
         if (!cancelled) {
           loaded.current = true;
           latest.current = DEFAULT_MONITOR_WORKSPACE;
-          skipResizePersist.current = true;
           setWorkspace(DEFAULT_MONITOR_WORKSPACE);
         }
       });
@@ -83,13 +73,6 @@ export function useMonitorWorkspace() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(
-    () => () => {
-      if (resizeTimer.current) clearTimeout(resizeTimer.current);
-    },
-    []
-  );
 
   const toggle = useCallback(() => {
     const current = latest.current;
@@ -133,35 +116,5 @@ export function useMonitorWorkspace() {
     [commit]
   );
 
-  const resize = useCallback(
-    (layout: Record<string, number>) => {
-      const current = latest.current;
-      if (!current) return;
-      const panes = current.panes.map((pane) => ({
-        ...pane,
-        width: layout[pane.id] ?? pane.width,
-      }));
-      const total = panes.reduce((sum, pane) => sum + pane.width, 0);
-      const next = {
-        ...current,
-        panes: panes.map((pane) => ({ ...pane, width: pane.width / total })),
-      };
-      latest.current = next;
-      setWorkspace(next);
-
-      if (skipResizePersist.current) {
-        skipResizePersist.current = false;
-        return;
-      }
-      if (!loaded.current) return;
-      if (resizeTimer.current) clearTimeout(resizeTimer.current);
-      resizeTimer.current = setTimeout(() => {
-        resizeTimer.current = null;
-        persistLatest();
-      }, RESIZE_PERSIST_MS);
-    },
-    [persistLatest]
-  );
-
-  return { workspace, toggle, addPane, removePane, assignTerminal, movePane, resize };
+  return { workspace, toggle, addPane, removePane, assignTerminal, movePane };
 }

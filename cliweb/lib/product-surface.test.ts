@@ -487,11 +487,12 @@ test("desktop monitor workspace stays isolated from mobile", () => {
   assert.match(monitor, /Drop a terminal here/);
   assert.match(monitor, /Drop to replace this terminal/);
   assert.match(monitor, /Drop to open beside/);
+  assert.match(monitor, /Move pane here/);
   assert.match(monitor, /application\/x-cliweb-monitor-pane/);
   assert.match(fileDrop, /isMonitorDrag\(e\)\) return/);
   assert.match(hook, /pendingWrite/);
-  assert.match(hook, /skipResizePersist/);
-  assert.match(hook, /RESIZE_PERSIST_MS/);
+  assert.doesNotMatch(hook, /RESIZE_PERSIST_MS|skipResizePersist/);
+  assert.doesNotMatch(monitor, /PanelSeparator|onLayoutChange|cursor-col-resize/);
   assert.match(hook, /removeMonitorPane/);
   assert.match(hook, /moveMonitorPane/);
   assert.match(hook, /dropMonitorTerminal/);

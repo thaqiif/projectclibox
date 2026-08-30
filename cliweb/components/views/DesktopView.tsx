@@ -150,7 +150,6 @@ export function DesktopView({
               onAssignTerminal={monitor.assignTerminal}
               onMovePane={monitor.movePane}
               onRemovePane={monitor.removePane}
-              onResize={monitor.resize}
               onTerminalsChanged={fetchTerminals}
             />
           ) : (

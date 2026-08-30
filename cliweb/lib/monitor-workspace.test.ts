@@ -23,7 +23,7 @@ test("normalizes one to three ordered pane widths", () => {
   );
   assert.deepEqual(
     state.panes.map((pane) => pane.width),
-    [0.25, 0.75]
+    [0.5, 0.5]
   );
 });
 

@@ -2,12 +2,6 @@
 
 import { Fragment, useCallback, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import {
-  Group as PanelGroup,
-  Panel,
-  Separator as PanelSeparator,
-  type Layout,
-} from "react-resizable-panels";
 import { Button } from "@/components/ui/button";
 import { TerminalSkeleton } from "@/components/Pane/PaneSkeletons";
 import { tmuxAttachCommand } from "@/lib/tmux-attach";
@@ -45,7 +39,6 @@ interface MonitorWorkspaceProps {
     side: MonitorDropSide
   ) => void;
   onRemovePane: (paneId: string) => void;
-  onResize: (layout: Record<string, number>) => void;
   onTerminalsChanged: () => Promise<void>;
 }
 
@@ -119,13 +112,22 @@ function MonitorPane({
 }) {
   const [restart, setRestart] = useState(false);
   const [hoverSide, setHoverSide] = useState<MonitorDropSide | null>(null);
+  const [hoverKind, setHoverKind] = useState<"terminal" | "pane" | null>(null);
   const occupied = Boolean(terminal && (terminal.alive || restart));
   const empty = !terminalId && !restart;
+
+  const kindFromEvent = (event: React.DragEvent): "terminal" | "pane" | null => {
+    const types = Array.from(event.dataTransfer.types);
+    if (types.includes(PANE_DRAG_TYPE)) return "pane";
+    if (types.includes(TERMINAL_DRAG_TYPE)) return "terminal";
+    return null;
+  };
 
   const onDrop = (event: React.DragEvent) => {
     event.preventDefault();
     const side = sideFromEvent(event, canInsert && !empty);
     setHoverSide(null);
+    setHoverKind(null);
     const paneIdPayload = event.dataTransfer.getData(PANE_DRAG_TYPE);
     if (paneIdPayload) {
       onMove(paneIdPayload, paneId, side);
@@ -146,11 +148,13 @@ function MonitorPane({
       data-monitor-pane={paneId}
       onDragOver={(event) => {
         event.preventDefault();
+        setHoverKind(kindFromEvent(event));
         setHoverSide(sideFromEvent(event, canInsert && !empty));
       }}
       onDragLeave={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node)) {
           setHoverSide(null);
+          setHoverKind(null);
         }
       }}
       onDrop={onDrop}
@@ -227,22 +231,30 @@ function MonitorPane({
           </div>
         )}
       </div>
-      {hoverSide && occupied && (
+      {hoverSide && hoverKind && (
         <div className="pointer-events-none absolute inset-0 z-10">
-          {hoverSide === "center" ? (
-            <div className="flex h-full items-center justify-center bg-[var(--fill-1)]/80">
-              <div className="rounded-lg border-2 border-dashed border-[var(--fill-3)] bg-background/90 px-4 py-3 text-center text-sm font-medium">
-                Drop to replace this terminal
-              </div>
-            </div>
-          ) : (
+          {hoverKind === "pane" || hoverSide !== "center" || empty ? (
             <div
-              className={`h-full w-1/4 bg-primary/20 ${
-                hoverSide === "before" ? "mr-auto" : "ml-auto"
+              className={`h-full bg-primary/20 ${
+                hoverSide === "center"
+                  ? "w-full"
+                  : hoverSide === "before"
+                    ? "mr-auto w-1/4"
+                    : "ml-auto w-1/4"
               }`}
             >
               <div className="flex h-full items-center justify-center px-2 text-center text-xs font-medium">
-                Drop to open beside
+                {hoverKind === "pane"
+                  ? "Move pane here"
+                  : hoverSide === "center"
+                    ? "Drop a terminal here"
+                    : "Drop to open beside"}
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center bg-[var(--fill-1)]/80">
+              <div className="rounded-lg border-2 border-dashed border-[var(--fill-3)] bg-background/90 px-4 py-3 text-center text-sm font-medium">
+                Drop to replace this terminal
               </div>
             </div>
           )}
@@ -259,22 +271,12 @@ export function MonitorWorkspace({
   onAssignTerminal,
   onMovePane,
   onRemovePane,
-  onResize,
   onTerminalsChanged,
 }: MonitorWorkspaceProps) {
-  const defaultLayout = Object.fromEntries(
-    workspace.panes.map((pane) => [pane.id, pane.width * 100])
-  );
   const canRemove = workspace.panes.length > 1;
   const canInsert = workspace.panes.length < MAX_MONITOR_PANES;
   return (
-    <PanelGroup
-      key={workspace.panes.map((pane) => pane.id).join(":")}
-      orientation="horizontal"
-      defaultLayout={defaultLayout}
-      onLayoutChange={(layout: Layout) => onResize(layout)}
-      className="h-full"
-    >
+    <div className="flex h-full min-w-0">
       {workspace.panes.map((pane, index) => {
         const terminal = terminals.find(
           (candidate) => candidate.id === pane.terminalId
@@ -282,9 +284,9 @@ export function MonitorWorkspace({
         return (
           <Fragment key={pane.id}>
             {index > 0 && (
-              <PanelSeparator className="hover:bg-primary/40 relative w-px cursor-col-resize bg-[var(--fill-2)] after:absolute after:inset-y-0 after:-left-1 after:w-3 after:content-['']" />
+              <div className="w-px shrink-0 bg-[var(--fill-2)]" />
             )}
-            <Panel id={pane.id} minSize="15%">
+            <div className="min-w-0 flex-1">
               <MonitorPane
                 paneId={pane.id}
                 terminalId={pane.terminalId}
@@ -297,10 +299,10 @@ export function MonitorWorkspace({
                 onRemove={onRemovePane}
                 onTerminalsChanged={onTerminalsChanged}
               />
-            </Panel>
+            </div>
           </Fragment>
         );
       })}
-    </PanelGroup>
+    </div>
   );
 }

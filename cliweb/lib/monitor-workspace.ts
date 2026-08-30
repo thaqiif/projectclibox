@@ -18,6 +18,11 @@ export const DEFAULT_MONITOR_WORKSPACE: MonitorWorkspaceState = {
   panes: [{ id: "monitor-1", terminalId: null, width: 1 }],
 };
 
+function equalizeWidths(panes: MonitorPaneState[]): MonitorPaneState[] {
+  const width = 1 / panes.length;
+  return panes.map((pane) => ({ ...pane, width }));
+}
+
 /** Validate and normalize a stored client payload: pane count, unique ids, unique terminal ownership, positive widths renormalized to sum to 1. */
 export function normalizeMonitorWorkspace(
   input: unknown
@@ -80,10 +85,9 @@ export function normalizeMonitorWorkspace(
     };
   });
 
-  const total = panes.reduce((sum, pane) => sum + pane.width, 0);
   return {
     enabled: candidate.enabled,
-    panes: panes.map((pane) => ({ ...pane, width: pane.width / total })),
+    panes: equalizeWidths(panes),
   };
 }
 
@@ -111,10 +115,9 @@ export function removeMonitorPane(
   if (workspace.panes.length <= MIN_MONITOR_PANES) return workspace;
   if (!workspace.panes.some((pane) => pane.id === paneId)) return workspace;
   const panes = workspace.panes.filter((pane) => pane.id !== paneId);
-  const total = panes.reduce((sum, pane) => sum + pane.width, 0);
   return {
     ...workspace,
-    panes: panes.map((pane) => ({ ...pane, width: pane.width / total })),
+    panes: equalizeWidths(panes),
   };
 }
 
@@ -127,10 +130,6 @@ export function dropSideFromRatio(ratio: number): MonitorDropSide {
   return "center";
 }
 
-function equalizeWidths(panes: MonitorPaneState[]): MonitorPaneState[] {
-  const width = 1 / panes.length;
-  return panes.map((pane) => ({ ...pane, width }));
-}
 
 function newPaneId(): string {
   return `monitor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
