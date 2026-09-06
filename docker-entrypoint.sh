@@ -19,6 +19,16 @@ if [ "$(id -u cliweb)" != "${PUID}" ]; then
     usermod -o -u "${PUID}" cliweb
 fi
 
+# When the KVM device is passed in (see docker-compose.kvm.yml), make sure the
+# unprivileged runtime user can open it. Under runc the mapped node is 0666
+# root:root, but other runtimes preserve the host's 0660 root:kvm; either way,
+# chowning it to the remapped cliweb group lets `cliweb` use hardware
+# virtualization while keeping other container processes out.
+if [ -e /dev/kvm ]; then
+    chgrp cliweb /dev/kvm
+    chmod 660 /dev/kvm
+fi
+
 mkdir -p \
     "${HOME}/.cliweb" \
     "${HOME}/.config" \
