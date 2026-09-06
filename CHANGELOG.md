@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-06
+
+### Added
+
+- Web terminals can now use hardware virtualization by mapping the host's `/dev/kvm` device into the container (QEMU/KVM guests, Android emulators, microVMs). Note: the host must expose `/dev/kvm`.
+
+### Changed
+
+- The entrypoint now grants the unprivileged `cliweb` user access to a passed-in `/dev/kvm` device automatically.
+
 ## 2026-08-29
 
 ### Added

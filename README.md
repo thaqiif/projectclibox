@@ -78,6 +78,29 @@ See [.env.example](.env.example) for the small set of supported settings:
 To remove all saved state, run `docker compose down -v`. This deletes the
 named home volume; host project files are not deleted.
 
+## Hardware virtualization (KVM)
+
+The container maps the host's `/dev/kvm` device through to the web terminals,
+so you can run hardware-accelerated virtualization from a terminal—QEMU/KVM
+guests, Android emulators, microVMs, or test suites that use KVM. Prerequisites
+are on the **host**, not the container: your CPU must support virtualization
+and the `kvm` module must be loaded.
+
+```bash
+ls -l /dev/kvm          # must exist; crw-rw---- root:kvm on most hosts
+```
+
+The entrypoint hands the device to the unprivileged `cliweb` user
+automatically, so terminals can use it without extra setup:
+
+```bash
+ls -l /dev/kvm          # inside the container: crw-rw---- cliweb
+```
+
+> On hosts that do not export `/dev/kvm` (macOS/Windows Docker Desktop, or a
+> VM without nested VT-x/AMD-V) the container will not start with this mapping.
+> Remove the `devices:` block in `docker-compose.yml` for those hosts.
+
 ## Fresh database
 
 The database uses one baseline migration in
