@@ -22,14 +22,11 @@ import { useProjectsQuery, useCreateProject } from "@/data/projects";
 
 import type { TerminalListProps } from "./TerminalList.types";
 
-export type { TerminalListProps } from "./TerminalList.types";
-
 export function TerminalList({
   activeTerminalId,
   onSelect,
   onNewTerminal,
   onCloseTerminal,
-  onQuickSwitch,
   enableTerminalDrag = false,
   onClosedAllTerminals,
 }: TerminalListProps) {
@@ -72,7 +69,6 @@ export function TerminalList({
         }}
         onOpenProject={() => setShowFolderPicker(true)}
         onKillAll={() => setShowKillAllConfirm(true)}
-        onQuickSwitch={onQuickSwitch}
       />
 
       {/* Kill All Confirmation */}

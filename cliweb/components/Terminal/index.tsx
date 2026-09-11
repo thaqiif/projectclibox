@@ -12,10 +12,9 @@ import { useTheme } from "next-themes";
 import "@xterm/xterm/css/xterm.css";
 import { Paperclip, WifiOff, Upload, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SearchBar } from "./SearchBar";
 import { ScrollToBottomButton } from "./ScrollToBottomButton";
 import { TerminalToolbar } from "./TerminalToolbar";
-import { useTerminalConnection, useTerminalSearch } from "./hooks";
+import { useTerminalConnection } from "./hooks";
 import type { TerminalScrollState } from "./hooks";
 import { useViewport } from "@/hooks/useViewport";
 import { useFileDrop } from "@/hooks/useFileDrop";
@@ -23,14 +22,10 @@ import { uploadFileToTemp } from "@/lib/file-upload";
 import { FilePicker } from "@/components/FilePicker";
 import { useFontScale } from "@/contexts/FontScaleContext";
 
-export type { TerminalScrollState };
-
 export interface TerminalHandle {
   sendCommand: (command: string) => void;
   sendInput: (data: string) => void;
   focus: () => void;
-  getScrollState: () => TerminalScrollState | null;
-  restoreScrollState: (state: TerminalScrollState) => void;
 }
 
 interface TerminalProps {
@@ -75,14 +70,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       connectionState,
       isAtBottom,
       xtermRef,
-      searchAddonRef,
       scrollToBottom,
       copySelection,
       sendInput,
       sendCommand,
       focus,
-      getScrollState,
-      restoreScrollState,
       reconnect,
     } = useTerminalConnection({
       terminalRef,
@@ -95,16 +87,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       theme: terminalTheme,
       selectMode,
     });
-
-    const {
-      searchVisible,
-      searchQuery,
-      setSearchQuery,
-      searchInputRef,
-      closeSearch,
-      findNext,
-      findPrevious,
-    } = useTerminalSearch(searchAddonRef, xtermRef);
 
     // Handle image selection - paste file path into terminal
     const handleImageSelect = useCallback(
@@ -147,8 +129,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       sendCommand,
       sendInput,
       focus,
-      getScrollState,
-      restoreScrollState,
     }));
 
     // Extract terminal text for select mode overlay
@@ -180,17 +160,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
         }}
         {...dragHandlers}
       >
-        {/* Search Bar */}
-        <SearchBar
-          ref={searchInputRef}
-          visible={searchVisible}
-          query={searchQuery}
-          onQueryChange={setSearchQuery}
-          onFindNext={findNext}
-          onFindPrevious={findPrevious}
-          onClose={closeSearch}
-        />
-
         {/* Terminal container - NO padding! FitAddon reads offsetHeight which includes padding */}
         <div
           ref={terminalRef}
@@ -283,7 +252,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
             onCopy={copySelection}
             selectMode={selectMode}
             onSelectModeChange={setSelectMode}
-            visible={true}
           />
         )}
 

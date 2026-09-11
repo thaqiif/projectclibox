@@ -3,7 +3,6 @@
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { SearchAddon } from "@xterm/addon-search";
 import { CanvasAddon } from "@xterm/addon-canvas";
 import { getTerminalThemeForApp } from "../constants";
 import { DEFAULT_FONT_SCALE } from "../../../lib/font-scale";
@@ -12,7 +11,6 @@ import { getTerminalFontSize } from "./terminal-font-size";
 interface TerminalInstance {
   term: XTerm;
   fitAddon: FitAddon;
-  searchAddon: SearchAddon;
   cleanup: () => void;
 }
 
@@ -49,11 +47,9 @@ export function createTerminal(
   });
 
   const fitAddon = new FitAddon();
-  const searchAddon = new SearchAddon();
 
   term.loadAddon(fitAddon);
   term.loadAddon(new WebLinksAddon());
-  term.loadAddon(searchAddon);
   term.open(container);
   term.loadAddon(new CanvasAddon());
   fitAddon.fit();
@@ -130,7 +126,7 @@ export function createTerminal(
     container.removeEventListener("contextmenu", handleContextMenu);
   };
 
-  return { term, fitAddon, searchAddon, cleanup };
+  return { term, fitAddon, cleanup };
 }
 
 export function updateTerminalForMobile(

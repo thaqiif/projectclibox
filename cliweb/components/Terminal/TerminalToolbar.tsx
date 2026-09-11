@@ -28,9 +28,6 @@ const SPECIAL_KEYS = {
   SHIFT_TAB: "\x1b[Z",
   NEWLINE: "\x1b\r",
   CTRL_C: "\x03",
-  CTRL_D: "\x04",
-  CTRL_Z: "\x1a",
-  CTRL_L: "\x0c",
 } as const;
 
 interface TerminalToolbarProps {
@@ -39,7 +36,6 @@ interface TerminalToolbarProps {
   onCopy?: () => boolean; // Returns true if selection was copied
   selectMode?: boolean;
   onSelectModeChange?: (enabled: boolean) => void;
-  visible?: boolean;
 }
 
 interface Snippet {
@@ -305,7 +301,6 @@ export function TerminalToolbar({
   onCopy,
   selectMode = false,
   onSelectModeChange,
-  visible = true,
 }: TerminalToolbarProps) {
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showSnippetsModal, setShowSnippetsModal] = useState(false);
@@ -484,8 +479,6 @@ export function TerminalToolbar({
     return suppress;
   }, []);
 
-  if (!visible) return null;
-
   const buttons = [
     { label: "Esc", key: SPECIAL_KEYS.ESC },
     { label: "^C", key: SPECIAL_KEYS.CTRL_C, highlight: true },
@@ -511,7 +504,10 @@ export function TerminalToolbar({
         onInsert={sendText}
       />
       <div
-        className="glass glass-edge-top scrollbar-none relative z-10 flex items-stretch gap-1 overflow-x-auto px-1.5 py-1.5"
+        // Opaque for the same reason as the mobile header: this row sits on the
+        // bottom viewport edge, under the home indicator in a saved-to-home-
+        // screen iOS session.
+        className="bg-background glass-edge-top scrollbar-none relative z-10 flex items-stretch gap-1 overflow-x-auto px-1.5 py-1.5"
         onTouchEnd={(e) => e.stopPropagation()}
       >
         {/* Mic button */}

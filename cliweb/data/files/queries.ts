@@ -2,8 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { fileKeys } from "./keys";
 import type { FileNode } from "@/lib/file-utils";
 
-export { fileKeys };
-
 export interface DirectoryData {
   files: FileNode[];
   resolvedPath: string;

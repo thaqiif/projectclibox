@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { Terminal as XTerm } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
-import type { SearchAddon } from "@xterm/addon-search";
 import { WS_RECONNECT_BASE_DELAY } from "../constants";
 import type {
   TerminalScrollState,
@@ -33,7 +32,6 @@ export function useTerminalConnection({
   theme = "dark",
   selectMode = false,
 }: UseTerminalConnectionProps): UseTerminalConnectionReturn {
-  const [connected, setConnected] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [connectionState, setConnectionState] = useState<
     "connecting" | "connected" | "disconnected" | "reconnecting"
@@ -42,7 +40,6 @@ export function useTerminalConnection({
   const wsRef = useRef<WebSocket | null>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const searchAddonRef = useRef<SearchAddon | null>(null);
   const reconnectFnRef = useRef<(() => void) | null>(null);
 
   // Reconnection tracking
@@ -97,45 +94,6 @@ export function useTerminalConnection({
 
   const focus = useCallback(() => xtermRef.current?.focus(), []);
 
-  const getScrollState = useCallback((): TerminalScrollState | null => {
-    if (!xtermRef.current || !terminalRef.current) return null;
-    const buffer = xtermRef.current.buffer.active;
-    const viewport = terminalRef.current.querySelector(
-      ".xterm-viewport"
-    ) as HTMLElement;
-    return {
-      scrollTop: viewport?.scrollTop ?? 0,
-      cursorY: buffer.cursorY,
-      baseY: buffer.baseY,
-    };
-  }, [terminalRef]);
-
-  const restoreScrollState = useCallback(
-    (state: TerminalScrollState) => {
-      const viewport = terminalRef.current?.querySelector(
-        ".xterm-viewport"
-      ) as HTMLElement;
-      if (viewport) {
-        requestAnimationFrame(() => {
-          viewport.scrollTop = state.scrollTop;
-        });
-      }
-    },
-    [terminalRef]
-  );
-
-  const triggerResize = useCallback(() => {
-    const fitAddon = fitAddonRef.current;
-    const term = xtermRef.current;
-    if (!fitAddon || !term) return;
-    fitAddon.fit();
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows })
-      );
-    }
-  }, []);
-
   const reconnect = useCallback(() => {
     reconnectFnRef.current?.();
   }, []);
@@ -157,7 +115,7 @@ export function useTerminalConnection({
       if (cancelled) return;
 
       // Initialize terminal
-      const { term, fitAddon, searchAddon, cleanup } = createTerminal(
+      const { term, fitAddon, cleanup } = createTerminal(
         terminalElement,
         isMobile,
         theme,
@@ -165,7 +123,6 @@ export function useTerminalConnection({
       );
       xtermRef.current = term;
       fitAddonRef.current = fitAddon;
-      searchAddonRef.current = searchAddon;
       cleanupTerminal = cleanup;
 
       // Scroll tracking
@@ -196,7 +153,6 @@ export function useTerminalConnection({
           },
           onDisconnected: () => callbacksRef.current.onDisconnected?.(),
           onConnectionStateChange: setConnectionState,
-          onSetConnected: setConnected,
         },
         wsRef,
         reconnectTimeoutRef,
@@ -254,7 +210,6 @@ export function useTerminalConnection({
         xtermRef.current = null;
       }
       fitAddonRef.current = null;
-      searchAddonRef.current = null;
     };
   }, [isMobile, terminalRef, theme]);
 
@@ -285,19 +240,14 @@ export function useTerminalConnection({
   }, [theme]);
 
   return {
-    connected,
     connectionState,
     isAtBottom,
     xtermRef,
-    searchAddonRef,
     scrollToBottom,
     copySelection,
     sendInput,
     sendCommand,
     focus,
-    getScrollState,
-    restoreScrollState,
-    triggerResize,
     reconnect,
   };
 }

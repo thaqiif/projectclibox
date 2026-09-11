@@ -31,8 +31,8 @@ import { Button } from "@/components/ui/button";
 import { ATooltip } from "@/components/a/ATooltip";
 import { cn } from "@/lib/utils";
 
-export type AButtonSize = "sm" | "md" | "lg";
-export type AButtonVariant =
+type AButtonSize = "sm" | "md" | "lg";
+type AButtonVariant =
   | "default"
   | "ghost"
   | "outline"
@@ -40,7 +40,7 @@ export type AButtonVariant =
   | "destructive"
   | "link";
 
-export interface AButtonProps extends Omit<
+interface AButtonProps extends Omit<
   React.ButtonHTMLAttributes<HTMLButtonElement>,
   "children"
 > {

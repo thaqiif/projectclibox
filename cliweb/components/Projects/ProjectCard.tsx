@@ -9,8 +9,6 @@ import {
   Plus,
   Trash2,
   Pencil,
-  FolderOpen,
-  Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,22 +34,18 @@ import type { Project } from "@/lib/db";
 
 interface ProjectCardProps {
   project: Project;
-  onClick?: () => void;
   onToggleExpanded?: (expanded: boolean) => void;
   onEdit?: () => void;
   onNewTerminal?: () => void;
-  onOpenInEditor?: () => void;
   onDelete?: () => void;
   onRename?: (newName: string) => void;
 }
 
 export function ProjectCard({
   project,
-  onClick,
   onToggleExpanded,
   onEdit,
   onNewTerminal,
-  onOpenInEditor,
   onDelete,
   onRename,
 }: ProjectCardProps) {
@@ -102,9 +96,8 @@ export function ProjectCard({
     setIsEditing(false);
   };
 
-  const handleClick = (e: React.MouseEvent) => {
+  const handleClick = () => {
     if (isEditing) return;
-    onClick?.();
     onToggleExpanded?.(!project.expanded);
   };
 
@@ -126,12 +119,6 @@ export function ProjectCard({
           <MenuItem onClick={startRename}>
             <Pencil className="h-4 w-4" />
             Rename
-          </MenuItem>
-        )}
-        {onOpenInEditor && (
-          <MenuItem onClick={() => onOpenInEditor()}>
-            <FolderOpen className="h-4 w-4" />
-            Open in editor
           </MenuItem>
         )}
         {onDelete && (

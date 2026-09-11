@@ -21,8 +21,6 @@ import {
   Separator as ResizablePanelHandle,
 } from "react-resizable-panels";
 import { ShellDrawer } from "@/components/ShellDrawer";
-import { useSnapshot } from "valtio";
-import { fileOpenStore, fileOpenActions } from "@/stores/fileOpen";
 import { Welcome } from "@/components/Welcome";
 import { tmuxAttachCommand } from "@/lib/tmux-attach";
 
@@ -45,7 +43,6 @@ interface PaneProps {
   onSelectTerminal?: (name: string) => void;
   /** Welcome-screen actions, used only while nothing is attached. */
   onNewTerminal?: () => void;
-  onQuickSwitch?: () => void;
 }
 
 /**
@@ -63,7 +60,6 @@ export const Pane = memo(function Pane({
   onMenuClick,
   onSelectTerminal,
   onNewTerminal,
-  onQuickSwitch,
 }: PaneProps) {
   const { isMobile } = useViewport();
   const {
@@ -86,21 +82,11 @@ export const Pane = memo(function Pane({
 
   const fileEditor = useFileEditor();
 
-  const { request: fileOpenRequest } = useSnapshot(fileOpenStore);
-
   // Reset to the terminal when the attachment changes.
   useEffect(() => {
     setViewMode("terminal");
     fileEditor.reset();
   }, [attachedTmux]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (fileOpenRequest && currentTerminal) {
-      setViewMode("files");
-      fileEditor.openFile(fileOpenRequest.path);
-      fileOpenActions.clearRequest();
-    }
-  }, [fileOpenRequest, currentTerminal, fileEditor, setViewMode]);
 
   const setTerminalRef = useCallback((handle: TerminalHandle | null) => {
     terminalRef.current = handle;
@@ -135,38 +121,6 @@ export const Pane = memo(function Pane({
   useEffect(() => {
     if (!attachedTmux) onRegisterTerminal(null);
   }, [attachedTmux, onRegisterTerminal]);
-
-  // Swipe between terminals on mobile.
-  const touchStartX = useRef<number | null>(null);
-  const currentIndex = currentTerminal
-    ? terminals.findIndex((t) => t.id === currentTerminal.id)
-    : -1;
-  const SWIPE_THRESHOLD = 120;
-
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      if (viewMode !== "terminal") return;
-      touchStartX.current = e.touches[0].clientX;
-    },
-    [viewMode]
-  );
-
-  const handleTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      if (viewMode !== "terminal" || touchStartX.current === null) return;
-
-      const diff = e.changedTouches[0].clientX - touchStartX.current;
-      touchStartX.current = null;
-
-      if (Math.abs(diff) <= SWIPE_THRESHOLD) return;
-
-      const nextIndex = diff > 0 ? currentIndex - 1 : currentIndex + 1;
-      if (nextIndex >= 0 && nextIndex < terminals.length) {
-        onSelectTerminal?.(terminals[nextIndex].id);
-      }
-    },
-    [viewMode, currentIndex, terminals, onSelectTerminal]
-  );
 
   const savedState = terminalStateRegistry.getTerminalState(paneId, "terminal");
 
@@ -204,7 +158,6 @@ export const Pane = memo(function Pane({
       terminals={terminals}
       onNewTerminal={() => onNewTerminal?.()}
       onSelectTerminal={(name) => onSelectTerminal?.(name)}
-      onQuickSwitch={onQuickSwitch}
     />
   );
 
@@ -228,11 +181,7 @@ export const Pane = memo(function Pane({
       )}
 
       {isMobile ? (
-        <div
-          className="relative min-h-0 w-full flex-1"
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-        >
+        <div className="relative min-h-0 w-full flex-1">
           <div className={viewMode === "terminal" ? "h-full w-full" : "hidden"}>
             {surface}
           </div>

@@ -1,6 +1,5 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { useKillTerminal } from "@/data/terminals";
 import { useTerminalRename } from "@/hooks/useTerminalRename";
 import {
@@ -61,52 +60,6 @@ export function useTerminalListMutations() {
     [renameProjectMutation]
   );
 
-  const handleBulkDelete = useCallback(
-    async (names: string[]) => {
-      const count = names.length;
-      const toastId = toast.loading(
-        `Closing ${count} terminal${count > 1 ? "s" : ""}...`
-      );
-
-      let succeeded = 0;
-      let failed = 0;
-
-      await Promise.allSettled(
-        names.map(async (name) => {
-          try {
-            const response = await fetch(
-              `/api/terminals/${encodeURIComponent(name)}`,
-              { method: "DELETE" }
-            );
-            if (response.ok) succeeded++;
-            else failed++;
-          } catch (error) {
-            console.error(`Failed to close terminal ${name}:`, error);
-            failed++;
-          }
-        })
-      );
-
-      queryClient.invalidateQueries({ queryKey: terminalKeys.all });
-
-      if (failed === 0) {
-        toast.success(`Closed ${succeeded} terminal${succeeded > 1 ? "s" : ""}`, {
-          id: toastId,
-        });
-      } else if (succeeded === 0) {
-        toast.error(`Failed to close ${failed} terminal${failed > 1 ? "s" : ""}`, {
-          id: toastId,
-        });
-      } else {
-        toast.warning(
-          `Closed ${succeeded}, failed ${failed} terminal${failed > 1 ? "s" : ""}`,
-          { id: toastId }
-        );
-      }
-    },
-    [queryClient]
-  );
-
   const handleRefresh = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: terminalKeys.all });
   }, [queryClient]);
@@ -119,7 +72,6 @@ export function useTerminalListMutations() {
     handleDeleteProject,
     handleRenameProject,
 
-    handleBulkDelete,
     handleRefresh,
   };
 }

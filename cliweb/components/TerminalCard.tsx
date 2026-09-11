@@ -2,22 +2,14 @@
 
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import {
-  MoreHorizontal,
-  Trash2,
-  Pencil,
-  Square,
-  CheckSquare,
-} from "lucide-react";
+import { TERMINAL_DRAG_TYPE } from "@/lib/drag-types";
+import { MoreHorizontal, Trash2, Pencil } from "lucide-react";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import {
@@ -25,9 +17,6 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "./ui/context-menu";
 import type { TerminalRecord } from "@/lib/terminals";
@@ -35,71 +24,27 @@ import type { TerminalRecord } from "@/lib/terminals";
 interface TerminalCardProps {
   terminal: TerminalRecord;
   isActive?: boolean;
-  // Selection props
-  isSelected?: boolean;
-  isInSelectMode?: boolean;
-  onToggleSelect?: (shiftKey: boolean) => void;
   // Navigation
   onClick?: () => void;
   onDelete?: () => void;
   onRename?: (newName: string) => void;
-  onHoverStart?: (rect: DOMRect) => void;
-  onHoverEnd?: () => void;
   draggable?: boolean;
 }
 
 export function TerminalCard({
   terminal,
   isActive,
-  isSelected,
-  isInSelectMode,
-  onToggleSelect,
   onClick,
   onDelete,
   onRename,
-  onHoverStart,
-  onHoverEnd,
   draggable = false,
 }: TerminalCardProps) {
   // tmux reports last activity in seconds since the epoch.
   const timeAgo = getTimeAgo(terminal.activity);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(terminal.name);
-  const [menuOpen, setMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const justStartedEditingRef = useRef(false);
-
-  const cancelHoverPreview = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-  };
-
-  const handleMouseEnter = () => {
-    if (!onHoverStart || !cardRef.current || menuOpen) return;
-    // Debounce hover to avoid flickering
-    hoverTimeoutRef.current = setTimeout(() => {
-      if (cardRef.current && !menuOpen) {
-        onHoverStart(cardRef.current.getBoundingClientRect());
-      }
-    }, 300);
-  };
-
-  const handleMouseLeave = () => {
-    cancelHoverPreview();
-    onHoverEnd?.();
-  };
-
-  const handleMenuOpenChange = (open: boolean) => {
-    setMenuOpen(open);
-    if (open) {
-      cancelHoverPreview();
-      onHoverEnd?.();
-    }
-  };
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -130,34 +75,9 @@ export function TerminalCard({
 
   const hasActions = onDelete || onRename;
 
-  // Handle card click - coordinates selection with navigation
-  const handleCardClick = (e: React.MouseEvent) => {
+  const handleCardClick = () => {
     if (isEditing) return;
-
-    // If in select mode (any items selected), any click toggles selection
-    if (isInSelectMode && onToggleSelect) {
-      e.preventDefault();
-      e.stopPropagation();
-      onToggleSelect(e.shiftKey);
-      return;
-    }
-
-    // Not in select mode - shift+click starts selection
-    if (e.shiftKey && onToggleSelect) {
-      e.preventDefault();
-      e.stopPropagation();
-      onToggleSelect(false);
-      return;
-    }
-
-    // Normal click - navigate to terminal
     onClick?.();
-  };
-
-  // Handle checkbox click
-  const handleCheckboxClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onToggleSelect?.(e.shiftKey);
   };
 
   // Shared menu items renderer for both context menu and dropdown
@@ -166,14 +86,6 @@ export function TerminalCard({
     const MenuSeparator = isContextMenu
       ? ContextMenuSeparator
       : DropdownMenuSeparator;
-    const MenuSub = isContextMenu ? ContextMenuSub : DropdownMenuSub;
-    const MenuSubTrigger = isContextMenu
-      ? ContextMenuSubTrigger
-      : DropdownMenuSubTrigger;
-    const MenuSubContent = isContextMenu
-      ? ContextMenuSubContent
-      : DropdownMenuSubContent;
-
     return (
       <>
         {onRename && (
@@ -200,44 +112,19 @@ export function TerminalCard({
 
   const cardContent = (
     <div
-      ref={cardRef}
       draggable={draggable && !isEditing}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData(
-          "application/x-cliweb-terminal",
-          terminal.id
-        );
+        event.dataTransfer.setData(TERMINAL_DRAG_TYPE, terminal.id);
       }}
       onClick={handleCardClick}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       className={cn(
         "group press-sm relative flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2.5 py-2 text-left",
         "min-h-[44px] md:min-h-[32px]",
         "transition-colors duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
-        isSelected
-          ? "bg-primary/16 text-foreground"
-          : isActive
-            ? "bg-primary/12 text-foreground"
-            : "hover:bg-[var(--fill-4)]"
+        isActive ? "bg-primary/12 text-foreground" : "hover:bg-[var(--fill-4)]"
       )}
     >
-      {/* Selection checkbox */}
-      {isInSelectMode && onToggleSelect && (
-        <button
-          onClick={handleCheckboxClick}
-          aria-label={isSelected ? "Deselect terminal" : "Select terminal"}
-          className="text-primary press hover:text-primary/80 flex-shrink-0"
-        >
-          {isSelected ? (
-            <CheckSquare className="h-4 w-4" />
-          ) : (
-            <Square className="h-4 w-4" />
-          )}
-        </button>
-      )}
-
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           {isEditing ? (
@@ -292,7 +179,7 @@ export function TerminalCard({
 
           {/* Actions menu */}
           {hasActions && (
-            <DropdownMenu onOpenChange={handleMenuOpenChange}>
+            <DropdownMenu>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                 <Button
                   variant="ghost"

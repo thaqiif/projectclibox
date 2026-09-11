@@ -46,7 +46,6 @@ test("obsolete project launch metadata is removed", () => {
     "app/api/projects/route.ts",
     "app/api/projects/[id]/route.ts",
     "components/Welcome.tsx",
-    "components/QuickSwitcher.tsx",
   ];
 
   for (const relativePath of files) {
@@ -296,11 +295,6 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
     /\bbrew\b|\bhomebrew\b/i,
     "the old Homebrew integration should be removed"
   );
-  assert.match(
-    source("lib/code-search.ts"),
-    /nb install ripgrep/,
-    "missing ripgrep guidance should use nanobrew"
-  );
 });
 
 test("the image libc can run nanobrew Linux bottles", () => {
@@ -477,7 +471,7 @@ test("desktop monitor workspace stays isolated from mobile", () => {
   assert.match(desktop, /Toggle monitor workspace/);
   assert.match(desktop, /handleCloseTerminal\(activeTerminal\.name\)/);
   assert.doesNotMatch(desktop, /aria-label="Remove monitor pane"/);
-  assert.match(monitor, /application\/x-cliweb-terminal/);
+  assert.match(monitor, /TERMINAL_DRAG_TYPE/);
   assert.match(monitor, /tmuxAttachCommand/);
   assert.match(monitor, /key=\{terminal\.id\}/);
   assert.match(monitor, /key=\{terminalId\}/);
@@ -488,7 +482,7 @@ test("desktop monitor workspace stays isolated from mobile", () => {
   assert.match(monitor, /Drop to replace this terminal/);
   assert.match(monitor, /Drop to open beside/);
   assert.match(monitor, /Move pane here/);
-  assert.match(monitor, /application\/x-cliweb-monitor-pane/);
+  assert.match(monitor, /PANE_DRAG_TYPE/);
   assert.match(fileDrop, /isMonitorDrag\(e\)\) return/);
   assert.match(hook, /pendingWrite/);
   assert.doesNotMatch(hook, /RESIZE_PERSIST_MS|skipResizePersist/);
@@ -511,8 +505,109 @@ test("desktop monitor workspace stays isolated from mobile", () => {
 test("terminal cards expose desktop drag identities", () => {
   const card = source("components/TerminalCard.tsx");
   assert.match(card, /draggable=\{draggable && !isEditing\}/);
+  assert.match(card, /setData\(TERMINAL_DRAG_TYPE, terminal\.id\)/);
+});
+
+test("drag payload types have a single definition", () => {
+  const dragTypes = source("lib/drag-types.ts");
+  const sites = [
+    "components/TerminalCard.tsx",
+    "components/MonitorWorkspace/index.tsx",
+    "hooks/useFileDrop.ts",
+    "hooks/useMonitorWorkspace.ts",
+  ];
+
+  // A drag source and its drop targets are in different components, and a
+  // mismatch fails silently: the browser never offers the drop. The type is
+  // therefore declared once and imported, never re-typed at the call site.
   assert.match(
-    card,
-    /setData\(\s*"application\/x-cliweb-terminal",\s*terminal\.id\s*\)/
+    dragTypes,
+    /export const TERMINAL_DRAG_TYPE = "application\/x-cliweb-terminal"/
   );
+  assert.match(
+    dragTypes,
+    /export const PANE_DRAG_TYPE = "application\/x-cliweb-monitor-pane"/
+  );
+  for (const path of sites) {
+    assert.doesNotMatch(
+      source(path),
+      /"application\/x-cliweb-/,
+      `${path} should import the shared drag type`
+    );
+  }
+});
+
+test("mobile chrome is opaque and cannot switch terminals by gesture", () => {
+  const pane = source("components/Pane/index.tsx");
+  const tabBar = source("components/Pane/MobileTabBar.tsx");
+  const toolbar = source("components/Terminal/TerminalToolbar.tsx");
+
+  // Swiping used to move to the next terminal, decided only on how far the
+  // finger travelled sideways between touchstart and touchend. Scrolling the
+  // terminal drifts sideways too, and the terminal's own scroll handler never
+  // suppressed touchend, so the gesture fired mid-scroll — an accidental
+  // terminal switch. Switching belongs to the terminal list and the quick
+  // switcher, which say which terminal you picked.
+  assert.doesNotMatch(pane, /SWIPE_THRESHOLD|touchStartX|changedTouches/);
+
+  // The mobile header and the key row are anchored to the top and bottom of
+  // the viewport, so a saved-to-home-screen iOS session runs them under the
+  // status bar and the home indicator. A translucent material there frosts
+  // the terminal scrolling beneath it, so both stay opaque.
+  assert.match(tabBar, /className="bg-background glass-edge-bottom/);
+  assert.match(toolbar, /className="bg-background glass-edge-top/);
+  assert.doesNotMatch(tabBar, /"glass glass-edge/);
+  assert.doesNotMatch(toolbar, /"glass glass-edge/);
+});
+
+test("unreachable surfaces are removed", () => {
+  const removedPaths = [
+    // The quick switcher, and the ripgrep code search it was the only door to.
+    "components/QuickSwitcher.tsx",
+    "components/CodeSearch/CodeSearchResults.tsx",
+    "data/code-search/queries.ts",
+    "app/api/code-search/route.ts",
+    "app/api/code-search/available/route.ts",
+    "lib/code-search.ts",
+    // Find-in-terminal: no visible trigger ever opened it.
+    "components/Terminal/SearchBar.tsx",
+    "components/Terminal/hooks/useTerminalSearch.ts",
+    // Terminal multi-select: it disabled navigation, and no action consumed it.
+    "stores/terminalSelection.ts",
+    "lib/rangeSelectionUtils.ts",
+    // An arbitrary-command endpoint nothing called.
+    "app/api/exec/route.ts",
+  ];
+
+  for (const relativePath of removedPaths) {
+    assert.equal(
+      existsSync(join(process.cwd(), relativePath)),
+      false,
+      `${relativePath} should be removed`
+    );
+  }
+});
+
+test("the terminal is the only surface a finger moves", () => {
+  const card = source("components/TerminalCard.tsx");
+  const sidebar = source("components/mobile/MobileSidebar.tsx");
+  const monitor = source("hooks/useMonitorWorkspace.ts");
+
+  // Shift-clicking a card used to start a selection that nothing acted on,
+  // while every further click toggled selection instead of opening a terminal.
+  assert.doesNotMatch(card, /isInSelectMode|onToggleSelect|isSelected/);
+
+  // The drawer tracked a finger until it was released. Scrolling the terminal
+  // is the only thing a swipe should do now.
+  assert.doesNotMatch(
+    sidebar,
+    /pointerdown|pointermove|VelocityTracker|projectMomentum|rubberBand/
+  );
+
+  // Lifting a terminal card opens the monitor workspace so there is somewhere
+  // to drop it, and a drag that lands nowhere puts the workspace back.
+  assert.match(monitor, /addEventListener\("dragstart"/);
+  assert.match(monitor, /addEventListener\("dragend"/);
+  assert.match(monitor, /TERMINAL_DRAG_TYPE/);
+  assert.match(monitor, /dragLandedRef/);
 });

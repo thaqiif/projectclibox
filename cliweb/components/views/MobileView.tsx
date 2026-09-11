@@ -1,29 +1,22 @@
 "use client";
 
 import { TerminalList } from "@/components/TerminalList";
-import { SwipeSidebar } from "@/components/mobile/SwipeSidebar";
-import { QuickSwitcher } from "@/components/QuickSwitcher";
+import { MobileSidebar } from "@/components/mobile/MobileSidebar";
 import type { ViewProps } from "./types";
-import { fileOpenActions } from "@/stores/fileOpen";
 
 export function MobileView({
-  terminals,
-  projects,
   sidebarOpen,
   setSidebarOpen,
   activeTerminal,
-  showQuickSwitcher,
-  setShowQuickSwitcher,
   attachToTerminal,
   handleNewTerminal,
   handleCloseTerminal,
-  handleCreateProject,
   renderPane,
 }: ViewProps) {
   return (
     <main className="bg-background h-app flex flex-col overflow-hidden">
-      {/* Swipe sidebar */}
-      <SwipeSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
+      {/* Sidebar */}
+      <MobileSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
         <div className="flex h-full flex-col">
           {/* Terminal list */}
           <div className="min-h-0 flex-1 overflow-hidden">
@@ -37,29 +30,10 @@ export function MobileView({
             />
           </div>
         </div>
-      </SwipeSidebar>
+      </MobileSidebar>
 
       {/* Terminal fills the screen */}
       <div className="min-h-0 w-full flex-1">{renderPane()}</div>
-
-      {/* Dialogs */}
-      <QuickSwitcher
-        terminals={terminals}
-        open={showQuickSwitcher}
-        onOpenChange={setShowQuickSwitcher}
-        currentTerminalId={activeTerminal?.id}
-        activeTerminalWorkingDir={
-          activeTerminal?.working_directory ?? undefined
-        }
-        onSelectTerminal={(name) => attachToTerminal(name)}
-        onSelectFile={(file, line) => {
-          // Convert relative path to absolute by prepending working directory
-          const absolutePath = activeTerminal?.working_directory
-            ? `${activeTerminal.working_directory}/${file.replace(/^\.\//, "")}`
-            : file;
-          fileOpenActions.requestOpen(absolutePath, line);
-        }}
-      />
     </main>
   );
 }

@@ -40,7 +40,12 @@ mkdir -p \
     "${NANOBREW_ROOT}"
 chmod 700 "${HOME}/.ssh"
 
-for shell_rc in "${HOME}/.bashrc" "${HOME}/.profile"; do
+# `.bash_profile` is on this list because bash reads only the *first* of
+# ~/.bash_profile, ~/.bash_login and ~/.profile for a login shell. Tool
+# installers (bun, rustup) create ~/.bash_profile, which then shadows
+# ~/.profile and leaves the persisted package paths off PATH — /etc/profile has
+# already reset PATH to the system default by that point.
+for shell_rc in "${HOME}/.bashrc" "${HOME}/.profile" "${HOME}/.bash_profile"; do
     touch "${shell_rc}"
     if ! grep -Fqx ". /usr/local/libexec/cliweb-persistent-env" "${shell_rc}"; then
         printf '\n# CLIWeb persistent package paths\n. /usr/local/libexec/cliweb-persistent-env\n' >> "${shell_rc}"

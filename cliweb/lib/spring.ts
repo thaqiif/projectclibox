@@ -133,55 +133,6 @@ export function spring(
   };
 }
 
-/**
- * Apple's momentum projection: where a flick would have carried the content,
- * not where the finger happened to lift.
- *
- * This is the real function from *Designing Fluid Interfaces* — not the
- * textbook v²/(2·decel), which overshoots badly.
- */
-export function projectMomentum(
-  velocity: number,
-  decelerationRate = 0.998
-): number {
-  return ((velocity / 1000) * decelerationRate) / (1 - decelerationRate);
-}
-
-/**
- * Rubber-banding: content resists progressively past a boundary instead of
- * hard-stopping. A clamp feels cheap; this feels like a real edge.
- */
-export function rubberBand(overshoot: number, dimension: number, c = 0.55) {
-  return (
-    (overshoot * dimension * c) / (dimension + c * Math.abs(overshoot))
-  );
-}
-
-/** Tracks pointer samples so a release can hand its velocity to a spring. */
-export class VelocityTracker {
-  private samples: { v: number; t: number }[] = [];
-
-  add(value: number) {
-    const t = performance.now();
-    this.samples.push({ v: value, t });
-    if (this.samples.length > 5) this.samples.shift();
-  }
-
-  /** Units per second at release. */
-  get velocity(): number {
-    if (this.samples.length < 2) return 0;
-    const b = this.samples[this.samples.length - 1];
-    const a = this.samples[this.samples.length - 2];
-    const dt = (b.t - a.t) / 1000;
-    if (dt <= 0) return 0;
-    return (b.v - a.v) / dt;
-  }
-
-  reset() {
-    this.samples = [];
-  }
-}
-
 export function prefersReducedMotion(): boolean {
   return (
     typeof window !== "undefined" &&

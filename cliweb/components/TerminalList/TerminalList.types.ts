@@ -5,7 +5,6 @@ export interface TerminalListProps {
   /** Open a new terminal, optionally in a project's working directory. */
   onNewTerminal?: (projectId?: string) => void;
   onCloseTerminal?: (name: string) => void;
-  onQuickSwitch?: () => void;
   enableTerminalDrag?: boolean;
   onClosedAllTerminals?: () => void;
 }

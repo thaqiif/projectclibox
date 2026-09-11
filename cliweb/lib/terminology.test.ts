@@ -5,8 +5,6 @@ import test from "node:test";
 
 const expectedTerminalCopy = [
   ["components/TerminalCard.tsx", /Delete terminal/i],
-  ["components/QuickSwitcher.tsx", /Switch Terminal \/ Search Code/],
-  ["components/QuickSwitcher.tsx", /Unnamed Terminal/],
   ["components/TerminalList/index.tsx", /group the terminals/i],
   ["components/TerminalList/KillAllConfirm.tsx", /Close every tmux terminal/i],
   ["hooks/useProjects.ts", /Terminals will be moved/i],
@@ -23,7 +21,6 @@ test("product copy uses terminal terminology", () => {
 test("product copy does not use the retired session terminology", () => {
   const files = [
     "components/TerminalCard.tsx",
-    "components/QuickSwitcher.tsx",
     "components/TerminalList/index.tsx",
     "components/TerminalList/KillAllConfirm.tsx",
     "components/Projects/ProjectSettingsDialog.tsx",

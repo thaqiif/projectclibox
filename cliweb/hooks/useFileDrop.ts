@@ -1,6 +1,10 @@
 "use client";
 
 import { useState, useCallback, useEffect, type RefObject } from "react";
+import {
+  PANE_DRAG_TYPE,
+  TERMINAL_DRAG_TYPE,
+} from "@/lib/drag-types";
 
 interface UseFileDropOptions {
   /** Disable drop handling (e.g., while uploading) */
@@ -12,9 +16,6 @@ interface DragHandlers {
   onDragLeave: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
 }
-
-const TERMINAL_DRAG_TYPE = "application/x-cliweb-terminal";
-const PANE_DRAG_TYPE = "application/x-cliweb-monitor-pane";
 
 function isMonitorDrag(event: React.DragEvent) {
   const types = Array.from(event.dataTransfer.types);

@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Terminal as TerminalIcon, Command } from "lucide-react";
+import { Plus, Terminal as TerminalIcon } from "lucide-react";
 import type { TerminalRecord } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
@@ -8,7 +8,6 @@ interface WelcomeProps {
   terminals: TerminalRecord[];
   onNewTerminal: () => void;
   onSelectTerminal: (name: string) => void;
-  onQuickSwitch?: () => void;
 }
 
 const RECENT_LIMIT = 6;
@@ -29,7 +28,6 @@ export function Welcome({
   terminals,
   onNewTerminal,
   onSelectTerminal,
-  onQuickSwitch,
 }: WelcomeProps) {
   // Most recently active first; tmux reports activity in epoch seconds.
   const recent = [...terminals]
@@ -52,18 +50,6 @@ export function Welcome({
             <Plus className="text-primary h-4 w-4 shrink-0" />
             New terminal
           </button>
-          {onQuickSwitch && (
-            <button
-              onClick={onQuickSwitch}
-              className="press focus-ring flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[0.8125rem] font-medium transition-colors hover:bg-[var(--fill-3)]"
-            >
-              <Command className="text-primary h-4 w-4 shrink-0" />
-              Quick switch
-              <kbd className="text-muted-foreground ml-auto rounded bg-[var(--fill-2)] px-1.5 py-0.5 text-[0.625rem] font-medium">
-                ⌘K
-              </kbd>
-            </button>
-          )}
         </div>
 
         {recent.length > 0 && (

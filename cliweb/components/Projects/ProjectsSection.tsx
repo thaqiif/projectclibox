@@ -1,10 +1,7 @@
 "use client";
 
-import { useMemo, useCallback } from "react";
-import { useSnapshot } from "valtio";
 import { ProjectCard } from "./ProjectCard";
 import { TerminalCard } from "@/components/TerminalCard";
-import { selectionStore, selectionActions } from "@/stores/terminalSelection";
 import type { Project } from "@/lib/db";
 import type { TerminalRecord } from "@/lib/terminals";
 
@@ -38,28 +35,6 @@ export function ProjectsSection({
   onRenameTerminal,
   enableTerminalDrag = false,
 }: ProjectsSectionProps) {
-  const { selectedIds } = useSnapshot(selectionStore);
-  const isInSelectMode = selectedIds.size > 0;
-
-  // Terminal IDs in render order, used for shift-click range selection.
-  const allTerminalIds = useMemo(() => {
-    const ids: string[] = [];
-    for (const project of projects) {
-      const projectTerminals = terminals.filter(
-        (terminal) => (terminal.project_id || "uncategorized") === project.id
-      );
-      for (const terminal of projectTerminals) ids.push(terminal.id);
-    }
-    return ids;
-  }, [projects, terminals]);
-
-  const handleToggleSelect = useCallback(
-    (terminalId: string, shiftKey: boolean) => {
-      selectionActions.toggle(terminalId, shiftKey, allTerminalIds);
-    },
-    [allTerminalIds]
-  );
-
   // Group terminals by the project their working directory falls under.
   const terminalsByProject = terminals.reduce(
     (acc, terminal) => {
@@ -117,11 +92,6 @@ export function ProjectsSection({
                         terminal={terminal}
                         draggable={enableTerminalDrag}
                         isActive={terminal.id === activeTerminalId}
-                        isSelected={selectedIds.has(terminal.id)}
-                        isInSelectMode={isInSelectMode}
-                        onToggleSelect={(shiftKey) =>
-                          handleToggleSelect(terminal.id, shiftKey)
-                        }
                         onClick={() => onSelectTerminal(terminal.id)}
                         onDelete={
                           onCloseTerminal

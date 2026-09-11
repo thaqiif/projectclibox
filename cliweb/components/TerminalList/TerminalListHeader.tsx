@@ -17,21 +17,18 @@ import {
   Trash2,
   Palette,
   Settings,
-  Command,
 } from "lucide-react";
 
 interface TerminalListHeaderProps {
   onNewProject: () => void;
   onOpenProject: () => void;
   onKillAll: () => void;
-  onQuickSwitch?: () => void;
 }
 
 export function TerminalListHeader({
   onNewProject,
   onOpenProject,
   onKillAll,
-  onQuickSwitch,
 }: TerminalListHeaderProps) {
   const [showThemeDialog, setShowThemeDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
@@ -65,13 +62,6 @@ export function TerminalListHeader({
             icon={MoreHorizontal}
             tooltip="More options"
             items={[
-              ...(onQuickSwitch
-                ? [
-                    menuItem("Quick switch  ⌘K", onQuickSwitch, {
-                      icon: Command,
-                    }),
-                  ]
-                : []),
               menuItem("Settings…", () => setShowSettingsDialog(true), {
                 icon: Settings,
               }),

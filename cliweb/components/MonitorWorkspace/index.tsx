@@ -14,15 +14,13 @@ import {
   type MonitorDropSide,
   type MonitorWorkspaceState,
 } from "@/lib/monitor-workspace";
+import { PANE_DRAG_TYPE, TERMINAL_DRAG_TYPE } from "@/lib/drag-types";
 import { RotateCcw, TerminalSquare, X } from "lucide-react";
 
 const Terminal = dynamic(
   () => import("@/components/Terminal").then((module) => module.Terminal),
   { ssr: false, loading: () => <TerminalSkeleton /> }
 );
-
-const TERMINAL_DRAG_TYPE = "application/x-cliweb-terminal";
-const PANE_DRAG_TYPE = "application/x-cliweb-monitor-pane";
 
 interface MonitorWorkspaceProps {
   workspace: MonitorWorkspaceState;
