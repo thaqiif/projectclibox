@@ -16,16 +16,12 @@ import {
   loadWorkbenchState,
   PANE_ID,
 } from "@/lib/panes";
-import { useViewport } from "@/hooks/useViewport";
 
 interface PaneContextValue {
   paneId: string;
   attachedTmux: string | null;
   viewMode: ViewMode;
   shellDrawerOpen: boolean;
-  isMobile: boolean;
-  /** True once localStorage has been read, so we do not flash the default. */
-  hydrated: boolean;
   attach: (tmuxName: string) => void;
   /** Stop pointing at a terminal. The terminal itself keeps running. */
   detach: () => void;
@@ -42,7 +38,6 @@ export function PaneProvider({ children }: { children: ReactNode }) {
     createInitialWorkbenchState
   );
   const [hydrated, setHydrated] = useState(false);
-  const { isMobile } = useViewport();
 
   useEffect(() => {
     const saved = loadWorkbenchState();
@@ -98,8 +93,6 @@ export function PaneProvider({ children }: { children: ReactNode }) {
         attachedTmux: state.attachedTmux,
         viewMode: state.viewMode,
         shellDrawerOpen: state.shellDrawerOpen,
-        isMobile,
-        hydrated,
         attach,
         detach,
         setViewMode,

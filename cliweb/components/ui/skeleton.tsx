@@ -26,27 +26,11 @@ export const ShimmeringLoader = forwardRef<
 });
 ShimmeringLoader.displayName = "ShimmeringLoader";
 
-interface GenericSkeletonLoaderProps {
-  className?: string;
-}
-
-export function GenericSkeletonLoader({
-  className,
-}: GenericSkeletonLoaderProps) {
-  return (
-    <div className={cn("space-y-2", className)}>
-      <ShimmeringLoader />
-      <ShimmeringLoader className="w-3/4" />
-      <ShimmeringLoader className="w-1/2" />
-    </div>
-  );
-}
-
 interface TerminalCardSkeletonProps {
   count?: number;
 }
 
-export function TerminalCardSkeleton({ count = 3 }: TerminalCardSkeletonProps) {
+function TerminalCardSkeleton({ count = 3 }: TerminalCardSkeletonProps) {
   return (
     <div className="flex flex-col gap-1 p-2">
       {Array.from({ length: count }).map((_, i) => (

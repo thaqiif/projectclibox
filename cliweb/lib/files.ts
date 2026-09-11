@@ -6,8 +6,6 @@ import { readdirSync, statSync, readFileSync, writeFileSync } from "fs";
 import { join, extname } from "path";
 
 // Re-export client-safe types and utilities
-export type { FileNode } from "./file-utils";
-export { getLanguageFromExtension } from "./file-utils";
 import type { FileNode } from "./file-utils";
 
 /**

@@ -15,9 +15,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { QuickSwitcher } from "@/components/QuickSwitcher";
 import type { ViewProps } from "./types";
-import { fileOpenActions } from "@/stores/fileOpen";
 import { useSidebarPinned } from "@/hooks/useSidebarPinned";
 import { useTerminalRename } from "@/hooks/useTerminalRename";
 import { WorkbenchTitle } from "./WorkbenchTitle";
@@ -28,14 +26,11 @@ export function DesktopView({
   terminals,
   projects,
   activeTerminal,
-  showQuickSwitcher,
-  setShowQuickSwitcher,
   attachToTerminal,
   handleNewTerminal,
   handleCloseTerminal,
   fetchTerminals,
   handleDetachTerminal,
-  handleCreateProject,
   renderPane,
 }: ViewProps) {
   const { isPinned, togglePin } = useSidebarPinned();
@@ -51,7 +46,6 @@ export function DesktopView({
         onNewTerminal={handleNewTerminal}
         onCloseTerminal={handleCloseTerminal}
         onClosedAllTerminals={handleDetachTerminal}
-        onQuickSwitch={() => setShowQuickSwitcher(true)}
       />
 
       {/* Main content */}
@@ -157,25 +151,6 @@ export function DesktopView({
           )}
         </div>
       </div>
-
-      {/* Dialogs */}
-      <QuickSwitcher
-        terminals={terminals}
-        open={showQuickSwitcher}
-        onOpenChange={setShowQuickSwitcher}
-        currentTerminalId={activeTerminal?.id}
-        activeTerminalWorkingDir={
-          activeTerminal?.working_directory ?? undefined
-        }
-        onSelectTerminal={attachToTerminal}
-        onSelectFile={(file, line) => {
-          // Resolve a relative path against the terminal's working directory.
-          const absolutePath = activeTerminal?.working_directory
-            ? `${activeTerminal.working_directory}/${file.replace(/^\.\//, "")}`
-            : file;
-          fileOpenActions.requestOpen(absolutePath, line);
-        }}
-      />
     </div>
   );
 }

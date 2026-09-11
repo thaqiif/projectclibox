@@ -7,7 +7,6 @@
  *   trigger={<Button><MoreHorizontal /></Button>}
  *   items={[
  *     menuItem('Edit', onEdit, { icon: Pencil }),
- *     toggleItem('Full Width', isFullWidth, onToggle),
  *     separator(),
  *     menuItem('Delete', onDelete, { icon: Trash2, variant: 'destructive' }),
  *   ]}
@@ -46,7 +45,7 @@ interface BaseItem {
   visible?: boolean;
 }
 
-export interface MenuItemConfig extends BaseItem {
+interface MenuItemConfig extends BaseItem {
   type: "item";
   label: string;
   onClick: () => void;
@@ -55,7 +54,7 @@ export interface MenuItemConfig extends BaseItem {
   variant?: "default" | "destructive";
 }
 
-export interface ToggleItemConfig extends BaseItem {
+interface ToggleItemConfig extends BaseItem {
   type: "toggle";
   label: string;
   checked: boolean;
@@ -64,7 +63,7 @@ export interface ToggleItemConfig extends BaseItem {
   disabled?: boolean;
 }
 
-export interface SubmenuItemConfig extends BaseItem {
+interface SubmenuItemConfig extends BaseItem {
   type: "submenu";
   label: string;
   icon?: LucideIcon;
@@ -72,16 +71,16 @@ export interface SubmenuItemConfig extends BaseItem {
   disabled?: boolean;
 }
 
-export interface SeparatorItemConfig extends BaseItem {
+interface SeparatorItemConfig extends BaseItem {
   type: "separator";
 }
 
-export interface CustomItemConfig extends BaseItem {
+interface CustomItemConfig extends BaseItem {
   type: "custom";
   render: () => ReactNode;
 }
 
-export type DropdownItemConfig =
+type DropdownItemConfig =
   | MenuItemConfig
   | ToggleItemConfig
   | SubmenuItemConfig
@@ -90,7 +89,7 @@ export type DropdownItemConfig =
 
 type FalsyItem = false | null | undefined | "" | 0;
 
-export interface ADropdownMenuProps {
+interface ADropdownMenuProps {
   trigger?: ReactNode;
   icon?: LucideIcon;
   items: (DropdownItemConfig | FalsyItem)[];
@@ -246,34 +245,8 @@ export function menuItem(
   return { type: "item", label, onClick, ...options };
 }
 
-export function toggleItem(
-  label: string,
-  checked: boolean,
-  onChange: () => void,
-  options?: Partial<
-    Omit<ToggleItemConfig, "type" | "label" | "checked" | "onChange">
-  >
-): ToggleItemConfig {
-  return { type: "toggle", label, checked, onChange, ...options };
-}
-
-export function submenuItem(
-  label: string,
-  items: DropdownItemConfig[],
-  options?: Partial<Omit<SubmenuItemConfig, "type" | "label" | "items">>
-): SubmenuItemConfig {
-  return { type: "submenu", label, items, ...options };
-}
-
 export function separator(
   options?: Partial<Omit<SeparatorItemConfig, "type">>
 ): SeparatorItemConfig {
   return { type: "separator", ...options };
-}
-
-export function customItem(
-  render: () => ReactNode,
-  options?: Partial<Omit<CustomItemConfig, "type" | "render">>
-): CustomItemConfig {
-  return { type: "custom", render, ...options };
 }

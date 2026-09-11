@@ -9,7 +9,6 @@ interface WebSocketCallbacks {
   onConnectionStateChange: (
     state: "connecting" | "connected" | "disconnected" | "reconnecting"
   ) => void;
-  onSetConnected: (connected: boolean) => void;
 }
 
 interface WebSocketManager {
@@ -107,7 +106,6 @@ export function createWebSocketConnection(
   };
 
   ws.onopen = () => {
-    callbacks.onSetConnected(true);
     callbacks.onConnectionStateChange("connected");
     reconnectDelayRef.current = WS_RECONNECT_BASE_DELAY;
     callbacks.onConnected?.();
@@ -149,7 +147,6 @@ export function createWebSocketConnection(
   };
 
   ws.onclose = () => {
-    callbacks.onSetConnected(false);
     callbacks.onDisconnected?.();
 
     if (intentionalCloseRef.current) {

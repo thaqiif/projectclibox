@@ -4,8 +4,5 @@
   "scripts": {
     "lint": "cd cliweb && npm run lint",
     "test": "cd cliweb && npm test"
-  },
-  "devDependencies": {
-    "esbuild": "0.28.1"
   }
 }

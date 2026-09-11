@@ -7,12 +7,6 @@ export interface ViewProps {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
   activeTerminal: TerminalRecord | undefined;
-  copiedTerminalId: boolean;
-  setCopiedTerminalId: (copied: boolean) => void;
-
-  showQuickSwitcher: boolean;
-  setShowQuickSwitcher: (show: boolean) => void;
-
   // Handlers
   attachToTerminal: (name: string) => void;
   /** Open a new terminal, optionally in a project's working directory. */
@@ -21,10 +15,6 @@ export interface ViewProps {
   fetchTerminals: () => Promise<void>;
   /** Detach the workbench from the attached terminal, leaving it running. */
   handleDetachTerminal: () => void;
-  handleCreateProject: (
-    name: string,
-    workingDirectory: string
-  ) => Promise<string | null>;
 
   // Pane
   renderPane: () => React.ReactNode;

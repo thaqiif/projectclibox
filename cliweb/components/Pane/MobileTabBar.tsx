@@ -175,7 +175,10 @@ export function MobileTabBar({
 
   return (
     <div
-      className="glass glass-edge-bottom relative z-10 flex items-center gap-1.5 px-2 pb-2 pt-[calc(0.5rem+env(safe-area-inset-top))]"
+      // Opaque, not glass: this bar is anchored to the top of the viewport, so
+      // a saved-to-home-screen iOS session runs it under the status bar — where
+      // a translucent material frosts the terminal scrolling beneath it.
+      className="bg-background glass-edge-bottom relative z-10 flex items-center gap-1.5 px-2 pb-2 pt-[calc(0.5rem+env(safe-area-inset-top))]"
       onClick={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onTouchEnd={(e) => e.stopPropagation()}

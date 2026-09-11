@@ -1,5 +1,5 @@
 export const MONITOR_WORKSPACE_SETTING_KEY = "desktopMonitorWorkspace";
-export const MIN_MONITOR_PANES = 1;
+const MIN_MONITOR_PANES = 1;
 export const MAX_MONITOR_PANES = 3;
 
 export interface MonitorPaneState {
@@ -122,7 +122,7 @@ export function removeMonitorPane(
 }
 
 export type MonitorDropSide = "before" | "center" | "after";
-export const MONITOR_EDGE_ZONE = 0.25;
+const MONITOR_EDGE_ZONE = 0.25;
 
 export function dropSideFromRatio(ratio: number): MonitorDropSide {
   if (ratio < MONITOR_EDGE_ZONE) return "before";
@@ -135,7 +135,7 @@ function newPaneId(): string {
   return `monitor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function clearMonitorTerminal(
+function clearMonitorTerminal(
   workspace: MonitorWorkspaceState,
   terminalId: string
 ): MonitorWorkspaceState {
@@ -147,7 +147,7 @@ export function clearMonitorTerminal(
   };
 }
 
-export function placeMonitorTerminal(
+function placeMonitorTerminal(
   workspace: MonitorWorkspaceState,
   paneId: string,
   terminalId: string
@@ -159,7 +159,7 @@ export function placeMonitorTerminal(
   );
 }
 
-export function insertMonitorPane(
+function insertMonitorPane(
   workspace: MonitorWorkspaceState,
   anchorPaneId: string,
   side: Exclude<MonitorDropSide, "center">,

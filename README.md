@@ -27,8 +27,11 @@ controls.
   host directory selected with `WORKSPACE_DIR`). Use the container path
   `/workspaces/<project>` in the project dialog.
 - Browser terminals backed by tmux, with terminal metadata stored in SQLite.
-- File tree, editor, code search, themes, font scaling, mobile
-  keyboard controls, and PWA assets.
+- File tree, editor, themes, font scaling, mobile keyboard controls, and PWA
+  assets.
+- A desktop monitor workspace for up to three terminals side by side. Dragging
+  a terminal out of the sidebar opens it and gives the terminal somewhere to
+  land.
 - A non-root runtime user with host-matched `PUID`/`PGID`.
 - Node/npm, Python/pip, git, SSH, tmux, ripgrep, jq, curl, and build tools.
 

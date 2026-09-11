@@ -10,7 +10,6 @@ const COLLAPSE_DELAY_MS = 300;
 
 interface DesktopSidebarProps {
   isPinned: boolean;
-  onQuickSwitch?: () => void;
   activeTerminalId?: string;
   onSelect: (name: string) => void;
   onNewTerminal: (projectId?: string) => void;
@@ -20,7 +19,6 @@ interface DesktopSidebarProps {
 
 export function DesktopSidebar({
   isPinned,
-  onQuickSwitch,
   activeTerminalId,
   onSelect,
   onNewTerminal,
@@ -76,7 +74,6 @@ export function DesktopSidebar({
           onSelect={onSelect}
           onNewTerminal={onNewTerminal}
           onCloseTerminal={onCloseTerminal}
-          onQuickSwitch={onQuickSwitch}
           onClosedAllTerminals={onClosedAllTerminals}
         />
       </div>

@@ -8,8 +8,8 @@ node_modules/
 **/node_modules/
 **/.next/
 **/.turbo/
-agent-os/*.db*
-agent-os/.agent-os/
-agent-os/.env.local
 workspaces/*
 !workspaces/.gitkeep
+
+# Agent session state
+.omc/

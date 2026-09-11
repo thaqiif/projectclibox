@@ -37,7 +37,7 @@ const editorTheme = EditorView.theme({
     color: "hsl(var(--foreground))",
   },
   ".cm-content": {
-    fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
+    fontFamily: "var(--font-mono)",
     padding: "8px 0",
     caretColor: "hsl(var(--primary))",
   },

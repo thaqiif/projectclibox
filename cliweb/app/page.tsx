@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { PaneProvider, usePanes } from "@/contexts/PaneContext";
 import { Pane } from "@/components/Pane";
 import { useViewport } from "@/hooks/useViewport";
@@ -39,8 +39,6 @@ function HomeContent() {
   const [sidebarOpenState, setSidebarOpenState] = useState<boolean | null>(
     null
   );
-  const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
-  const [copiedTerminalId, setCopiedTerminalId] = useState(false);
   const terminalRef = useRef<TerminalHandle | null>(null);
 
   // Pane context
@@ -53,7 +51,7 @@ function HomeContent() {
   // Data hooks
   const { terminals, fetchTerminals, createTerminal, killTerminal } =
     useTerminals();
-  const { projects, fetchProjects } = useProjects();
+  const { projects } = useProjects();
 
   // Terminal ref management. There is exactly one terminal in the
   // workbench now, so this is a single slot rather than a keyed map.
@@ -146,18 +144,6 @@ function HomeContent() {
   // that choice wins on both viewport sizes.
   const sidebarOpen = sidebarOpenState ?? (isHydrated && !isMobile);
 
-  // Keyboard shortcut: Cmd+K to open quick switcher
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setShowQuickSwitcher(true);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
   const handleSelectTerminal = useCallback(
     (name: string) => {
       debugLog(`handleSelectTerminal: ${name}`);
@@ -210,7 +196,6 @@ function HomeContent() {
         onMenuClick={isMobile ? () => setSidebarOpenState(true) : undefined}
         onSelectTerminal={handleSelectTerminal}
         onNewTerminal={() => void handleNewTerminal()}
-        onQuickSwitch={() => setShowQuickSwitcher(true)}
       />
     ),
     [
@@ -223,24 +208,6 @@ function HomeContent() {
     ]
   );
 
-  // Project created handler (shared between desktop/mobile)
-  const handleCreateProject = useCallback(
-    async (name: string, workingDirectory: string): Promise<string | null> => {
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, workingDirectory }),
-      });
-      const data = await res.json();
-      if (data.project) {
-        await fetchProjects();
-        return data.project.id;
-      }
-      return null;
-    },
-    [fetchProjects]
-  );
-
   // View props
   const viewProps = {
     terminals,
@@ -248,16 +215,11 @@ function HomeContent() {
     sidebarOpen,
     setSidebarOpen: setSidebarOpenState,
     activeTerminal: activeTerminal as TerminalRecord | undefined,
-    copiedTerminalId,
-    setCopiedTerminalId,
-    showQuickSwitcher,
-    setShowQuickSwitcher,
     attachToTerminal,
     handleNewTerminal,
     handleCloseTerminal,
     fetchTerminals,
     handleDetachTerminal,
-    handleCreateProject,
     renderPane,
   };
 

@@ -11,6 +11,26 @@ function quote(value: string): string {
 }
 
 /**
+ * The shell every new tmux pane is started as.
+ *
+ * tmux starts a pane as a *login* shell, and bash reads a login shell's
+ * startup files in a different order: /etc/profile first — which on Debian
+ * resets PATH to the system default, dropping the persisted package
+ * directories — then only the first of ~/.bash_profile, ~/.bash_login and
+ * ~/.profile. ~/.bashrc is never read.
+ *
+ * So a fresh pane came up with the system PATH and no ~/.local/bin: claude,
+ * and anything else installed into the persisted home, reported "command not
+ * found" until the user sourced ~/.bashrc by hand. Naming the shell here makes
+ * it a non-login *interactive* shell, which reads ~/.bashrc — where the
+ * persistent package paths and the user's own aliases already live. That is
+ * what the browser terminals are expected to be, and what every other web
+ * terminal does. ${SHELL} keeps a user-chosen default-shell working; the
+ * fallback covers a server started without one.
+ */
+const INTERACTIVE_SHELL = `exec "\${SHELL:-/bin/bash}"`;
+
+/**
  * The command the workbench types into its shell to attach to a terminal.
  *
  * The pty behind the terminal is a plain shell, so "attaching" is literally
@@ -29,9 +49,12 @@ export function tmuxAttachCommand(name: string, cwd?: string | null): string {
   // attach lands on, including a server these commands just started. Mouse
   // mode makes tmux's own splits usable in the browser; the status bar is
   // redundant here, since the workbench already says which terminal this is.
-  // Both are quiet when there is no server yet — the fallback repeats them.
+  // The shell is pinned for the reason on INTERACTIVE_SHELL above. All three
+  // are quiet when there is no server yet — the fallback repeats them.
   const options =
-    "tmux set -g mouse on 2>/dev/null; tmux set -g status off 2>/dev/null";
+    "tmux set -g mouse on 2>/dev/null; " +
+    "tmux set -g status off 2>/dev/null; " +
+    `tmux set -g default-command '${INTERACTIVE_SHELL}' 2>/dev/null`;
 
   const attach = `${options}; tmux attach -t ${target}`;
 

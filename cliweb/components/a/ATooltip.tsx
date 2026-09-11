@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-export interface ATooltipProps {
+interface ATooltipProps {
   /** The element that triggers the tooltip */
   children: ReactNode;
   /** Tooltip content - can be a string or ReactNode */

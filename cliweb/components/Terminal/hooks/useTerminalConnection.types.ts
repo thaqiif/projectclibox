@@ -2,7 +2,6 @@
 
 import type { RefObject } from "react";
 import type { Terminal as XTerm } from "@xterm/xterm";
-import type { SearchAddon } from "@xterm/addon-search";
 
 export interface TerminalScrollState {
   scrollTop: number;
@@ -23,18 +22,13 @@ export interface UseTerminalConnectionProps {
 }
 
 export interface UseTerminalConnectionReturn {
-  connected: boolean;
   connectionState: "connecting" | "connected" | "disconnected" | "reconnecting";
   isAtBottom: boolean;
   xtermRef: RefObject<XTerm | null>;
-  searchAddonRef: RefObject<SearchAddon | null>;
   scrollToBottom: () => void;
   copySelection: () => boolean;
   sendInput: (data: string) => void;
   sendCommand: (command: string) => void;
   focus: () => void;
-  getScrollState: () => TerminalScrollState | null;
-  restoreScrollState: (state: TerminalScrollState) => void;
-  triggerResize: () => void;
   reconnect: () => void;
 }
