@@ -2,7 +2,7 @@
 
 ## Measurement contract
 
-Measured on 2026-09-12 from the `rewrite/rust-projectclibox-v2` worktree on
+Measured on 2026-09-11 from the `rewrite/rust-projectclibox-v2` worktree on
 Linux x86_64, 4 CPUs, 7.7 GiB visible memory, Rust 1.89.0, Node 22.23.2, and
 an optimized Rust binary. HTTP and WebSocket probes used loopback. The session
 matrix used 5 samples per point and 262,144 output bytes per WebSocket. The
