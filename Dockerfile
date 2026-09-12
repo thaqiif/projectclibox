@@ -18,6 +18,11 @@ RUN cargo build --release --locked -p projectclibox
 
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 
+# debian:bookworm-slim omits the CA bundle. Bootstrap HTTPS for the pinned
+# Debian snapshot from the already-pinned Rust build stage before installing
+# ca-certificates from that snapshot.
+COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
 ARG DEBIAN_SNAPSHOT=20250601T000000Z
 RUN set -eux; \
     rm -f /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; \
