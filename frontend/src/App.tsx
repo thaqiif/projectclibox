@@ -29,8 +29,13 @@ function HomeContent() {
   const { isMobile, isHydrated } = useViewport();
   useViewportHeight();
 
-  const { terminals, fetchTerminals, createTerminal, killTerminal } =
-    useTerminals();
+  const {
+    terminals,
+    isLoading: terminalsLoading,
+    fetchTerminals,
+    createTerminal,
+    killTerminal,
+  } = useTerminals();
   const { projects, fetchProjects } = useProjects();
   const [authRequired, setAuthRequired] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -72,17 +77,27 @@ function HomeContent() {
       }
 
       if (!record.alive) {
-        void api
-          .restart(sessionId)
-          .then((replacement) => {
-            attach(replacement.id);
-            void fetchTerminals();
-          })
-          .catch((error: unknown) => {
-            toast.error(
-              error instanceof Error ? error.message : "Unable to restart terminal"
-            );
-          });
+        toast.info(`“${record.name}” is not running`, {
+          description: "Restart it only when you want a new PTY session.",
+          action: {
+            label: "Restart",
+            onClick: () => {
+              void api
+                .restart(sessionId)
+                .then((replacement) => {
+                  attach(replacement.id);
+                  void fetchTerminals();
+                })
+                .catch((error: unknown) => {
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "Unable to restart terminal"
+                  );
+                });
+            },
+          },
+        });
         return;
       }
 
@@ -103,6 +118,20 @@ function HomeContent() {
   const activeTerminal = terminals.find(
     (terminal) => terminal.id === attachedSessionId
   );
+
+  useEffect(() => {
+    // A Rust PTY cannot survive a server restart. Do not leave a stale
+    // persisted attachment mounted, where it would look like opening the
+    // terminal created a replacement session.
+    if (
+      attachedSessionId &&
+      !terminalsLoading &&
+      (!activeTerminal || !activeTerminal.alive)
+    ) {
+      detach();
+    }
+  }, [activeTerminal, attachedSessionId, detach, terminalsLoading]);
+
   const sidebarOpen = sidebarOpenState ?? (isHydrated && !isMobile);
 
   const handleNewTerminal = useCallback(

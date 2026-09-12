@@ -130,6 +130,7 @@ export function useTerminalConnection({
     let cleanupTouchScroll: (() => void) | undefined;
     let cleanupResizeHandlers: (() => void) | undefined;
     let cleanupTerminal: (() => void) | undefined;
+    let disposeInput: (() => void) | undefined;
 
     intentionalCloseRef.current = false;
     permanentCloseRef.current = false;
@@ -327,6 +328,13 @@ export function useTerminalConnection({
       fitAddonRef.current = instance.fitAddon;
       cleanupTerminal = instance.cleanup;
 
+      // xterm owns keyboard handling, but the Rust PTY owns the input stream.
+      // Forward every xterm data event to the attached WebSocket session.
+      const inputDisposable = instance.term.onData((data) => {
+        sendInput(data);
+      });
+      disposeInput = () => inputDisposable.dispose();
+
       instance.term.onScroll(() => {
         const buffer = instance.term.buffer.active;
         setIsAtBottom(buffer.viewportY >= buffer.baseY);
@@ -367,6 +375,7 @@ export function useTerminalConnection({
 
       cleanupResizeHandlers?.();
       cleanupTouchScroll?.();
+      disposeInput?.();
       cleanupTerminal?.();
       const socket = socketRef.current;
       if (socket && socket.readyState === WebSocket.OPEN) {

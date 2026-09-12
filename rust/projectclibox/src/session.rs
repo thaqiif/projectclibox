@@ -447,6 +447,10 @@ impl SessionHandle {
         self.record().status.is_live()
     }
 
+    pub fn termination_requested(&self) -> bool {
+        self.inner.termination_requested.load(Ordering::Acquire)
+    }
+
     pub(crate) fn cleanup_pending(&self) -> bool {
         self.inner.cleanup_pending.load(Ordering::Acquire)
     }

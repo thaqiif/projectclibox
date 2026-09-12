@@ -8,7 +8,7 @@ import {
 import type { TerminalRecord } from "@/lib/terminals";
 
 export function useTerminals() {
-  const { data, refetch } = useTerminalsQuery();
+  const { data, isPending, refetch } = useTerminalsQuery();
   const terminals: TerminalRecord[] = data ?? [];
 
   const createMutation = useCreateTerminal();
@@ -47,6 +47,7 @@ export function useTerminals() {
 
   return {
     terminals,
+    isLoading: isPending,
     fetchTerminals,
     createTerminal,
     killTerminal,

@@ -375,16 +375,44 @@ impl SessionSupervisor {
     }
 
     pub async fn delete_metadata(&self, id: SessionId) -> AppResult<()> {
-        if let Some(handle) = self
-            .sessions
-            .read()
-            .expect("sessions lock")
-            .get(&id)
-            .cloned()
-        {
-            if handle.is_live() {
+        let handle = {
+            self.sessions
+                .read()
+                .expect("sessions lock")
+                .get(&id)
+                .cloned()
+        };
+        if let Some(handle) = handle {
+            if handle.is_live() && !handle.termination_requested() {
                 return Err(AppError::Conflict(
                     "terminate the session before deleting its metadata".to_owned(),
+                ));
+            }
+
+            // Termination is asynchronous: wait for the watcher to persist
+            // the finished record and remove the live handle before deleting
+            // the row. Otherwise the watcher can recreate the row after this
+            // request returns, making the terminal appear impossible to
+            // delete from the browser.
+            for _ in 0..200 {
+                let still_present = self
+                    .sessions
+                    .read()
+                    .expect("sessions lock")
+                    .contains_key(&id);
+                if !still_present {
+                    break;
+                }
+                sleep(Duration::from_millis(50)).await;
+            }
+            if self
+                .sessions
+                .read()
+                .expect("sessions lock")
+                .contains_key(&id)
+            {
+                return Err(AppError::Conflict(
+                    "the session is still finishing; retry metadata deletion".to_owned(),
                 ));
             }
         }
