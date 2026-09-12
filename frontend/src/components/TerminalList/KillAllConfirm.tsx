@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { terminalKeys } from "@/data/terminals/keys";
 import { api } from "@/api";
+import { toast } from "sonner";
 
 interface KillAllConfirmProps {
   onCancel: () => void;
@@ -17,22 +18,30 @@ export function KillAllConfirm({ onCancel, onComplete }: KillAllConfirmProps) {
     setKilling(true);
     try {
       const terminals = await api.sessions();
-      await Promise.all(
-        terminals
-          .filter((terminal) => terminal.alive)
-          .map(async (terminal) => {
-            await api.terminate(terminal.id);
-            try {
-              await api.deleteMetadata(terminal.id);
-            } catch {
-              // A session may finish between terminate and metadata cleanup.
-            }
-          })
+      const results = await Promise.allSettled(
+        terminals.map((terminal) => api.deleteMetadata(terminal.id))
       );
       await queryClient.invalidateQueries({ queryKey: terminalKeys.all });
+
+      const failures = results.filter(
+        (result): result is PromiseRejectedResult => result.status === "rejected"
+      );
+      if (failures.length > 0) {
+        const reason = failures[0].reason;
+        const message =
+          reason instanceof Error ? reason.message : "Deletion failed";
+        toast.error(
+          `${failures.length} terminal${failures.length === 1 ? "" : "s"} could not be deleted`,
+          { description: message }
+        );
+        return;
+      }
+
       onComplete();
     } catch (error) {
-      console.error("Failed to kill terminals:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Unable to close terminals"
+      );
     } finally {
       setKilling(false);
     }

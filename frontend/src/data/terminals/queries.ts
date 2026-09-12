@@ -31,13 +31,9 @@ export function useKillTerminal() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      await api.terminate(id);
-      try {
-        await api.deleteMetadata(id);
-      } catch {
-        // A finished session may already have been removed by a concurrent
-        // cleanup; the explicit stop itself still succeeded.
-      }
+      // DELETE is authoritative: the backend stops a live PTY and removes
+      // both live and stale persisted sessions in one operation.
+      await api.deleteMetadata(id);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: terminalKeys.all });

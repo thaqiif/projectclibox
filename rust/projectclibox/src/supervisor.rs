@@ -384,9 +384,10 @@ impl SessionSupervisor {
         };
         if let Some(handle) = handle {
             if handle.is_live() && !handle.termination_requested() {
-                return Err(AppError::Conflict(
-                    "terminate the session before deleting its metadata".to_owned(),
-                ));
+                // DELETE is the terminal's destructive operation. It must be
+                // sufficient on its own, including for a terminal that is
+                // still running when the request arrives.
+                handle.terminate()?;
             }
 
             // Termination is asynchronous: wait for the watcher to persist
