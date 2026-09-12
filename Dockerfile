@@ -23,7 +23,7 @@ FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe6
 # ca-certificates from that snapshot.
 COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-ARG DEBIAN_SNAPSHOT=20250601T000000Z
+ARG DEBIAN_SNAPSHOT=20260824T000000Z
 RUN set -eux; \
     rm -f /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; \
     printf '%s\n' \
