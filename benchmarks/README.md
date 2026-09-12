@@ -35,6 +35,19 @@ The JSON report includes host/runtime metadata, per-count terminal-list
 latency, creation latency, structured WebSocket attach/output timings, and a
 process-tree snapshot. `--keep` leaves benchmark sessions for inspection.
 
+Resolved snapshot capture is measured separately across the required 1/10/25/50
+live-session points. It waits for the `terminal.snapshot` control message and
+the version `2` binary frame, so the reported latency includes the server's
+state clone/render and WebSocket delivery:
+
+```bash
+node benchmarks/rust-v2-snapshot.mjs \
+  --base-url http://127.0.0.1:3111 \
+  --counts 1,10,25,50 \
+  --samples 5 \
+  --app-pid <server-pid>
+```
+
 The acceptance probe is smaller and checks behavior rather than throughput:
 
 ```bash
@@ -43,7 +56,8 @@ node benchmarks/rust-v2-acceptance.mjs \
 ```
 
 It verifies browser detach/reconnect replay, two viewers on one PTY, traversal
-rejection, and process-group cleanup. The browser probe deliberately reports
+rejection, process-group cleanup, and concurrent/idempotent close-all deletion.
+The browser probe deliberately reports
 Chromium metrics as unavailable when no browser is installed; the same is true
 of Docker image/startup metrics when no Docker daemon is available.
 

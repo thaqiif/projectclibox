@@ -1,15 +1,16 @@
 mod api;
 mod config;
 mod db;
+mod delta_buffer;
 mod error;
 mod filesystem;
 mod metrics;
 mod models;
 mod protocol;
-mod scrollback;
 mod security;
 mod session;
 mod supervisor;
+mod terminal_state;
 
 use clap::{Parser, Subcommand};
 use config::{Config, RuntimeArgs};

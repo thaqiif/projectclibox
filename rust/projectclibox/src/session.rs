@@ -1,7 +1,9 @@
 use crate::{
+    delta_buffer::{DeltaReplay, OutputDelta},
     error::{AppError, AppResult},
     models::{SessionId, SessionRecord, SessionSnapshot, SessionStatus},
-    scrollback::{OutputChunk, Replay, Scrollback},
+    protocol::AttachMode,
+    terminal_state::{TerminalSnapshot, TerminalState},
 };
 use chrono::Utc;
 use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize};
@@ -11,7 +13,7 @@ use std::{
     io::{ErrorKind, Read, Write},
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex,
     },
     thread,
@@ -60,21 +62,31 @@ pub struct SessionHandle {
 
 struct SessionInner {
     record: Mutex<SessionRecord>,
-    scrollback: Mutex<Scrollback>,
-    output_sender: broadcast::Sender<OutputChunk>,
+    // Every PTY read and every attach snapshot takes this gate. It makes the
+    // sequence number, emulator state, and snapshot boundary one atomic
+    // operation from the transport's point of view.
+    output_gate: Mutex<()>,
+    terminal_state: Mutex<TerminalState>,
+    output_sender: broadcast::Sender<OutputDelta>,
     status_sender: watch::Sender<SessionSnapshot>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     input_sender: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     viewers: AtomicUsize,
+    next_viewer_id: AtomicU64,
+    resize_owner: AtomicU64,
     termination_requested: AtomicBool,
     cleanup_pending: Arc<AtomicBool>,
     idle_after: Duration,
 }
 
 pub struct AttachedSession {
-    pub replay: Replay,
-    pub receiver: broadcast::Receiver<OutputChunk>,
+    pub mode: AttachMode,
+    pub sequence: u64,
+    pub snapshot: Option<TerminalSnapshot>,
+    pub replay: DeltaReplay,
+    pub receiver: broadcast::Receiver<OutputDelta>,
+    pub viewer_id: u64,
 }
 
 pub(crate) struct SessionSpawnOptions<'a> {
@@ -206,18 +218,29 @@ impl SessionHandle {
         };
         let child_slot = Arc::new(Mutex::new(Some(child)));
         let (output_sender, _) = broadcast::channel(1024);
-        let initial_snapshot = snapshot_from_record(&record, 0, 0, false, idle_after_secs);
-        let (status_sender, _) = watch::channel(initial_snapshot);
         let (input_sender, input_receiver) = mpsc::channel(INPUT_QUEUE_SIZE);
+        let terminal_state =
+            TerminalState::new(rows, cols, max_scrollback_bytes, input_sender.clone());
+        let initial_snapshot = snapshot_from_record(
+            &record,
+            0,
+            terminal_state.estimated_memory_bytes(),
+            terminal_state.delta_truncated(),
+            idle_after_secs,
+        );
+        let (status_sender, _) = watch::channel(initial_snapshot);
         let inner = Arc::new(SessionInner {
             record: Mutex::new(record),
-            scrollback: Mutex::new(Scrollback::new(max_scrollback_bytes)),
+            output_gate: Mutex::new(()),
+            terminal_state: Mutex::new(terminal_state),
             output_sender,
             status_sender,
             master: Mutex::new(pair.master),
             input_sender: Mutex::new(Some(input_sender)),
             killer: Mutex::new(killer),
             viewers: AtomicUsize::new(0),
+            next_viewer_id: AtomicU64::new(1),
+            resize_owner: AtomicU64::new(0),
             termination_requested: AtomicBool::new(false),
             cleanup_pending: Arc::new(AtomicBool::new(false)),
             idle_after: Duration::from_secs(idle_after_secs),
@@ -300,18 +323,23 @@ impl SessionHandle {
     }
 
     pub fn snapshot(&self) -> SessionSnapshot {
+        let _output_gate = self.inner.output_gate.lock().expect("output gate mutex");
         let record = self
             .inner
             .record
             .lock()
             .expect("session record mutex")
             .clone();
-        let scrollback = self.inner.scrollback.lock().expect("scrollback mutex");
+        let terminal_state = self
+            .inner
+            .terminal_state
+            .lock()
+            .expect("terminal state mutex");
         snapshot_from_record(
             &record,
             self.inner.viewers.load(Ordering::Relaxed),
-            scrollback.bytes(),
-            scrollback.truncated(),
+            terminal_state.estimated_memory_bytes(),
+            terminal_state.delta_truncated(),
             self.inner.idle_after.as_secs(),
         )
     }
@@ -320,18 +348,39 @@ impl SessionHandle {
         self.inner.status_sender.subscribe()
     }
 
-    pub fn attach(&self, from_sequence: u64) -> AttachedSession {
-        // Subscribe before taking the replay snapshot. Any output published
-        // after this point is either in the snapshot or in the receiver; the
-        // WS writer filters receiver events through replayed_through, so a
-        // reconnect cannot duplicate buffered output.
+    pub fn attach(
+        &self,
+        mode: AttachMode,
+        from_sequence: u64,
+        requested_size: Option<(u16, u16)>,
+    ) -> AppResult<AttachedSession> {
+        // Subscribe before taking the state boundary. Any output published
+        // after this point is either in the snapshot/replay or in the
+        // receiver; the WS writer filters receiver events through the
+        // boundary sequence, so a reconnect cannot duplicate output.
         let receiver = self.inner.output_sender.subscribe();
-        let replay = self
+        let viewer_id = self.inner.next_viewer_id.fetch_add(1, Ordering::Relaxed);
+        let _output_gate = self.inner.output_gate.lock().expect("output gate mutex");
+
+        let owns_resize = self
             .inner
-            .scrollback
-            .lock()
-            .expect("scrollback mutex")
-            .replay_after(from_sequence);
+            .resize_owner
+            .compare_exchange(0, viewer_id, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok();
+        if owns_resize {
+            if let Some((cols, rows)) = requested_size {
+                if valid_terminal_size(cols, rows) {
+                    if let Err(error) = self.resize_locked(cols, rows) {
+                        tracing::debug!(
+                            session_id = %self.id(),
+                            error = %error,
+                            "initial terminal resize was not applied"
+                        );
+                    }
+                }
+            }
+        }
+
         self.inner.viewers.fetch_add(1, Ordering::Relaxed);
         {
             let mut record = self.inner.record.lock().expect("session record mutex");
@@ -340,25 +389,66 @@ impl SessionHandle {
                 record.status = SessionStatus::Running;
             }
         }
-        self.publish_status();
-        AttachedSession { replay, receiver }
-    }
 
-    pub fn replay_after(&self, from_sequence: u64) -> Replay {
-        self.inner
-            .scrollback
+        let sequence = self
+            .inner
+            .record
             .lock()
-            .expect("scrollback mutex")
-            .replay_after(from_sequence)
+            .expect("session record mutex")
+            .output_bytes;
+        let mut terminal_state = self
+            .inner
+            .terminal_state
+            .lock()
+            .expect("terminal state mutex");
+        let (mode, snapshot_capture, replay, boundary_sequence) = match mode {
+            AttachMode::Snapshot => (
+                AttachMode::Snapshot,
+                Some(terminal_state.capture_snapshot(sequence)),
+                empty_replay(sequence),
+                sequence,
+            ),
+            AttachMode::Resume => {
+                let replay = terminal_state.replay_after(from_sequence);
+                if replay.truncated {
+                    (
+                        AttachMode::Snapshot,
+                        Some(terminal_state.capture_snapshot(sequence)),
+                        replay,
+                        sequence,
+                    )
+                } else {
+                    (AttachMode::Resume, None, replay, from_sequence)
+                }
+            }
+        };
+        drop(terminal_state);
+        drop(_output_gate);
+        self.publish_status();
+        let snapshot = snapshot_capture.map(|capture| capture.render());
+        Ok(AttachedSession {
+            mode,
+            sequence: boundary_sequence,
+            snapshot,
+            replay,
+            receiver,
+            viewer_id,
+        })
     }
 
-    pub fn detach(&self) {
+    pub fn detach(&self, viewer_id: u64) {
         self.inner
             .viewers
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
                 value.checked_sub(1)
             })
             .ok();
+        let _ = self.inner.resize_owner.compare_exchange(
+            viewer_id,
+            0,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
         if self.inner.viewers.load(Ordering::Relaxed) == 0 {
             let mut record = self.inner.record.lock().expect("session record mutex");
             if matches!(record.status, SessionStatus::Running | SessionStatus::Idle) {
@@ -390,28 +480,28 @@ impl SessionHandle {
             .map_err(|error| AppError::Session(format!("terminal input queue is full: {error}")))
     }
 
-    pub fn resize(&self, cols: u16, rows: u16) -> AppResult<()> {
-        if cols == 0 || rows == 0 || cols > 1000 || rows > 500 {
+    pub fn resize(&self, viewer_id: u64, cols: u16, rows: u16) -> AppResult<()> {
+        if !valid_terminal_size(cols, rows) {
             return Err(AppError::BadRequest(
                 "terminal size is outside 1..=1000 columns and 1..=500 rows".to_owned(),
             ));
         }
-        self.inner
-            .master
-            .lock()
-            .expect("master PTY mutex")
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|error| AppError::Session(format!("resize PTY: {error}")))?;
+        let owner = self.inner.resize_owner.load(Ordering::Acquire);
+        if owner != viewer_id
+            && self
+                .inner
+                .resize_owner
+                .compare_exchange(0, viewer_id, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
         {
-            let mut record = self.inner.record.lock().expect("session record mutex");
-            record.rows = rows;
-            record.cols = cols;
+            // Geometry is a session-wide PTY property. Only the first
+            // attached viewer owns it, preventing two browser panes from
+            // continuously resizing one another.
+            return Ok(());
         }
+        let _output_gate = self.inner.output_gate.lock().expect("output gate mutex");
+        self.resize_locked(cols, rows)?;
+        drop(_output_gate);
         self.publish_status();
         Ok(())
     }
@@ -439,6 +529,31 @@ impl SessionHandle {
                 let mut killer = self.inner.killer.lock().expect("child killer mutex");
                 let _ = killer.kill();
             }
+        }
+        Ok(())
+    }
+
+    fn resize_locked(&self, cols: u16, rows: u16) -> AppResult<()> {
+        self.inner
+            .master
+            .lock()
+            .expect("master PTY mutex")
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|error| AppError::Session(format!("resize PTY: {error}")))?;
+        self.inner
+            .terminal_state
+            .lock()
+            .expect("terminal state mutex")
+            .resize(rows, cols);
+        {
+            let mut record = self.inner.record.lock().expect("session record mutex");
+            record.rows = rows;
+            record.cols = cols;
         }
         Ok(())
     }
@@ -472,6 +587,7 @@ impl SessionHandle {
             return;
         }
         let (sequence, became_active) = {
+            let _output_gate = self.inner.output_gate.lock().expect("output gate mutex");
             let mut record = self.inner.record.lock().expect("session record mutex");
             record.last_activity_at = Utc::now();
             record.output_bytes = record.output_bytes.saturating_add(data.len() as u64);
@@ -479,17 +595,18 @@ impl SessionHandle {
             if became_active {
                 record.status = SessionStatus::Running;
             }
+            self.inner
+                .terminal_state
+                .lock()
+                .expect("terminal state mutex")
+                .process_output(record.output_bytes, data);
             (record.output_bytes, became_active)
         };
         let chunk_sequence = sequence;
-        let chunk = OutputChunk {
+        let chunk = OutputDelta {
             sequence: chunk_sequence,
             data: data.to_vec(),
         };
-        {
-            let mut scrollback = self.inner.scrollback.lock().expect("scrollback mutex");
-            scrollback.push(chunk_sequence, data);
-        }
         let _ = self.inner.output_sender.send(chunk);
         // Only state transitions need a persistence notification. Output
         // bytes and activity are retained in the in-memory object and are
@@ -565,6 +682,18 @@ fn write_input(
             tracing::debug!(session_id = %handle.id(), error = %error, "PTY writer ended");
             break;
         }
+    }
+}
+
+fn valid_terminal_size(cols: u16, rows: u16) -> bool {
+    (1..=1000).contains(&cols) && (1..=500).contains(&rows)
+}
+
+fn empty_replay(sequence: u64) -> DeltaReplay {
+    DeltaReplay {
+        chunks: Vec::new(),
+        replayed_through: sequence,
+        truncated: false,
     }
 }
 
@@ -983,6 +1112,7 @@ fn killer_signal(process_group: Option<i32>, signal: LibcSignal) -> AppResult<()
 mod tests {
     use super::SessionHandle;
     use crate::models::SessionId;
+    use crate::protocol::AttachMode;
     use std::{path::PathBuf, time::Duration};
 
     #[test]
@@ -1001,8 +1131,10 @@ mod tests {
             idle_after_secs: 60,
         })
         .expect("session");
-        let attached = session.attach(0);
-        session.detach();
+        let attached = session
+            .attach(AttachMode::Snapshot, 0, None)
+            .expect("attach");
+        session.detach(attached.viewer_id);
         assert!(session.is_live());
         assert_eq!(
             session.snapshot().status,

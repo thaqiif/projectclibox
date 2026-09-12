@@ -13,7 +13,7 @@ Rust axum control plane
         │
         ├─ SessionSupervisor (in-memory live handles)
         │    ├─ direct portable-pty master
-        │    ├─ bounded scrollback + broadcast fan-out
+        │    ├─ authoritative ANSI terminal state + bounded delta buffer
         │    ├─ reader / bounded writer / wait-and-reap workers
         │    └─ process-group termination and resize
         │
@@ -33,18 +33,32 @@ auditable.
 1. `POST /api/terminals` validates the project root and dimensions, opens a
    PTY, starts the requested shell/command, records the child PID and process
    group, and persists the initial session record.
-2. A WebSocket sends `terminal.attach` with a session ID and optional sequence.
-   The supervisor subscribes before taking the replay snapshot so output that
-   races with reconnect is either in replay or in the live receiver.
-3. Output is copied into a bounded byte ring and a bounded broadcast channel.
-   The API sends replay first, then binary output frames. A lagged viewer gets
-   a replay attempt or a structured `terminal.gap` message requiring resync.
-4. Input is accepted into a bounded queue and written by a dedicated blocking
+2. The PTY reader parses every output read into one server-owned
+   `alacritty_terminal::Term`, which resolves carriage returns, cursor
+   movement, erase operations, SGR styles, scrollback, and alternate-screen
+   state. The raw bytes are retained separately only in a bounded
+   `OutputDeltaBuffer` for short reconnect gaps.
+3. A new WebSocket sends `terminal.attach` with `mode: "snapshot"`. The
+   supervisor subscribes before taking a sequence boundary, clones the
+   emulator state under the output gate, and sends a synthetic ANSI snapshot
+   (binary frame version `2`). The snapshot contains resolved bounded
+   scrollback and the current screen, not every historical redraw.
+4. A reconnect on the same xterm sends `mode: "resume"` with the last applied
+   sequence. If every missing delta remains in the bounded buffer, only those
+   version `1` delta frames are sent. If the buffer no longer covers the gap,
+   the server falls back to a current snapshot; a lagged live receiver sends
+   `terminal.gap`, and the browser requests that snapshot explicitly.
+5. Subscription happens before the snapshot/replay boundary. Output that
+   races with capture is either represented by the captured sequence or stays
+   queued in the receiver; the writer drops only frames at or below its
+   boundary. This makes fresh attach and resume race-safe without duplicate
+   redraws.
+6. Input is accepted into a bounded queue and written by a dedicated blocking
    PTY writer. The async WebSocket task never performs a blocking write.
-5. The child waiter calls `wait`, records exit code/signal and end time, closes
+7. The child waiter calls `wait`, records exit code/signal and end time, closes
    input, publishes a final state, and persists the record. Termination first
    signals the child and process group, then escalates after the grace period.
-6. Detach decrements the viewer count and marks a still-live session
+8. Detach decrements the viewer count and marks a still-live session
    `Disconnected` when its last viewer leaves. It does not alter the PTY or
    child; the next attach returns it to the active state.
 
@@ -53,18 +67,32 @@ auditable.
 Client control messages are JSON objects with a `type` field:
 
 ```json
-{"type":"terminal.attach","sessionId":"…","fromSequence":1024}
+{"type":"terminal.attach","sessionId":"…","mode":"snapshot","cols":120,"rows":36}
+{"type":"terminal.attach","sessionId":"…","mode":"resume","fromSequence":1024,"cols":120,"rows":36}
 {"type":"terminal.input","data":"ls\n"}
 {"type":"terminal.resize","cols":120,"rows":36}
 {"type":"terminal.detach"}
 {"type":"terminal.ping","nonce":"n-1"}
 ```
 
-Server control messages include `terminal.ready`, `terminal.state`,
-`terminal.exit`, `terminal.gap`, `terminal.pong`, and `terminal.error`.
-Output is a binary frame: protocol version `1`, big-endian `u64` sequence,
-then raw PTY bytes. Sequences are monotonically increasing output-byte
-offsets, which lets reconnects request a precise bounded suffix.
+Server control messages include `terminal.ready`, `terminal.snapshot`,
+`terminal.state`, `terminal.exit`, `terminal.gap`, `terminal.pong`, and
+`terminal.error`. `terminal.ready.mode` reports whether the request is a
+snapshot or delta resume. A snapshot control message precedes one snapshot
+binary frame. Both binary frame versions use a big-endian `u64` sequence:
+
+- version `1`: raw PTY output delta bytes, valid only after a resume boundary;
+- version `2`: synthetic ANSI bytes reproducing the resolved terminal state.
+
+The browser resets xterm before applying version `2`, then advances its
+sequence to the snapshot sequence. A version `1` frame advances the sequence
+only after its bytes are written. This keeps the client cursor tied to applied
+state rather than to a control message.
+
+Terminal geometry is session-wide. The first attached viewer owns resize until
+it detaches; other viewers may interact with the PTY but their resize messages
+are ignored. The owner is also allowed to provide its geometry in the attach
+message, so the snapshot is captured at the negotiated PTY size.
 
 ## Storage and concurrency
 
@@ -79,6 +107,13 @@ SessionHandle>>`. Session metadata is mirrored to SQLite on creation, state
 changes, rename, exit, and deletion. High-volume PTY output updates in-memory
 activity and byte counters and is persisted when the state changes or exits,
 instead of issuing one SQLite write per read chunk.
+
+Deletion is authoritative and idempotent for live handles and stale metadata:
+the supervisor records a deletion tombstone, starts process-group termination,
+removes the live and persisted metadata immediately, and lets cleanup finish in
+the background. The watcher checks the tombstone while holding the lifecycle
+gate, so an older PTY or a pre-redeployment record cannot reinsert the row
+after a successful DELETE.
 
 ## Files and security
 

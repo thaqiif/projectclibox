@@ -86,23 +86,29 @@ command, but it is not involved in terminal supervision.
 ## Runtime model
 
 Each terminal is a Rust supervisor record plus a direct PTY. The supervisor
-owns the PTY master, reader/writer/waiter workers, child process group, bounded
-output ring, and viewer count. Browser sockets are viewers, not process owners.
+owns the PTY master, reader/writer/waiter workers, child process group,
+authoritative ANSI terminal state, bounded reconnect-delta buffer, and viewer
+count. Browser sockets are viewers, not process owners.
 
 - Closing a browser tab or losing a WebSocket detaches only that viewer; a
   live session with no viewers is shown as `Disconnected`.
-- Reconnecting with `fromSequence` replays bounded scrollback and then streams
-  live output.
+- A fresh attach receives one resolved terminal snapshot. Reconnecting the same
+  xterm resumes from its last applied sequence with bounded deltas; if those
+  deltas are unavailable, the server sends a fresh snapshot instead of raw
+  history.
 - Multiple viewers can attach to the same session.
+- DELETE removes live or stale terminal metadata immediately, stops live process
+  groups in the background, and is safe to repeat.
 - Stop sends termination to the child and its process group, waits briefly,
   then escalates to SIGKILL; the waiter always reaps the child.
 - `Starting`, `Running`, `Idle`, `Disconnected`, `Terminating`, `Exited`, and
   `Failed` are explicit protocol and metadata states.
 
-The WebSocket protocol is versioned. Control messages are JSON; output frames
-are binary with a one-byte protocol version and an eight-byte sequence number.
-Bounded broadcast delivery reports a replay gap instead of silently claiming
-that output was delivered.
+The WebSocket protocol is versioned. Control messages are JSON; version `1`
+binary frames carry output deltas and version `2` frames carry synthetic ANSI
+snapshots, each with an eight-byte sequence number. A lagged broadcast
+delivery requests a fresh snapshot instead of silently replaying redraw
+history.
 
 ## Persistence and restart semantics
 

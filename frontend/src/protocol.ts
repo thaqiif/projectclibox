@@ -73,17 +73,25 @@ export interface FileContent {
 }
 
 export const OUTPUT_FRAME_VERSION = 1;
+export const SNAPSHOT_FRAME_VERSION = 2;
 export const OUTPUT_FRAME_HEADER_BYTES = 9;
 
 export function decodeOutputFrame(
   data: ArrayBuffer
-): { sequence: number; text: string } | null {
+): { kind: "delta" | "snapshot"; sequence: number; text: string } | null {
   if (data.byteLength < OUTPUT_FRAME_HEADER_BYTES) return null;
   const bytes = new Uint8Array(data);
-  if (bytes[0] !== OUTPUT_FRAME_VERSION) return null;
+  const kind =
+    bytes[0] === OUTPUT_FRAME_VERSION
+      ? "delta"
+      : bytes[0] === SNAPSHOT_FRAME_VERSION
+        ? "snapshot"
+        : null;
+  if (!kind) return null;
   const view = new DataView(data);
   const sequence = Number(view.getBigUint64(1));
   return {
+    kind,
     sequence,
     text: new TextDecoder().decode(bytes.subarray(OUTPUT_FRAME_HEADER_BYTES)),
   };

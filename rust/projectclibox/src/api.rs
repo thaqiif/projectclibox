@@ -8,7 +8,10 @@ use crate::{
         CreateProjectRequest, CreateSessionRequest, Project, SessionId, SessionSnapshot,
         UploadFileRequest,
     },
-    protocol::{control_message, output_frame, parse_input, ClientMessage, ServerMessage},
+    protocol::{
+        control_message, output_frame, parse_input, snapshot_frame, AttachMode, ClientMessage,
+        ServerMessage,
+    },
     security::WorkspacePolicy,
     supervisor::SessionSupervisor,
 };
@@ -514,7 +517,10 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _permit: OwnedSem
     };
     let ClientMessage::Attach {
         session_id,
+        mode,
         from_sequence,
+        cols,
+        rows,
     } = message
     else {
         let _ = send_error(
@@ -525,27 +531,62 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _permit: OwnedSem
         .await;
         return;
     };
-    let (handle, attached) = match state
-        .supervisor
-        .attach(session_id, from_sequence.unwrap_or(0))
-    {
-        Ok(value) => value,
-        Err(error) => {
-            let _ = send_error(&mut socket, "attach_failed", &error.to_string()).await;
-            return;
-        }
-    };
-    let mut last_sequence = from_sequence.unwrap_or(0);
+    let from_sequence = from_sequence.unwrap_or(0);
+    let mode = mode.unwrap_or(if from_sequence == 0 {
+        AttachMode::Snapshot
+    } else {
+        AttachMode::Resume
+    });
+    let requested_size = cols.zip(rows);
+    let (handle, mut attached) =
+        match state
+            .supervisor
+            .attach(session_id, mode, from_sequence, requested_size)
+        {
+            Ok(value) => value,
+            Err(error) => {
+                let _ = send_error(&mut socket, "attach_failed", &error.to_string()).await;
+                return;
+            }
+        };
+    let mut last_sequence = attached.sequence;
     let snapshot = handle.snapshot();
     let ready = ServerMessage::Ready {
         session_id,
+        mode: attached.mode,
+        sequence: attached.sequence,
         replayed_through: attached.replay.replayed_through,
         truncated: attached.replay.truncated,
         snapshot: &snapshot,
     };
     if let Ok(message) = control_message(&ready) {
         if socket.send(message).await.is_err() {
-            handle.detach();
+            handle.detach(attached.viewer_id);
+            return;
+        }
+    }
+    if let Some(snapshot_bytes) = attached.snapshot.take() {
+        let snapshot_control = ServerMessage::Snapshot {
+            session_id,
+            sequence: snapshot_bytes.sequence,
+            replace: true,
+            bytes: snapshot_bytes.bytes.len(),
+        };
+        if let Ok(message) = control_message(&snapshot_control) {
+            if socket.send(message).await.is_err() {
+                handle.detach(attached.viewer_id);
+                return;
+            }
+        }
+        if socket
+            .send(Message::Binary(snapshot_frame(
+                snapshot_bytes.sequence,
+                &snapshot_bytes.bytes,
+            )))
+            .await
+            .is_err()
+        {
+            handle.detach(attached.viewer_id);
             return;
         }
     }
@@ -556,7 +597,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _permit: OwnedSem
                 .await
                 .is_err()
             {
-                handle.detach();
+                handle.detach(attached.viewer_id);
                 return;
             }
             last_sequence = chunk.sequence;
@@ -584,7 +625,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _permit: OwnedSem
                         if let Err(error) = handle.write_input(data) { let _ = send_error(&mut socket, "input_rejected", &error.to_string()).await; }
                     }
                     ClientMessage::Resize { cols, rows } => {
-                        if let Err(error) = handle.resize(cols, rows) { let _ = send_error(&mut socket, "resize_rejected", &error.to_string()).await; }
+                        if let Err(error) = handle.resize(attached.viewer_id, cols, rows) { let _ = send_error(&mut socket, "resize_rejected", &error.to_string()).await; }
                     }
                     ClientMessage::Ping { nonce } => {
                         let message = ServerMessage::Pong { nonce };
@@ -602,18 +643,12 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _permit: OwnedSem
                         last_sequence = chunk.sequence;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        let replay = handle.replay_after(last_sequence);
-                        if replay.truncated {
-                            let gap = ServerMessage::Gap { last_sequence, resync_required: true };
-                            if let Ok(message) = control_message(&gap) { let _ = socket.send(message).await; }
-                            break;
-                        }
-                        for chunk in replay.chunks {
-                            if chunk.sequence > last_sequence && !chunk.data.is_empty() {
-                                if socket.send(Message::Binary(output_frame(chunk.sequence, &chunk.data))).await.is_err() { break; }
-                                last_sequence = chunk.sequence;
-                            }
-                        }
+                        // A lagged receiver no longer falls back to raw PTY
+                        // history. The client reconnects with a fresh
+                        // authoritative snapshot, then resumes deltas.
+                        let gap = ServerMessage::Gap { last_sequence, resync_required: true };
+                        if let Ok(message) = control_message(&gap) { let _ = socket.send(message).await; }
+                        break;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
@@ -635,7 +670,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, _permit: OwnedSem
             }
         }
     }
-    handle.detach();
+    handle.detach(attached.viewer_id);
     tracing::debug!(session_id = %session_id, viewers = handle.snapshot().attached_viewers, "viewer detached");
 }
 

@@ -11,6 +11,30 @@ file fixtures. These are local measurements, not a production capacity
 guarantee. The process snapshots include the Rust server and its direct PTY
 children, not unrelated processes in the development container.
 
+## Authoritative terminal snapshot measurements
+
+Measured on 2026-09-12 from a freshly started optimized server after the
+terminal-state change. The dedicated
+`node benchmarks/rust-v2-snapshot.mjs --counts 1,10,25,50 --samples 5` probe
+opens concurrent fresh attachments, waits for `terminal.snapshot` and the
+version `2` binary frame, and records the p50/p95 end-to-end snapshot latency.
+RSS is sampled at each live-session count after the snapshot samples; it
+includes the Rust service and direct PTY children. Snapshot payloads were
+2,554 bytes for these idle shells.
+
+| Live sessions | Snapshot p50 / p95 | Batch p50 / p95 | RSS |
+| ---: | ---: | ---: | ---: |
+| 1 | 43.7 / 54.9 ms | 44.2 / 55.8 ms | 15.4 MiB |
+| 10 | 55.4 / 71.6 ms | 68.3 / 78.3 ms | 69.4 MiB |
+| 25 | 55.1 / 62.8 ms | 59.1 / 68.5 ms | 159.5 MiB |
+| 50 | 67.7 / 75.8 ms | 78.6 / 82.0 ms | 309.7 MiB |
+
+These are idle-shell snapshots, not a claim about a full 4 MiB resolved
+history. The terminal emulator bounds resolved history by configured cell
+rows, while raw reconnect deltas are independently bounded by
+`PCLX_SCROLLBACK_BYTES`; a missing delta range is handled by snapshot
+resynchronization, never by replaying terminal history.
+
 ## Replacement measurements
 
 | Operation | p50 | p95 |

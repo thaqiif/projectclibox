@@ -92,10 +92,10 @@ function attach(id, bytes) {
     let settled = false;
     const finish = (error, value) => { if (settled) return; settled = true; clearTimeout(timer); if (error) { socket.terminate(); reject(error); } else { socket.close(); resolve(value); } };
     const timer = setTimeout(() => finish(new Error("benchmark WebSocket timeout")), 15000);
-    socket.on("open", () => { openMs = performance.now() - start; socket.send(JSON.stringify({ type: "terminal.attach", sessionId: id, fromSequence: 0 })); });
+    socket.on("open", () => { openMs = performance.now() - start; socket.send(JSON.stringify({ type: "terminal.attach", sessionId: id, mode: "snapshot", cols: 80, rows: 24 })); });
     socket.on("message", (raw) => {
       const value = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
-      if (value.length >= 9 && value[0] === 1) {
+      if (value.length >= 9 && (value[0] === 1 || value[0] === 2)) {
         const data = value.subarray(9).toString();
         if (readyMs !== undefined) {
           markerSeen ||= data.includes(marker);
@@ -124,13 +124,8 @@ function attach(id, bytes) {
 }
 
 async function terminate(id) {
-  await request(`/api/terminals/${id}/terminate`, { method: "POST" }).catch(() => {});
-  for (let index = 0; index < 40; index += 1) {
-    const sessions = (await request("/api/terminals")).body;
-    const session = sessions.find((item) => item.id === id);
-    if (session && ["exited", "failed"].includes(session.status)) break;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
+  // DELETE owns both stop and metadata removal. It returns as soon as the
+  // row is gone; process-group cleanup continues in the Rust supervisor.
   await request(`/api/terminals/${id}`, { method: "DELETE" }).catch(() => {});
 }
 

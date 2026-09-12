@@ -353,7 +353,7 @@ fn handle_command(connection: &Connection, command: DbCommand) {
                 .execute(
                     "UPDATE projects SET name = ?1, working_directory = ?2, expanded = COALESCE(?3, expanded), updated_at = datetime('now')
                      WHERE id = ?4 AND is_uncategorized = 0",
-                    params![name, working_directory, expanded.map(|value| i64::from(value)), id],
+                    params![name, working_directory, expanded.map(i64::from), id],
                 )
                 .map_err(|error| format!("update project: {error}"))
                 .and_then(|_| get_project(connection, &id));

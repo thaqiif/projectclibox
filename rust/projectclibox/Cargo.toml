@@ -7,6 +7,7 @@ description = "Rust-native persistent terminal runtime and web workspace"
 
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
+alacritty_terminal = { version = "0.26.0", default-features = false }
 base64 = "0.22"
 bytes = "1"
 chrono = { version = "0.4", features = ["clock", "serde"] }

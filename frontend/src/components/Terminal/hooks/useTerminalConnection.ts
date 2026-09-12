@@ -37,9 +37,10 @@ function isOpen(socket: WebSocket | null): socket is WebSocket {
 /**
  * Owns one xterm instance and one direct PTY WebSocket attachment.
  *
- * The server is the source of truth for session identity and output history.
- * Sequence numbers let a reconnect request only the bytes that were missed;
- * no shell command or secondary lifecycle is hidden in this hook.
+ * The server is the source of truth for session identity and terminal state.
+ * A new xterm receives one resolved snapshot. An existing xterm resumes from
+ * its last applied delta sequence; it never receives raw PTY history as a
+ * substitute for state.
  */
 export function useTerminalConnection({
   sessionId,
@@ -65,6 +66,8 @@ export function useTerminalConnection({
   const reconnectDelayRef = useRef(WS_RECONNECT_BASE_DELAY);
   const reconnectFnRef = useRef<(() => void) | null>(null);
   const lastSequenceRef = useRef(0);
+  const forceSnapshotRef = useRef(false);
+  const snapshotPendingRef = useRef(false);
   const intentionalCloseRef = useRef(false);
   const permanentCloseRef = useRef(false);
   const connectedRef = useRef(false);
@@ -136,6 +139,8 @@ export function useTerminalConnection({
     permanentCloseRef.current = false;
     connectedRef.current = false;
     lastSequenceRef.current = 0;
+    forceSnapshotRef.current = false;
+    snapshotPendingRef.current = false;
     setConnectionState("connecting");
 
     const clearReconnectTimer = () => {
@@ -191,10 +196,14 @@ export function useTerminalConnection({
       let message: {
         type?: string;
         replayedThrough?: number;
+        sequence?: number;
+        mode?: "snapshot" | "resume";
         truncated?: boolean;
         code?: string;
         message?: string;
         lastSequence?: number;
+        replace?: boolean;
+        bytes?: number;
         snapshot?: { status?: string };
       };
       try {
@@ -205,10 +214,11 @@ export function useTerminalConnection({
 
       switch (message.type) {
         case "terminal.ready":
-          // The server sends the ready control frame before the replayed
-          // binary frames. Do not advance the cursor to replayedThrough here,
-          // or the replay would be discarded as already seen.
-          if (message.truncated) {
+          // The server sends ready before a snapshot or resume frames. The
+          // sequence is advanced only when its corresponding binary frame is
+          // actually applied.
+          snapshotPendingRef.current = message.mode === "snapshot";
+          if (message.truncated && message.mode === "resume") {
             writeConnectionMessage("output history truncated by the server");
           }
           connectedRef.current = true;
@@ -217,6 +227,12 @@ export function useTerminalConnection({
           sendResize(xtermRef.current?.cols ?? 80, xtermRef.current?.rows ?? 24);
           callbacksRef.current.onConnected?.();
           restoreScroll();
+          break;
+        case "terminal.snapshot":
+          snapshotPendingRef.current = true;
+          if (message.replace !== false) {
+            xtermRef.current?.reset();
+          }
           break;
         case "terminal.state":
           if (message.snapshot?.status === "exited" || message.snapshot?.status === "failed") {
@@ -229,11 +245,12 @@ export function useTerminalConnection({
           setConnectionState("disconnected");
           break;
         case "terminal.gap":
-          if (message.lastSequence !== undefined) {
-            lastSequenceRef.current = message.lastSequence;
-          }
-          xtermRef.current?.clear();
-          writeConnectionMessage("output gap detected; reconnecting from the latest history");
+          // A lagged broadcast receiver cannot be repaired with raw history.
+          // Ask for a current state snapshot on the next socket instead.
+          forceSnapshotRef.current = true;
+          snapshotPendingRef.current = false;
+          lastSequenceRef.current = 0;
+          xtermRef.current?.reset();
           socketRef.current?.close();
           break;
         case "terminal.error":
@@ -245,25 +262,35 @@ export function useTerminalConnection({
       }
     };
 
+    const applyFrame = (buffer: ArrayBuffer) => {
+      const frame = decodeOutputFrame(buffer);
+      if (!frame) return;
+
+      if (frame.kind === "snapshot") {
+        if (!snapshotPendingRef.current) return;
+        snapshotPendingRef.current = false;
+        lastSequenceRef.current = frame.sequence;
+        xtermRef.current?.write(frame.text);
+        return;
+      }
+      if (frame.sequence <= lastSequenceRef.current) return;
+      lastSequenceRef.current = frame.sequence;
+      xtermRef.current?.write(frame.text);
+    };
+
     const handleMessage = (event: MessageEvent) => {
       if (typeof event.data === "string") {
         handleControlMessage(event.data);
         return;
       }
       if (event.data instanceof ArrayBuffer) {
-        const frame = decodeOutputFrame(event.data);
-        if (!frame || frame.sequence <= lastSequenceRef.current) return;
-        lastSequenceRef.current = frame.sequence;
-        xtermRef.current?.write(frame.text);
+        applyFrame(event.data);
         return;
       }
       if (event.data instanceof Blob) {
         void event.data.arrayBuffer().then((buffer) => {
           if (cancelled) return;
-          const frame = decodeOutputFrame(buffer);
-          if (!frame || frame.sequence <= lastSequenceRef.current) return;
-          lastSequenceRef.current = frame.sequence;
-          xtermRef.current?.write(frame.text);
+          applyFrame(buffer);
         });
       }
     };
@@ -279,11 +306,21 @@ export function useTerminalConnection({
       socketRef.current = socket;
       socket.addEventListener("open", () => {
         if (cancelled || socket !== socketRef.current) return;
+        const snapshotAttach =
+          forceSnapshotRef.current || !connectedRef.current;
+        if (snapshotAttach) {
+          forceSnapshotRef.current = false;
+        }
         socket.send(
           JSON.stringify({
             type: "terminal.attach",
             sessionId,
-            fromSequence: lastSequenceRef.current,
+            mode: snapshotAttach ? "snapshot" : "resume",
+            ...(snapshotAttach
+              ? {}
+              : { fromSequence: lastSequenceRef.current }),
+            cols: xtermRef.current?.cols ?? 80,
+            rows: xtermRef.current?.rows ?? 24,
           })
         );
       });
@@ -292,6 +329,15 @@ export function useTerminalConnection({
         if (socket !== socketRef.current) return;
         socketRef.current = null;
         if (cancelled || intentionalCloseRef.current) return;
+        if (snapshotPendingRef.current) {
+          // A socket can disappear after ready/control but before the
+          // snapshot bytes arrive. The xterm was reset for that snapshot, so
+          // its next connection must start from a fresh state boundary.
+          forceSnapshotRef.current = true;
+          lastSequenceRef.current = 0;
+          xtermRef.current?.reset();
+          snapshotPendingRef.current = false;
+        }
         if (permanentCloseRef.current) {
           setConnectionState("disconnected");
           return;

@@ -3,6 +3,7 @@ use crate::{
     db::Database,
     error::{AppError, AppResult},
     models::{SessionId, SessionRecord, SessionSnapshot, SessionStatus},
+    protocol::AttachMode,
     session::{
         snapshot_from_record, stop_marked_process_groups, stop_recorded_process_group,
         AttachedSession, SessionHandle, SessionSpawnOptions,
@@ -10,7 +11,7 @@ use crate::{
 };
 use chrono::Utc;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::Path,
     sync::{Arc, RwLock},
 };
@@ -25,7 +26,9 @@ pub struct SessionSupervisor {
     db: Database,
     sessions: Arc<RwLock<HashMap<SessionId, SessionHandle>>>,
     records: Arc<RwLock<HashMap<SessionId, SessionRecord>>>,
+    deleted: Arc<RwLock<HashSet<SessionId>>>,
     create_gate: Arc<AsyncMutex<()>>,
+    lifecycle_gate: Arc<AsyncMutex<()>>,
 }
 
 impl SessionSupervisor {
@@ -63,7 +66,9 @@ impl SessionSupervisor {
             db,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             records: Arc::new(RwLock::new(records)),
+            deleted: Arc::new(RwLock::new(HashSet::new())),
             create_gate: Arc::new(AsyncMutex::new(())),
+            lifecycle_gate: Arc::new(AsyncMutex::new(())),
         })
     }
 
@@ -230,10 +235,12 @@ impl SessionSupervisor {
     pub fn attach(
         &self,
         id: SessionId,
+        mode: AttachMode,
         from_sequence: u64,
+        requested_size: Option<(u16, u16)>,
     ) -> AppResult<(SessionHandle, AttachedSession)> {
         let handle = self.handle(id)?;
-        let attached = handle.attach(from_sequence);
+        let attached = handle.attach(mode, from_sequence, requested_size)?;
         tracing::debug!(session_id = %id, viewers = attached_viewers(&handle), "viewer attached");
         Ok((handle, attached))
     }
@@ -375,6 +382,10 @@ impl SessionSupervisor {
     }
 
     pub async fn delete_metadata(&self, id: SessionId) -> AppResult<()> {
+        // Serialize deletion with the watcher's SQLite upsert. Once the
+        // tombstone is set, the watcher may finish killing the PTY but it can
+        // never recreate the deleted row.
+        let _lifecycle_guard = self.lifecycle_gate.lock().await;
         let handle = {
             self.sessions
                 .read()
@@ -382,45 +393,23 @@ impl SessionSupervisor {
                 .get(&id)
                 .cloned()
         };
-        if let Some(handle) = handle {
+        if let Some(ref handle) = handle {
+            self.deleted
+                .write()
+                .expect("deleted sessions lock")
+                .insert(id);
             if handle.is_live() && !handle.termination_requested() {
                 // DELETE is the terminal's destructive operation. It must be
                 // sufficient on its own, including for a terminal that is
-                // still running when the request arrives.
+                // still running when the request arrives. PTY cleanup
+                // continues in the background after this HTTP request.
                 handle.terminate()?;
             }
-
-            // Termination is asynchronous: wait for the watcher to persist
-            // the finished record and remove the live handle before deleting
-            // the row. Otherwise the watcher can recreate the row after this
-            // request returns, making the terminal appear impossible to
-            // delete from the browser.
-            for _ in 0..200 {
-                let still_present = self
-                    .sessions
-                    .read()
-                    .expect("sessions lock")
-                    .contains_key(&id);
-                if !still_present {
-                    break;
-                }
-                sleep(Duration::from_millis(50)).await;
-            }
-            if self
-                .sessions
-                .read()
-                .expect("sessions lock")
-                .contains_key(&id)
-            {
-                return Err(AppError::Conflict(
-                    "the session is still finishing; retry metadata deletion".to_owned(),
-                ));
-            }
         }
-        let existed = self.db.delete_session(id).await?;
-        if !existed {
-            return Err(AppError::NotFound(format!("session {id}")));
-        }
+        // DELETE is intentionally idempotent. A stale browser list, a second
+        // click, or two close-all requests may race with the first deletion;
+        // once the row is gone, the requested end state is already true.
+        self.db.delete_session(id).await?;
         self.sessions.write().expect("sessions lock").remove(&id);
         self.records.write().expect("records lock").remove(&id);
         Ok(())
@@ -456,16 +445,24 @@ impl SessionSupervisor {
         let db = self.db.clone();
         let records = self.records.clone();
         let sessions = self.sessions.clone();
+        let deleted = self.deleted.clone();
+        let lifecycle_gate = self.lifecycle_gate.clone();
         tokio::spawn(async move {
             let mut receiver = handle.subscribe_status();
             loop {
                 let record = handle.record();
                 let finished = record.status.is_finished();
-                records
-                    .write()
-                    .expect("records lock")
-                    .insert(record.id, record.clone());
-                persist_session_until_available(&db, record).await;
+                let is_deleted = deleted
+                    .read()
+                    .expect("deleted sessions lock")
+                    .contains(&record.id);
+                if !is_deleted {
+                    records
+                        .write()
+                        .expect("records lock")
+                        .insert(record.id, record.clone());
+                    persist_session_until_available(&db, record, &deleted, &lifecycle_gate).await;
+                }
                 if finished {
                     while handle.cleanup_pending() {
                         sleep(Duration::from_millis(50)).await;
@@ -474,6 +471,13 @@ impl SessionSupervisor {
                         .write()
                         .expect("sessions lock")
                         .remove(&handle.id());
+                    if is_deleted {
+                        records.write().expect("records lock").remove(&handle.id());
+                        deleted
+                            .write()
+                            .expect("deleted sessions lock")
+                            .remove(&handle.id());
+                    }
                     break;
                 }
                 if receiver.changed().await.is_err() {
@@ -484,9 +488,22 @@ impl SessionSupervisor {
     }
 }
 
-async fn persist_session_until_available(db: &Database, record: SessionRecord) {
+async fn persist_session_until_available(
+    db: &Database,
+    record: SessionRecord,
+    deleted: &Arc<RwLock<HashSet<SessionId>>>,
+    lifecycle_gate: &Arc<AsyncMutex<()>>,
+) {
     let mut delay = Duration::from_millis(100);
     loop {
+        let _lifecycle_guard = lifecycle_gate.lock().await;
+        if deleted
+            .read()
+            .expect("deleted sessions lock")
+            .contains(&record.id)
+        {
+            return;
+        }
         match db.upsert_session(record.clone()).await {
             Ok(()) => return,
             Err(error) => {
@@ -495,6 +512,7 @@ async fn persist_session_until_available(db: &Database, record: SessionRecord) {
                     retry_in_ms = delay.as_millis(),
                     "persist session state failed; retrying"
                 );
+                drop(_lifecycle_guard);
                 sleep(delay).await;
                 delay = (delay * 2).min(Duration::from_secs(5));
             }

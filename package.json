@@ -9,6 +9,7 @@
     "check": "cargo check --workspace",
     "benchmark:acceptance": "node benchmarks/rust-v2-acceptance.mjs",
     "benchmark:rust": "node benchmarks/rust-v2.mjs",
+    "benchmark:snapshot": "node benchmarks/rust-v2-snapshot.mjs",
     "benchmark:files": "node benchmarks/rust-v2-files.mjs",
     "benchmark:startup": "node benchmarks/rust-v2-startup.mjs"
   },
