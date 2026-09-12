@@ -41,6 +41,7 @@ enum DbCommand {
         id: String,
         name: String,
         working_directory: String,
+        expanded: Option<bool>,
         reply: oneshot::Sender<Result<Option<Project>, String>>,
     },
     DeleteProject {
@@ -159,6 +160,7 @@ impl Database {
         id: String,
         name: String,
         working_directory: String,
+        expanded: Option<bool>,
     ) -> AppResult<Option<Project>> {
         let (reply, receiver) = oneshot::channel();
         self.send(
@@ -166,6 +168,7 @@ impl Database {
                 id,
                 name,
                 working_directory,
+                expanded,
                 reply,
             },
             receiver,
@@ -343,13 +346,14 @@ fn handle_command(connection: &Connection, command: DbCommand) {
             id,
             name,
             working_directory,
+            expanded,
             reply,
         } => {
             let result = connection
                 .execute(
-                    "UPDATE projects SET name = ?1, working_directory = ?2, updated_at = datetime('now')
-                     WHERE id = ?3 AND is_uncategorized = 0",
-                    params![name, working_directory, id],
+                    "UPDATE projects SET name = ?1, working_directory = ?2, expanded = COALESCE(?3, expanded), updated_at = datetime('now')
+                     WHERE id = ?4 AND is_uncategorized = 0",
+                    params![name, working_directory, expanded.map(|value| i64::from(value)), id],
                 )
                 .map_err(|error| format!("update project: {error}"))
                 .and_then(|_| get_project(connection, &id));

@@ -50,10 +50,11 @@ export interface FileNode {
   name: string;
   path: string;
   relative_path: string;
-  type: "directory" | "file";
-  size: number | null;
-  extension: string | null;
-  modified_at: string | null;
+  type: "file" | "directory";
+  size?: number;
+  extension?: string;
+  modified_at?: string | null;
+  children?: FileNode[];
 }
 
 export interface DirectoryPage {
@@ -74,13 +75,16 @@ export interface FileContent {
 export const OUTPUT_FRAME_VERSION = 1;
 export const OUTPUT_FRAME_HEADER_BYTES = 9;
 
-export function decodeOutputFrame(data: ArrayBuffer): { sequence: number; text: string } | null {
+export function decodeOutputFrame(
+  data: ArrayBuffer
+): { sequence: number; text: string } | null {
   if (data.byteLength < OUTPUT_FRAME_HEADER_BYTES) return null;
   const bytes = new Uint8Array(data);
   if (bytes[0] !== OUTPUT_FRAME_VERSION) return null;
   const view = new DataView(data);
-  const sequenceBig = view.getBigUint64(1);
-  const sequence = Number(sequenceBig);
-  const text = new TextDecoder().decode(bytes.subarray(OUTPUT_FRAME_HEADER_BYTES));
-  return { sequence, text };
+  const sequence = Number(view.getBigUint64(1));
+  return {
+    sequence,
+    text: new TextDecoder().decode(bytes.subarray(OUTPUT_FRAME_HEADER_BYTES)),
+  };
 }

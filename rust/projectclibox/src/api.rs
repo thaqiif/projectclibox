@@ -57,6 +57,7 @@ pub fn router(state: AppState) -> Router {
     let static_dir = state.config.static_dir.clone();
     let assets = ServeDir::new(static_dir.join("assets")).append_index_html_on_directories(false);
     let fonts = ServeDir::new(static_dir.join("fonts"));
+    let branding = ServeDir::new(static_dir.join("branding"));
     Router::new()
         .route("/healthz", get(health))
         .route("/api/auth", post(authenticate))
@@ -87,11 +88,16 @@ pub fn router(state: AppState) -> Router {
             ServeFile::new(static_dir.join("manifest.webmanifest")),
         )
         .route_service(
+            "/cliweb.webmanifest",
+            ServeFile::new(static_dir.join("cliweb.webmanifest")),
+        )
+        .route_service(
             "/favicon.svg",
-            ServeFile::new(static_dir.join("favicon.svg")),
+            ServeFile::new(static_dir.join("branding/cliweb-terminal.svg")),
         )
         .nest_service("/assets", assets)
         .nest_service("/fonts", fonts)
+        .nest_service("/branding", branding)
         .with_state(state.clone())
         .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BYTES))
         .layer(middleware::from_fn_with_state(
@@ -207,6 +213,7 @@ async fn update_project(
             id,
             body.name.trim().to_owned(),
             path.to_string_lossy().into_owned(),
+            body.expanded,
         )
         .await?
         .ok_or_else(|| AppError::NotFound("project".to_owned()))?;
@@ -422,9 +429,16 @@ async fn upload_file(
         state.config.max_file_bytes,
     )
     .await?;
+    let absolute_path = state
+        .policy
+        .project_root(&project)?
+        .join(&body.path)
+        .to_string_lossy()
+        .into_owned();
     Ok(Json(serde_json::json!({
         "success": true,
-        "path": body.path,
+        "path": absolute_path,
+        "relative_path": body.path,
         "size": size
     })))
 }
@@ -691,8 +705,10 @@ async fn authorize(State(state): State<AppState>, request: Request, next: Next) 
         || path == "/api/auth"
         || path == "/favicon.svg"
         || path == "/manifest.webmanifest"
+        || path == "/cliweb.webmanifest"
         || path.starts_with("/assets/")
-        || path.starts_with("/fonts/");
+        || path.starts_with("/fonts/")
+        || path.starts_with("/branding/");
     if public_bootstrap {
         return next.run(request).await;
     }

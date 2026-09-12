@@ -1,0 +1,485 @@
+/* =============================================================================
+   LIQUID GLASS — the material, optics and motion layer
+   -----------------------------------------------------------------------------
+   Apple's Liquid Glass is four stacked optical effects, not one blur:
+   translucency, backdrop blur *plus* a saturation boost, a specular highlight
+   where light catches the top edge, and a depth shadow that lets the surface
+   float. Miss any one of them and it reads as 2020 glassmorphism.
+
+   Every token here derives from the theme variables in themes.css, so all
+   sixteen light/dark variants pick up the material for free.
+
+   Glass is the control layer: chrome, navigation, menus, transient surfaces.
+   Content — terminals, editors, diffs — stays opaque and legible.
+   ============================================================================= */
+
+:root {
+  /* ── Materials: tint + blur pairs, by thickness ─────────────────────────
+     Thickness encodes hierarchy. Thicker = more opaque, more separated from
+     the content behind it. Pick by role, never by taste. */
+  --glass-ultrathin: hsl(var(--surface-raised) / 0.44);
+  --glass-thin: hsl(var(--surface-raised) / 0.62);
+  --glass-regular: hsl(var(--surface-raised) / 0.74);
+  --glass-thick: hsl(var(--surface-raised) / 0.86);
+
+  --glass-blur-thin: 12px;
+  --glass-blur: 20px;
+  --glass-blur-thick: 32px;
+  --glass-saturate: 180%;
+
+  /* ── Optics ─────────────────────────────────────────────────────────────
+     The specular highlight is the highest-leverage detail in the system:
+     without a lit top edge, a translucent panel is just a see-through box. */
+  --glass-specular: rgb(255 255 255 / 0.62);
+  --glass-inner-glow: rgb(255 255 255 / 0.2);
+  --glass-rim: rgb(0 0 0 / 0.07);
+  /* The sheen is the light falling across the face of the material, not a
+     decorative gradient: brightest where the surface meets the light, gone
+     by the bottom edge. It is what keeps chrome legible against a canvas
+     that is nearly the same value. */
+  --glass-sheen-top: rgb(255 255 255 / 0.1);
+  --glass-sheen-bottom: rgb(255 255 255 / 0);
+
+  /* ── Elevation: a tight contact shadow + a soft ambient one ─────────────
+     One shadow looks like a sticker. Two read as height. */
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 1px rgb(0 0 0 / 0.06);
+  --elev-2: 0 2px 8px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.08);
+  --elev-3: 0 8px 24px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.08);
+  --elev-4: 0 16px 48px rgb(0 0 0 / 0.14), 0 4px 12px rgb(0 0 0 / 0.1);
+  --elev-glass: 0 8px 32px rgb(0 0 0 / 0.14);
+
+  /* ── Control fills: hierarchy encoded as opacity, so it holds over any
+     background including glass ───────────────────────────────────────── */
+  --fill-1: hsl(var(--foreground) / 0.14);
+  --fill-2: hsl(var(--foreground) / 0.1);
+  --fill-3: hsl(var(--foreground) / 0.07);
+  --fill-4: hsl(var(--foreground) / 0.045);
+
+  /* ── Type scale: Apple's text styles, as size + tracking + leading sets ─ */
+  --text-large-title: 2.125rem; /* 34pt */
+  --text-title-1: 1.75rem; /* 28pt */
+  --text-title-2: 1.375rem; /* 22pt */
+  --text-title-3: 1.25rem; /* 20pt */
+  --text-headline: 1.0625rem; /* 17pt semibold */
+  --text-body: 1.0625rem; /* 17pt */
+  --text-callout: 1rem; /* 16pt */
+  --text-subhead: 0.9375rem; /* 15pt */
+  --text-footnote: 0.8125rem; /* 13pt */
+  --text-caption: 0.75rem; /* 12pt */
+  --text-caption-2: 0.6875rem; /* 11pt */
+
+  /* Tracking tightens as size grows. A single global letter-spacing is the
+     number one tell of a non-Apple interface. */
+  --tracking-tight: -0.022em;
+  --tracking-snug: -0.014em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.01em;
+
+  /* Leading moves inversely to size. */
+  --leading-tight: 1.08;
+  --leading-snug: 1.2;
+  --leading-normal: 1.35;
+  --leading-relaxed: 1.5;
+
+  /* ── Motion: curves, not the anaemic built-ins. Never ease-in on UI —
+     it starts slow and reads as lag. ─────────────────────────────────── */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-snappy: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --duration-instant: 100ms;
+  --duration-fast: 180ms;
+  --duration-base: 260ms;
+  --duration-slow: 420ms;
+}
+
+/* Dark: the top-edge highlight dims, the rim flips to shadow, and elevation
+   leans on darkness rather than diffusion. */
+.dark {
+  --glass-specular: rgb(255 255 255 / 0.11);
+  --glass-inner-glow: rgb(255 255 255 / 0.05);
+  --glass-rim: rgb(0 0 0 / 0.5);
+  --glass-sheen-top: rgb(255 255 255 / 0.055);
+  --glass-sheen-bottom: rgb(255 255 255 / 0.012);
+
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.34);
+  --elev-2: 0 2px 8px rgb(0 0 0 / 0.4);
+  --elev-3: 0 8px 24px rgb(0 0 0 / 0.48);
+  --elev-4: 0 16px 48px rgb(0 0 0 / 0.56);
+  --elev-glass: 0 8px 32px rgb(0 0 0 / 0.5);
+
+  --fill-1: hsl(var(--foreground) / 0.16);
+  --fill-2: hsl(var(--foreground) / 0.11);
+  --fill-3: hsl(var(--foreground) / 0.075);
+  --fill-4: hsl(var(--foreground) / 0.05);
+}
+
+/* Material, interaction and type classes live in the components layer so a
+   Tailwind utility on the same element still wins — `bg-primary` must be able
+   to override `.glass`, never the other way round. */
+@layer components {
+  /* =============================================================================
+     MATERIALS
+     ============================================================================= */
+
+  .glass,
+  .glass-thin,
+  .glass-thick,
+  .glass-ultrathin {
+    background-color: var(--glass-regular);
+    background-image: linear-gradient(
+      to bottom,
+      var(--glass-sheen-top),
+      var(--glass-sheen-bottom)
+    );
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    /* specular top edge · inner glow · hairline rim */
+    box-shadow:
+      inset 0 1px 0 var(--glass-specular),
+      inset 0 0 0 0.5px var(--glass-inner-glow),
+      0 0 0 0.5px var(--glass-rim);
+  }
+
+  .glass-ultrathin {
+    background-color: var(--glass-ultrathin);
+    -webkit-backdrop-filter: blur(var(--glass-blur-thin))
+      saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur-thin)) saturate(var(--glass-saturate));
+  }
+
+  .glass-thin {
+    background-color: var(--glass-thin);
+    -webkit-backdrop-filter: blur(var(--glass-blur-thin))
+      saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur-thin)) saturate(var(--glass-saturate));
+  }
+
+  .glass-thick {
+    background-color: var(--glass-thick);
+    -webkit-backdrop-filter: blur(var(--glass-blur-thick))
+      saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur-thick)) saturate(var(--glass-saturate));
+  }
+
+  /* Float: the outer depth shadow that lifts a surface off the canvas. Chrome
+     that is flush with a viewport edge does not need it; menus and sheets do. */
+  .glass-float {
+    box-shadow:
+      inset 0 1px 0 var(--glass-specular),
+      inset 0 0 0 0.5px var(--glass-inner-glow),
+      0 0 0 0.5px var(--glass-rim),
+      var(--elev-glass);
+  }
+
+  /* Edge-lit only along one side, for chrome anchored to a viewport edge:
+     a sidebar catches light down its inner edge, not around a full rim. */
+  .glass-edge-right {
+    box-shadow:
+      inset 0 1px 0 var(--glass-specular),
+      inset -1px 0 0 var(--glass-inner-glow),
+      1px 0 0 var(--glass-rim);
+  }
+  .glass-edge-bottom {
+    box-shadow:
+      inset 0 1px 0 var(--glass-specular),
+      0 1px 0 var(--glass-rim);
+  }
+  .glass-edge-top {
+    box-shadow:
+      inset 0 1px 0 var(--glass-specular),
+      0 -1px 0 var(--glass-rim);
+  }
+
+  /* Dynamic tint — glass picking up colour from its context, the way a
+     selected control does. A wash *under* the tint, not paint on top. */
+  .glass-tinted {
+    position: relative;
+    isolation: isolate;
+  }
+  .glass-tinted::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: hsl(var(--primary));
+    opacity: 0.16;
+    pointer-events: none;
+    z-index: -1;
+  }
+  .dark .glass-tinted::before {
+    opacity: 0.24;
+  }
+
+  /* Refraction — the iOS 26 "wet glass" lensing. Expensive and Chromium-only
+     as a backdrop input, so it is progressive enhancement on top of .glass and
+     reserved for the one or two hero surfaces per screen. */
+  .glass-refract {
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
+      url("#lg-refraction");
+  }
+  @supports not (backdrop-filter: url("#lg-refraction")) {
+    .glass-refract {
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    }
+  }
+
+  /* =============================================================================
+     SCROLL EDGES — chrome dissolves content beneath it instead of drawing a line
+     ============================================================================= */
+
+  .edge-fade-top,
+  .edge-fade-bottom {
+    position: absolute;
+    inset-inline: 0;
+    height: 20px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .edge-fade-top {
+    top: 0;
+    background: linear-gradient(
+      to bottom,
+      hsl(var(--background) / 0.9),
+      transparent
+    );
+  }
+  .edge-fade-bottom {
+    bottom: 0;
+    background: linear-gradient(to top, hsl(var(--background) / 0.9), transparent);
+  }
+
+  /* A canvas that is genuinely empty gets a soft ambient wash rather than a
+     flat void — depth without decoration. */
+  .ambient-canvas {
+    position: relative;
+    background:
+      radial-gradient(
+        120% 80% at 50% -10%,
+        hsl(var(--primary) / 0.07),
+        transparent 62%
+      ),
+      hsl(var(--background));
+  }
+
+  /* =============================================================================
+     INTERACTION
+     ============================================================================= */
+
+  /* Feedback on pointer-down, never only on release. */
+  .press {
+    transition:
+      transform var(--duration-instant) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out),
+      color var(--duration-fast) var(--ease-out),
+      opacity var(--duration-fast) var(--ease-out);
+  }
+  .press:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: scale(0.97);
+  }
+  .press-sm:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: scale(0.985);
+  }
+
+  .focus-ring:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* Entrance: glass *materializes* — blur and scale resolve together — rather
+     than fading in like a flat sprite. Entrance only, never on a loop. */
+  @keyframes lg-materialize {
+    from {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes lg-lift {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  .materialize {
+    animation: lg-materialize var(--duration-base) var(--ease-out);
+  }
+  .lift-in {
+    animation: lg-lift var(--duration-base) var(--ease-out);
+  }
+
+  /* Indeterminate progress: a specular sweep, the Apple idiom for "working". */
+  @keyframes lg-shimmer {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+    background: var(--fill-4);
+  }
+  .shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--foreground) / 0.07),
+      transparent
+    );
+    animation: lg-shimmer 1.6s var(--ease-in-out) infinite;
+  }
+
+  /* =============================================================================
+     FALLBACKS — glass fails three ways for real users. Handle all three.
+     ============================================================================= */
+
+  /* 1. No backdrop-filter at all (older Firefox): go nearly solid. */
+  @supports not (
+    (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+  ) {
+    .glass,
+    .glass-thin,
+    .glass-thick,
+    .glass-ultrathin,
+    .glass-refract {
+      background-color: hsl(var(--surface-raised) / 0.97);
+      background-image: none;
+    }
+  }
+
+  /* 2. Reduced transparency — also kinder to low-vision users and to battery. */
+  @media (prefers-reduced-transparency: reduce) {
+    .glass,
+    .glass-thin,
+    .glass-thick,
+    .glass-ultrathin,
+    .glass-refract {
+      background-color: hsl(var(--surface-raised));
+      background-image: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .glass-tinted::before {
+      opacity: 0.3;
+    }
+  }
+
+  /* 3. Increased contrast — the edge must be unambiguous, so draw a real one. */
+  @media (prefers-contrast: more) {
+    .glass,
+    .glass-thin,
+    .glass-thick,
+    .glass-ultrathin {
+      background-color: hsl(var(--surface-raised));
+      background-image: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.5);
+    }
+  }
+
+  /* Reduced motion: gentler, not gone. Springs and slides become short
+     crossfades; instant tap feedback survives because it communicates cause. */
+  @media (prefers-reduced-motion: reduce) {
+    .materialize,
+    .lift-in {
+      animation: lg-fade var(--duration-fast) var(--ease-out);
+    }
+    .shimmer::after {
+      animation: none;
+    }
+    .press:active,
+    .press-sm:active {
+      transform: none;
+      opacity: 0.72;
+    }
+  }
+  @keyframes lg-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* =============================================================================
+     TYPOGRAPHY — size, weight, tracking and leading always travel together
+     ============================================================================= */
+
+  .type-large-title {
+    font-size: var(--text-large-title);
+    font-weight: 700;
+    letter-spacing: var(--tracking-tight);
+    line-height: var(--leading-tight);
+  }
+  .type-title-1 {
+    font-size: var(--text-title-1);
+    font-weight: 700;
+    letter-spacing: var(--tracking-tight);
+    line-height: var(--leading-tight);
+  }
+  .type-title-2 {
+    font-size: var(--text-title-2);
+    font-weight: 600;
+    letter-spacing: var(--tracking-snug);
+    line-height: var(--leading-snug);
+  }
+  .type-title-3 {
+    font-size: var(--text-title-3);
+    font-weight: 600;
+    letter-spacing: var(--tracking-snug);
+    line-height: var(--leading-snug);
+  }
+  .type-headline {
+    font-size: var(--text-headline);
+    font-weight: 600;
+    letter-spacing: var(--tracking-normal);
+    line-height: var(--leading-snug);
+  }
+  .type-body {
+    font-size: var(--text-body);
+    font-weight: 400;
+    letter-spacing: var(--tracking-normal);
+    line-height: var(--leading-normal);
+  }
+  .type-callout {
+    font-size: var(--text-callout);
+    font-weight: 400;
+    letter-spacing: var(--tracking-normal);
+    line-height: var(--leading-normal);
+  }
+  .type-subhead {
+    font-size: var(--text-subhead);
+    font-weight: 400;
+    letter-spacing: var(--tracking-normal);
+    line-height: var(--leading-normal);
+  }
+  .type-footnote {
+    font-size: var(--text-footnote);
+    font-weight: 400;
+    letter-spacing: var(--tracking-wide);
+    line-height: var(--leading-normal);
+  }
+  .type-caption {
+    font-size: var(--text-caption);
+    font-weight: 400;
+    letter-spacing: var(--tracking-wide);
+    line-height: var(--leading-normal);
+  }
+}

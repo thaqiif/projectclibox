@@ -1,9 +1,14 @@
 {
-  "name": "ProjectCliBox",
-  "short_name": "CliBox",
+  "name": "CLIWeb",
+  "short_name": "CLIWeb",
+  "description": "CLIWeb terminal workspace",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#09111f",
-  "theme_color": "#09111f",
-  "icons": [{"src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml"}]
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {"src": "/branding/cliweb-terminal-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/branding/cliweb-terminal-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "/branding/cliweb-terminal-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
 }

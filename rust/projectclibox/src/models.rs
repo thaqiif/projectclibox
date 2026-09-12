@@ -137,6 +137,7 @@ pub struct CreateSessionRequest {
 pub struct CreateProjectRequest {
     pub name: String,
     pub working_directory: String,
+    pub expanded: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
