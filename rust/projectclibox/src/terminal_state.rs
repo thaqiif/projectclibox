@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 
 const MAX_HISTORY_ROWS: usize = 50_000;
 const APPROXIMATE_ROW_OVERHEAD: usize = 64;
+const MAX_DELTA_BYTES: usize = 256 * 1024;
 
 /// Bytes that reproduce one authoritative terminal state. The payload is a
 /// synthetic ANSI stream, not a replay of the PTY history.
@@ -104,7 +105,10 @@ impl TerminalState {
         Self {
             processor: Processor::new(),
             term: Term::new(config, &dimensions, PtyEventProxy { input_sender }),
-            deltas: OutputDeltaBuffer::new(max_scrollback_bytes),
+            // The reconnect buffer is deliberately much smaller than the
+            // resolved terminal history. It is transport recovery state, not
+            // a second copy of the terminal's lifetime.
+            deltas: OutputDeltaBuffer::new(max_scrollback_bytes.min(MAX_DELTA_BYTES)),
             max_scrollback_bytes,
         }
     }
@@ -455,7 +459,7 @@ mod tests {
         event::VoidListener,
         grid::Dimensions,
         term::{Config as TerminalConfig, Term},
-        vte::ansi::Processor,
+        vte::ansi::{Color, NamedColor, Processor, Rgb},
     };
     use tokio::sync::mpsc;
 
@@ -494,10 +498,35 @@ mod tests {
         text
     }
 
+    fn screen_text(term: &Term<VoidListener>) -> String {
+        let grid = term.grid();
+        let first = grid.bottommost_line().0 - grid.screen_lines() as i32 + 1;
+        let mut text = String::new();
+        for line in first..=grid.bottommost_line().0 {
+            for column in 0..grid.columns() {
+                let cell = &grid[alacritty_terminal::index::Line(line)]
+                    [alacritty_terminal::index::Column(column)];
+                if !cell
+                    .flags
+                    .contains(alacritty_terminal::term::cell::Flags::WIDE_CHAR_SPACER)
+                {
+                    text.push(cell.c);
+                }
+            }
+            text.push('\n');
+        }
+        text
+    }
+
     #[test]
     fn progress_output_is_resolved_before_snapshot() {
         let mut state = state(4, 40);
-        state.process_output(8, b"progress 5%\rprogress 20%\rprogress 100%");
+        let mut output = String::new();
+        for percent in 0..=100 {
+            output.push_str(&format!("\rprogress {percent:03}%"));
+        }
+        output.push_str("\r\nComplete");
+        state.process_output(8, output.as_bytes());
         let snapshot = state.capture_snapshot(8).render();
         assert!(snapshot
             .bytes
@@ -505,44 +534,125 @@ mod tests {
             .any(|window| { window == b"progress 100%" }));
         assert!(!snapshot
             .bytes
-            .windows(b"progress 5%".len())
-            .any(|window| { window == b"progress 5%" }));
+            .windows(b"progress 005%".len())
+            .any(|window| { window == b"progress 005%" }));
+        assert!(!snapshot
+            .bytes
+            .windows(b"progress 055%".len())
+            .any(|window| { window == b"progress 055%" }));
         let term = render_into_fresh_term(&snapshot.bytes, 4, 40);
         let text = active_text(&term);
         assert!(text.contains("progress 100%"));
-        assert!(!text.contains("progress 5%"));
+        assert!(!text.contains("progress 005%"));
+        assert!(!text.contains("progress 055%"));
+        assert!(text.contains("Complete"));
     }
 
     #[test]
-    fn erase_and_style_are_preserved_as_state() {
+    fn cursor_and_erase_controls_are_resolved_before_snapshot() {
         let mut state = state(3, 40);
-        state.process_output(32, b"old text\rnew\x1b[K\n\x1b[31;1;4mred\x1b[0m");
+        state.process_output(
+            32,
+            b"old text\rnew\x1b[K\r\nsecond line\r\nthird line\x1b[2A\x1b[1GUP\x1b[1B\x1b[1Gabc\x08X\x1b[1B\x1b[1G\x1b[2Kreplaced",
+        );
         let snapshot = state.capture_snapshot(32).render();
         let term = render_into_fresh_term(&snapshot.bytes, 3, 40);
         let text = active_text(&term);
-        assert!(text.contains("new"));
+        assert!(text.contains("UPw"));
         assert!(!text.contains("old text"));
-        assert!(text.contains("red"));
-        let red_cell =
-            &term.grid()[alacritty_terminal::index::Line(1)][alacritty_terminal::index::Column(3)];
-        assert!(red_cell
+        assert!(text.contains("UP"));
+        assert!(text.contains("abX"));
+        assert!(text.contains("replaced"));
+        assert_eq!(term.grid().cursor.point.line.0, 2);
+        assert_eq!(term.grid().cursor.point.column.0, 8);
+
+        state.process_output(33, b"\x1b[2J\x1b[Hfinal");
+        let cleared = render_into_fresh_term(&state.capture_snapshot(33).render().bytes, 3, 40);
+        let cleared_text = screen_text(&cleared);
+        assert!(cleared_text.contains("final"));
+        assert!(!cleared_text.contains("replaced"));
+        assert!(!cleared_text.contains("second line"));
+    }
+
+    #[test]
+    fn colors_and_text_attributes_are_preserved_as_state() {
+        let mut state = state(3, 80);
+        state.process_output(
+            34,
+            b"\x1b[31;44;1;3;4mstyled\x1b[0m \x1b[38;5;123;48;5;200mindexed\x1b[0m \x1b[38;2;12;34;56;48;2;65;43;21mtrue\x1b[0m",
+        );
+        let snapshot = state.capture_snapshot(34).render();
+        let term = render_into_fresh_term(&snapshot.bytes, 3, 80);
+        let styled =
+            &term.grid()[alacritty_terminal::index::Line(0)][alacritty_terminal::index::Column(0)];
+        assert_eq!(styled.fg, Color::Named(NamedColor::Red));
+        assert_eq!(styled.bg, Color::Named(NamedColor::Blue));
+        assert!(styled
             .flags
             .contains(alacritty_terminal::term::cell::Flags::BOLD));
-        assert!(red_cell
+        assert!(styled
+            .flags
+            .contains(alacritty_terminal::term::cell::Flags::ITALIC));
+        assert!(styled
             .flags
             .contains(alacritty_terminal::term::cell::Flags::UNDERLINE));
+
+        let indexed =
+            &term.grid()[alacritty_terminal::index::Line(0)][alacritty_terminal::index::Column(7)];
+        assert_eq!(indexed.fg, Color::Indexed(123));
+        assert_eq!(indexed.bg, Color::Indexed(200));
+
+        let true_color =
+            &term.grid()[alacritty_terminal::index::Line(0)][alacritty_terminal::index::Column(15)];
+        assert_eq!(
+            true_color.fg,
+            Color::Spec(Rgb {
+                r: 12,
+                g: 34,
+                b: 56
+            })
+        );
+        assert_eq!(
+            true_color.bg,
+            Color::Spec(Rgb {
+                r: 65,
+                g: 43,
+                b: 21
+            })
+        );
+        let reset =
+            &term.grid()[alacritty_terminal::index::Line(0)][alacritty_terminal::index::Column(20)];
+        assert!(!reset
+            .flags
+            .contains(alacritty_terminal::term::cell::Flags::BOLD));
+    }
+
+    #[test]
+    fn resolved_scrollback_is_available_without_redraw_history() {
+        let mut state = state(3, 40);
+        for index in 0..120 {
+            state.process_output(index + 1, format!("resolved line {index}\r\n").as_bytes());
+        }
+        let snapshot = state.capture_snapshot(120).render();
+        let term = render_into_fresh_term(&snapshot.bytes, 3, 40);
+        let text = active_text(&term);
+        assert!(text.contains("resolved line 119"));
+        assert!(text.contains("resolved line 110"));
+        assert!(snapshot.bytes.len() < 40 * 1024);
     }
 
     #[test]
     fn alternate_screen_snapshot_keeps_primary_screen() {
         let mut state = state(3, 30);
-        state.process_output(7, b"primary\x1b[?1049halt screen");
-        let alt_snapshot = state.capture_snapshot(7).render();
+        state.process_output(7, b"primary\x1b[?1049h\x1b[2J\x1b[Halt screen v1");
+        state.process_output(8, b"\x1b[2;1Hupdated\x1b[1A\x1b[1GALT");
+        let alt_snapshot = state.capture_snapshot(8).render();
         let alt_term = render_into_fresh_term(&alt_snapshot.bytes, 3, 30);
         assert!(alt_term
             .mode()
             .contains(alacritty_terminal::term::TermMode::ALT_SCREEN));
-        assert!(active_text(&alt_term).contains("alt screen"));
+        assert!(active_text(&alt_term).contains("ALT"));
+        assert!(active_text(&alt_term).contains("updated"));
 
         state.process_output(14, b"\x1b[?1049l");
         let primary_snapshot = state.capture_snapshot(14).render();

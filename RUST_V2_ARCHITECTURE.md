@@ -28,6 +28,14 @@ SQLite is not used as a PTY transport, and a WebSocket is not the owner of a
 session. This makes browser detachment cheap and makes the ownership rule
 auditable.
 
+### Terminal emulator choice
+
+The runtime uses the pinned `alacritty_terminal` 0.26 core with its public
+`Term`, `Grid`, terminal modes, alternate-screen handling, and `vte` processor.
+It was chosen because it provides a mature stateful ANSI/xterm emulator whose
+resolved cells and bounded history can be captured directly; a parser-only
+crate would still require ProjectCliBox to implement that state model itself.
+
 ## Session lifecycle
 
 1. `POST /api/terminals` validates the project root and dimensions, opens a
@@ -37,7 +45,8 @@ auditable.
    `alacritty_terminal::Term`, which resolves carriage returns, cursor
    movement, erase operations, SGR styles, scrollback, and alternate-screen
    state. The raw bytes are retained separately only in a bounded
-   `OutputDeltaBuffer` for short reconnect gaps.
+   `OutputDeltaBuffer` (at most 256 KiB, or the configured limit when smaller)
+   for short reconnect gaps.
 3. A new WebSocket sends `terminal.attach` with `mode: "snapshot"`. The
    supervisor subscribes before taking a sequence boundary, clones the
    emulator state under the output gate, and sends a synthetic ANSI snapshot

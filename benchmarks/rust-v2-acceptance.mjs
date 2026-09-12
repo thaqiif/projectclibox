@@ -79,6 +79,26 @@ async function attach(id, { mode = "snapshot", fromSequence, cols = 80, rows = 2
   return { socket, ready };
 }
 
+async function waitForSnapshot(socket) {
+  await waitFor(socket, (message) => message.type === "terminal.snapshot");
+  return waitFor(
+    socket,
+    (message) => message.type === "binary" && message.kind === "snapshot"
+  );
+}
+
+async function waitForOutputContaining(socket, needle, kind = "delta") {
+  let data = "";
+  for (;;) {
+    const message = await waitFor(
+      socket,
+      (candidate) => candidate.type === "binary" && candidate.kind === kind
+    );
+    data += message.data;
+    if (data.includes(needle)) return { ...message, data };
+  }
+}
+
 async function close(socket) {
   if (socket.readyState === WebSocket.CLOSED) return;
   await new Promise((resolve) => { socket.once("close", resolve); socket.close(); });
@@ -104,7 +124,7 @@ async function main() {
   const projects = await json("/api/projects");
   const projectId = projects.projects.find((project) => project.id === "uncategorized")?.id ?? projects.projects[0]?.id;
   if (!projectId) throw new Error("no project available");
- const marker = `PCLX_V2_${Date.now()}`;
+  const marker = `PCLX_V2_${Date.now()}`;
   const markerBytes = Buffer.from(marker).toString("hex").replace(/../g, "\\x$&");
   const session = await json("/api/terminals", {
     method: "POST",
@@ -113,6 +133,24 @@ async function main() {
   created.push(session.id);
 
   const first = await attach(session.id);
+  const firstSnapshot = await waitForSnapshot(first.socket);
+  if (firstSnapshot.data.length === 0) {
+    throw new Error("fresh attach did not deliver a snapshot payload");
+  }
+  const progress =
+    Array.from({ length: 101 }, (_, percent) =>
+      `\\rprogress ${String(percent).padStart(3, "0")}%`
+    ).join("") + "\\r\\nComplete\\n";
+  const progressBytes = Buffer.from(progress)
+    .toString("hex")
+    .replace(/../g, "\\x$&");
+  first.socket.send(
+    JSON.stringify({
+      type: "terminal.input",
+      data: `printf '%b' '${progressBytes}'\r`,
+    })
+  );
+  await waitForOutputContaining(first.socket, "progress 100%");
   first.socket.send(JSON.stringify({ type: "terminal.input", data: `printf '${markerBytes}\\n'\r` }));
   const firstOutput = await waitFor(first.socket, (message) => message.type === "binary" && message.data.includes(marker));
   await close(first.socket);
@@ -123,14 +161,139 @@ async function main() {
   const second = await attach(session.id, { mode: "resume", fromSequence: 0 });
   const replay = await waitFor(second.socket, (message) => message.type === "binary" && message.data.includes(marker));
   const third = await attach(session.id, { mode: "snapshot" });
+  const thirdSnapshot = await waitForSnapshot(third.socket);
+  if (!thirdSnapshot.data.includes("progress 100%") || thirdSnapshot.data.includes("progress 005%")) {
+    throw new Error("fresh snapshot contained dynamic redraw history");
+  }
+  second.socket.send(
+    JSON.stringify({ type: "terminal.resize", cols: 100, rows: 30 })
+  );
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    current = (await json("/api/terminals")).find((item) => item.id === session.id);
+    if (current?.cols === 100 && current?.rows === 30) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  current = (await json("/api/terminals")).find((item) => item.id === session.id);
+  if (current?.cols !== 100 || current?.rows !== 30) {
+    throw new Error(`owner resize was not applied: ${JSON.stringify(current)}`);
+  }
+  third.socket.send(
+    JSON.stringify({ type: "terminal.resize", cols: 120, rows: 40 })
+  );
   await new Promise((resolve) => setTimeout(resolve, 100));
   current = (await json("/api/terminals")).find((item) => item.id === session.id);
+  if (current?.cols !== 100 || current?.rows !== 30) {
+    throw new Error(`non-owner resize changed canonical geometry: ${JSON.stringify(current)}`);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 100));
   if (current.attached_viewers !== 2) throw new Error(`multiple viewers not counted: ${JSON.stringify(current)}`);
   await close(second.socket);
   await close(third.socket);
 
   const traversal = await fetch(`${baseUrl}/api/files?projectId=${encodeURIComponent(projectId)}&path=${encodeURIComponent("../")}`);
   if (traversal.status !== 403) throw new Error(`path traversal returned ${traversal.status}`);
+
+  const tuiSession = await json("/api/terminals", {
+    method: "POST",
+    body: JSON.stringify({
+      project_id: projectId,
+      name: "Acceptance alternate screen",
+      command: [
+        "/bin/bash",
+        "-lc",
+        "printf '\\033[?1049h\\033[2J\\033[Hscreen-initial'; printf '\\033[2J\\033[Hscreen-current'; while :; do sleep 60; done",
+      ],
+    }),
+  });
+  created.push(tuiSession.id);
+  const tuiOutputBytes =
+    "\x1b[?1049h\x1b[2J\x1b[Hscreen-initial".length +
+    "\x1b[2J\x1b[Hscreen-current".length;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const current = (await json("/api/terminals")).find(
+      (item) => item.id === tuiSession.id
+    );
+    if (current?.output_bytes >= tuiOutputBytes) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  const tuiCurrent = (await json("/api/terminals")).find(
+    (item) => item.id === tuiSession.id
+  );
+  if (tuiCurrent?.output_bytes < tuiOutputBytes) {
+    throw new Error("alternate-screen session did not finish drawing");
+  }
+  const tui = await attach(tuiSession.id);
+  const tuiSnapshot = await waitForSnapshot(tui.socket);
+  if (
+    !tuiSnapshot.data.includes("screen-current") ||
+    tuiSnapshot.data.includes("screen-initial")
+  ) {
+    throw new Error("alternate-screen snapshot was not current");
+  }
+  await close(tui.socket);
+  await json(`/api/terminals/${tuiSession.id}`, { method: "DELETE" });
+  created.pop();
+
+  const dynamicSession = await json("/api/terminals", {
+    method: "POST",
+    body: JSON.stringify({
+      project_id: projectId,
+      name: "Acceptance dynamic output",
+      command: [
+        "/bin/bash",
+        "-lc",
+        "for i in $(seq 0 20000); do printf '\\rprogress %05d%%' \"$((i % 101))\"; done; printf '\\rprogress 100%%\\nComplete\\n'; while :; do sleep 60; done",
+      ],
+    }),
+  });
+  created.push(dynamicSession.id);
+  const dynamicOutputBytes =
+    20_001 * "\rprogress 00000%".length + "\rprogress 100%\nComplete\n".length;
+  let dynamicReady = false;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const current = (await json("/api/terminals")).find(
+      (item) => item.id === dynamicSession.id
+    );
+    if (current?.output_bytes >= dynamicOutputBytes) {
+      dynamicReady = true;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (!dynamicReady) {
+    throw new Error("dynamic-output session did not finish generating output");
+  }
+  const dynamic = await attach(dynamicSession.id);
+  const dynamicSnapshot = await waitForSnapshot(dynamic.socket);
+  if (
+    !dynamicSnapshot.data.includes("progress 100%") ||
+    dynamicSnapshot.data.includes("progress 00000%")
+  ) {
+    throw new Error("large dynamic output was not resolved before snapshot attach");
+  }
+  if (dynamicSnapshot.data.length > 64 * 1024) {
+    throw new Error(
+      `dynamic snapshot unexpectedly large: ${dynamicSnapshot.data.length} bytes`
+    );
+  }
+  await close(dynamic.socket);
+  const fallback = await attach(dynamicSession.id, {
+    mode: "resume",
+    fromSequence: 0,
+  });
+  if (fallback.ready.mode !== "snapshot" || !fallback.ready.truncated) {
+    throw new Error("truncated delta resume did not fall back to a snapshot");
+  }
+  const fallbackSnapshot = await waitForSnapshot(fallback.socket);
+  if (
+    !fallbackSnapshot.data.includes("progress 100%") ||
+    fallbackSnapshot.data.includes("progress 00000%")
+  ) {
+    throw new Error("delta fallback snapshot was not resolved current state");
+  }
+  await close(fallback.socket);
+  await json(`/api/terminals/${dynamicSession.id}`, { method: "DELETE" });
+  created.pop();
 
   const processSession = await json("/api/terminals", {
     method: "POST",
@@ -184,7 +347,7 @@ async function main() {
   await waitForStopped(session.id);
   await json(`/api/terminals/${session.id}`, { method: "DELETE" });
   created.pop();
-  console.log(JSON.stringify({ sessionId: session.id, firstSequence: firstOutput.sequence, replaySequence: replay.sequence, detached: true, multipleViewers: 2, traversalRejected: true, processGroupStopped: true, batchDeleted: batchSessions.length }));
+  console.log(JSON.stringify({ sessionId: session.id, firstSequence: firstOutput.sequence, replaySequence: replay.sequence, detached: true, multipleViewers: 2, snapshotResolved: true, alternateScreen: true, largeDynamicOutput: true, resizeOwner: true, traversalRejected: true, processGroupStopped: true, batchDeleted: batchSessions.length }));
 }
 
 try {

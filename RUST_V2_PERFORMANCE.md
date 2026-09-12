@@ -2,7 +2,7 @@
 
 ## Measurement contract
 
-Measured on 2026-09-11 from the `rewrite/rust-projectclibox-v2` worktree on
+Measured on 2026-09-12 from the `rewrite/rust-projectclibox-v2` worktree on
 Linux x86_64, 4 CPUs, 7.7 GiB visible memory, Rust 1.89.0, Node 22.23.2, and
 an optimized Rust binary. HTTP and WebSocket probes used loopback. The session
 matrix used 5 samples per point and 262,144 output bytes per WebSocket. The
@@ -14,26 +14,26 @@ children, not unrelated processes in the development container.
 ## Authoritative terminal snapshot measurements
 
 Measured on 2026-09-12 from a freshly started optimized server after the
-terminal-state change. The dedicated
-`node benchmarks/rust-v2-snapshot.mjs --counts 1,10,25,50 --samples 5` probe
+terminal-state change and delta cap. The dedicated
+`node benchmarks/rust-v2-snapshot.mjs --base-url http://127.0.0.1:3216 --counts 1,10,25,50 --samples 5 --app-pid <server-pid>` probe
 opens concurrent fresh attachments, waits for `terminal.snapshot` and the
 version `2` binary frame, and records the p50/p95 end-to-end snapshot latency.
 RSS is sampled at each live-session count after the snapshot samples; it
 includes the Rust service and direct PTY children. Snapshot payloads were
-2,554 bytes for these idle shells.
+2,552 bytes for these idle shells.
 
 | Live sessions | Snapshot p50 / p95 | Batch p50 / p95 | RSS |
 | ---: | ---: | ---: | ---: |
-| 1 | 43.7 / 54.9 ms | 44.2 / 55.8 ms | 15.4 MiB |
-| 10 | 55.4 / 71.6 ms | 68.3 / 78.3 ms | 69.4 MiB |
-| 25 | 55.1 / 62.8 ms | 59.1 / 68.5 ms | 159.5 MiB |
-| 50 | 67.7 / 75.8 ms | 78.6 / 82.0 ms | 309.7 MiB |
+| 1 | 50.9 / 53.0 ms | 52.6 / 54.3 ms | 15.1 MiB |
+| 10 | 52.0 / 75.3 ms | 60.0 / 80.6 ms | 69.2 MiB |
+| 25 | 68.8 / 92.2 ms | 77.0 / 108.0 ms | 160.6 MiB |
+| 50 | 60.0 / 69.5 ms | 66.7 / 73.8 ms | 312.6 MiB |
 
 These are idle-shell snapshots, not a claim about a full 4 MiB resolved
 history. The terminal emulator bounds resolved history by configured cell
 rows, while raw reconnect deltas are independently bounded by
-`PCLX_SCROLLBACK_BYTES`; a missing delta range is handled by snapshot
-resynchronization, never by replaying terminal history.
+`min(PCLX_SCROLLBACK_BYTES, 256 KiB)`; a missing delta range is handled by
+snapshot resynchronization, never by replaying terminal history.
 
 ## Replacement measurements
 

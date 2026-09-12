@@ -55,8 +55,10 @@ node benchmarks/rust-v2-acceptance.mjs \
   --base-url http://127.0.0.1:3111
 ```
 
-It verifies browser detach/reconnect replay, two viewers on one PTY, traversal
-rejection, process-group cleanup, and concurrent/idempotent close-all deletion.
+It verifies browser detach/reconnect replay, resolved progress snapshots,
+alternate-screen reconstruction after redraws, two viewers on one PTY with
+resize ownership, large dynamic output with no viewer, traversal rejection,
+process-group cleanup, and concurrent/idempotent close-all deletion.
 The browser probe deliberately reports
 Chromium metrics as unavailable when no browser is installed; the same is true
 of Docker image/startup metrics when no Docker daemon is available.
