@@ -4,11 +4,35 @@ services:
       context: .
     restart: unless-stopped
     init: true
+    stop_grace_period: 10s
+    mem_limit: ${CONTAINER_MEMORY_LIMIT:-4g}
+    cpus: ${CONTAINER_CPUS:-4.0}
+    pids_limit: ${CONTAINER_PIDS_LIMIT:-1024}
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
     env_file:
       - path: .env
         required: false
     environment:
-      CLIWEB_PORT: 3011
+      PCLX_BIND: 0.0.0.0
+      PCLX_PORT: 3011
+      PCLX_STATIC_DIR: /opt/projectclibox/frontend/dist
+      PCLX_WORKSPACE_ROOT: /workspaces
+      DB_PATH: /home/cliweb/.cliweb/projectclibox.db
+      # The container listener is non-loopback, so Compose explicitly opts in
+      # to edge-only mode. The host port remains localhost-only by default.
+      # Set this to false when using PROJECTCLIBOX_AUTH_TOKEN instead.
+      PCLX_ALLOW_UNAUTHENTICATED_NON_LOOPBACK: ${PCLX_ALLOW_UNAUTHENTICATED_NON_LOOPBACK:-true}
+      # Optional: when set, token auth remains enabled and takes precedence
+      # over edge-only mode. It is intentionally not required.
+      PROJECTCLIBOX_AUTH_TOKEN: ${PROJECTCLIBOX_AUTH_TOKEN:-}
       CLIWEB_NANOBREW_ROOT: /opt/nanobrew
       CLIWEB_NANOBREW_BIN: /usr/local/bin/nb
       NANOBREW_NO_TELEMETRY: "1"
@@ -27,6 +51,12 @@ services:
       # Localhost-only is the safe default. Set HOST_BIND=0.0.0.0 only when
       # you intentionally want to reach the UI from another device.
       - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3011}:3011"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3011/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     extra_hosts:
       # Linux does not provide host.docker.internal automatically. This lets
       # CLIWeb call APIs from sibling containers through their host ports.
@@ -43,10 +73,3 @@ services:
         bind:
           create_host_path: true
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces
-
-    # Pass the host's KVM device through so web terminals can use hardware
-    # virtualization (QEMU/KVM guests, Android emulators, microVMs, …). This
-    # requires /dev/kvm on the host; remove these lines on hosts that lack it.
-    # The entrypoint grants the unprivileged `cliweb` user access to the device.
-    devices:
-      - /dev/kvm:/dev/kvm

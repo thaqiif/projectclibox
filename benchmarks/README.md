@@ -1,90 +1,76 @@
-# ProjectCliBox benchmark harness
+# ProjectCliBox v2 benchmark harness
 
-These scripts measure the current control plane without pretending that the
-developer workload belongs to ProjectCliBox. Run the HTTP/WS benchmark against
-an already-built production server and run the filesystem/SQLite benchmark as
-an isolated fixture.
+The v2 harness measures the replacement Rust control plane against an already
+running release server. It creates and cleans up only its own sessions.
 
-## Environment
-
-The live benchmark must use a server started outside any existing tmux client.
-For an isolated local run:
+## Start a local release server
 
 ```bash
-tmp=$(mktemp -d /tmp/projectclibox-benchmark.XXXXXX)
-mkdir -p "$tmp/home" "$tmp/nanobrew" "$tmp/tmux" "$tmp/workspace"
-env -u TURBOPACK -u TMUX -u TMUX_PANE \
-  HOME="$tmp/home" DB_PATH="$tmp/home/cliweb.db" \
-  CLIWEB_HOME="$tmp/home/.cliweb" \
-  CLIWEB_NANOBREW_ROOT="$tmp/nanobrew" \
-  TMUX_TMPDIR="$tmp/tmux" SHELL=/bin/bash USER=cliweb LOGNAME=cliweb \
-  NODE_ENV=production PORT=3111 CLIWEB_PORT=3111 \
-  PATH="/usr/local/bin:/usr/bin:/bin" \
-  cliweb/node_modules/.bin/tsx cliweb/server.ts
+tmp=$(mktemp -d /tmp/projectclibox-v2-benchmark.XXXXXX)
+mkdir -p "$tmp/home" "$tmp/workspace"
+PCLX_BIND=127.0.0.1 \
+PCLX_PORT=3111 \
+DB_PATH="$tmp/home/projectclibox.db" \
+PCLX_WORKSPACE_ROOT="$tmp/workspace" \
+PCLX_STATIC_DIR="$PWD/frontend/dist" \
+HOME="$tmp/home" \
+  target/release/projectclibox server
 ```
-
-The current server command uses `tsx`; this is intentional when measuring the
-repository as shipped. A future compiled/bundled server should be measured
-with the same scripts and a different `APP_PID`.
 
 In another shell:
 
 ```bash
-node benchmarks/current.mjs \
+npm install
+node benchmarks/rust-v2.mjs \
   --base-url http://127.0.0.1:3111 \
-  --cwd "$tmp/workspace" \
   --counts 0,1,5,10,25,50 \
-  --samples 30 \
+  --concurrency 1,10,50 \
+  --samples 10 \
   --ws-counts 1,5,10,25,50 \
-  --output-bytes 1048576 \
-  --app-pid <server-node-pid>
+  --output-bytes 262144 \
+  --app-pid <server-pid>
 ```
 
-The benchmark creates and destroys its own tmux sessions. It does not attach
-to sessions that existed before the server was started. `--keep` is useful
-when inspecting a process tree manually; omit it for normal runs.
+The JSON report includes host/runtime metadata, per-count terminal-list
+latency, creation latency, structured WebSocket attach/output timings, and a
+process-tree snapshot. `--keep` leaves benchmark sessions for inspection.
 
-The fixture benchmark uses the actual synchronous implementation in
-`cliweb/lib/files.ts` and the actual SQLite schema/queries:
+The acceptance probe is smaller and checks behavior rather than throughput:
 
 ```bash
-node --import ./cliweb/node_modules/tsx/dist/loader.mjs benchmarks/files-db.mjs
+node benchmarks/rust-v2-acceptance.mjs \
+  --base-url http://127.0.0.1:3111
 ```
 
-Use `--large` to include the 100,000-file fixture. Fixture creation time is
-reported separately from operation latency. Results are JSON so they can be
-checked into an audit artifact without requiring a plotting tool.
+It verifies browser detach/reconnect replay, two viewers on one PTY, traversal
+rejection, and process-group cleanup. The browser probe deliberately reports
+Chromium metrics as unavailable when no browser is installed; the same is true
+of Docker image/startup metrics when no Docker daemon is available.
 
-The other probes cover the control plane, the browser's current tmux attach
-path, cold startup, and the PTY primitive comparison:
+The async file listing probe creates isolated flat fixtures and measures the
+first paginated response while reporting the full directory scan count:
 
 ```bash
-node benchmarks/control-plane.mjs \
-  --base-url http://127.0.0.1:3111 --cwd "$tmp/workspace" \
-  --counts 0,10,50 --concurrency 1,10,50 --samples 10
-
-node benchmarks/tmux-path.mjs \
-  --base-url http://127.0.0.1:3111 --cwd "$tmp/workspace" \
-  --counts 1,5,10,25,50 --output-bytes 262144
-
-node benchmarks/startup.mjs --runs 5 --port 3121
-
-node benchmarks/pty-node.mjs --count 50 --hold-ms 5000
-go -C benchmarks/pty-go run . -count 50 -hold 5s
-rustc benchmarks/pty-rust.rs -O -o /tmp/projectclibox-pty-rust
-/tmp/projectclibox-pty-rust --count 50 --hold-ms 5000
+node benchmarks/rust-v2-files.mjs \
+  --base-url http://127.0.0.1:3111 \
+  --root "$tmp/workspace" \
+  --sizes 100,10000,100000 \
+  --samples 5
 ```
 
-`current.mjs` measures direct WebSocket-to-`node-pty` output. `tmux-path.mjs`
-measures the shipped browser flow: a fresh intermediary PTY receives the
-`tmux attach` command, then the probe command runs inside the tmux pane. Its
-command workload is sent to `/dev/null`, so its completion latency is not
-mistaken for terminal-renderer throughput.
+Binary cold-start-to-health is measured separately, without a Node/tsx
+wrapper:
 
-## What is intentionally not hidden
+```bash
+node benchmarks/rust-v2-startup.mjs --runs 5 --port 3221
+```
 
-Docker image size/startup requires a Docker daemon and browser LCP/INP,
-hydration, React rerender, xterm paint, and memory measurements require a
-Chromium/Playwright host. The harness reports those as unavailable when the
-tools are not installed. It never substitutes package-directory size for a
-Docker image measurement or server response time for browser paint time.
+## Baseline comparison
+
+`PERFORMANCE_AUDIT.md` records the measured parent-branch architecture:
+Next/tsx, intermediary `node-pty`, managed tmux sessions, synchronous file
+traversal, and live tmux enumeration. The implementation-bound parent probes
+were retired with that runtime; the audit and `RUST_V2_PERFORMANCE.md` retain
+the baseline and replacement evidence. Run the Rust harness for new numbers
+and record the exact command, commit, host, sample count, and warm-up policy
+with the report.

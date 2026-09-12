@@ -1,8 +1,18 @@
 {
-  "name": "cliweb-docker",
+  "name": "projectclibox-v2",
   "private": true,
   "scripts": {
-    "lint": "cd cliweb && npm run lint",
-    "test": "cd cliweb && npm test"
+    "build:web": "npm run build --prefix frontend",
+    "build:rust": "cargo build --release --workspace",
+    "build": "npm run build:web && npm run build:rust",
+    "test": "cargo test --workspace",
+    "check": "cargo check --workspace",
+    "benchmark:acceptance": "node benchmarks/rust-v2-acceptance.mjs",
+    "benchmark:rust": "node benchmarks/rust-v2.mjs",
+    "benchmark:files": "node benchmarks/rust-v2-files.mjs",
+    "benchmark:startup": "node benchmarks/rust-v2-startup.mjs"
+  },
+  "devDependencies": {
+    "ws": "^8.21.3"
   }
 }

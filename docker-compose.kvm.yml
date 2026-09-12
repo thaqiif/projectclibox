@@ -1,0 +1,6 @@
+services:
+  cliweb:
+    # Optional hardware virtualization passthrough. The host must expose
+    # /dev/kvm; the entrypoint grants the unprivileged `cliweb` user access.
+    devices:
+      - /dev/kvm:/dev/kvm
