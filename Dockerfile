@@ -8,6 +8,8 @@
 
 FROM node:22-trixie-slim
 
+# Intel iGPU (VA-API/QSV) + ffmpeg for hardware transcode on hosts with
+# /dev/dri (e.g. HD 620 via iHD driver). vainfo is kept for bring-up checks.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash \
@@ -16,11 +18,16 @@ RUN apt-get update \
         chromium \
         chromium-sandbox \
         curl \
+        ffmpeg \
         file \
         git \
         gosu \
+        intel-media-va-driver \
         jq \
         less \
+        libva-drm2 \
+        libva2 \
+        libvpl2 \
         openssh-client \
         procps \
         python3 \
@@ -31,6 +38,7 @@ RUN apt-get update \
         tmux \
         unzip \
         util-linux \
+        vainfo \
     && test -x /usr/bin/chromium \
     && test -u /usr/lib/chromium/chrome-sandbox \
     && rm -rf /var/lib/apt/lists/*

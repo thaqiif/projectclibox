@@ -132,7 +132,42 @@ ls -l /dev/kvm          # inside the container: crw-rw---- cliweb
 
 > On hosts that do not export `/dev/kvm` (macOS/Windows Docker Desktop, or a
 > VM without nested VT-x/AMD-V) the container will not start with this mapping.
-> Remove the `devices:` block in `docker-compose.yml` for those hosts.
+> Remove the `/dev/kvm` line in `docker-compose.yml` for those hosts.
+
+## Intel iGPU (VA-API/QSV ffmpeg transcode)
+
+The container maps the host's `/dev/dri` through and installs
+`ffmpeg` + `intel-media-va-driver` (iHD) + `libva` + `libvpl`, so web
+terminals can use hardware transcode without `--privileged`:
+
+```bash
+ls -l /dev/dri                    # inside: card0 + renderD128, group cliweb
+vainfo --display drm --device /dev/dri/renderD128
+ffmpeg -hide_banner -hwaccels     # expect vaapi qsv drm
+```
+
+The entrypoint `chgrp cliweb` + `chmod 660` each DRI node after the
+PUID/PGID remap, so the non-root `cliweb` user can open the GPU even when
+host GIDs (`video:44`, `render:992`) differ from the container. `group_add`
+is intentionally not used — the final `setpriv --init-groups` would drop it.
+
+HD 620-class capability: H264 encode + H264/HEVC/VP9 decode. `hevc_qsv`,
+`hevc_vaapi`, and VP9/AV1 encode are listed by ffmpeg but fail on this GPU;
+use `h264_qsv` / `h264_vaapi`:
+
+```bash
+ffmpeg -hide_banner -init_hw_device vaapi=va:/dev/dri/renderD128 \
+  -f lavfi -i testsrc=size=1280x720:rate=30:duration=5 \
+  -vf 'format=nv12,hwupload' -c:v h264_vaapi -f null -
+ffmpeg -hide_banner -init_hw_device qsv=qs:hw_any,child_device=/dev/dri/renderD128 \
+  -f lavfi -i testsrc=size=1280x720:rate=30:duration=5 \
+  -vf 'format=nv12,hwupload=extra_hw_frames=64' -c:v h264_qsv -f null -
+```
+
+> On hosts without `/dev/dri` remove the `/dev/dri` line in
+> `docker-compose.yml`. The entrypoint guards each node, but Docker fails
+> the deploy if the host path is missing. If headless Chromium crashes on
+> DRI, rerun that job with `--disable-gpu`.
 
 ## Fresh database
 
