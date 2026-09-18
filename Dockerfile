@@ -2,8 +2,9 @@
 #
 # The image contains the web UI and a useful, non-root shell environment. It
 # deliberately does not install an AI coding CLI, harness, autopilot workflow,
-# browser bundle, Docker client, or Docker socket. Install tools from the web
-# terminal as needed; user-local installs live in the persisted home volume.
+# browser automation framework, Docker client, or Docker socket. Install tools
+# from the web terminal as needed; user-local installs live in the persisted
+# home volume.
 
 FROM node:22-trixie-slim
 
@@ -12,6 +13,8 @@ RUN apt-get update \
         bash \
         build-essential \
         ca-certificates \
+        chromium \
+        chromium-sandbox \
         curl \
         file \
         git \
@@ -28,6 +31,8 @@ RUN apt-get update \
         tmux \
         unzip \
         util-linux \
+    && test -x /usr/bin/chromium \
+    && test -u /usr/lib/chromium/chrome-sandbox \
     && rm -rf /var/lib/apt/lists/*
 
 # nanobrew publishes verified architecture-specific Linux release tarballs.
@@ -90,6 +95,7 @@ ENV HOME=/home/cliweb \
     DB_PATH=/home/cliweb/.cliweb/cliweb.db \
     CLIWEB_NANOBREW_ROOT=/opt/nanobrew \
     CLIWEB_NANOBREW_BIN=/usr/local/bin/nb \
+    CHROMIUM_PATH=/usr/bin/chromium \
     NANOBREW_NO_TELEMETRY=1 \
     NODE_ENV=production \
     NPM_CONFIG_PREFIX=/home/cliweb/.local \

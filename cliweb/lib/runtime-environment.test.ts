@@ -9,6 +9,7 @@ test("builds one environment for persistent CLI installs", () => {
     NPM_CONFIG_PREFIX: "/home/cliweb/.local",
     PATH: "/usr/local/bin:/usr/bin:/bin",
     CLIWEB_NANOBREW_ROOT: "/opt/nanobrew",
+    CHROMIUM_PATH: "/usr/bin/chromium",
     SHELL: "/bin/bash",
   });
 
@@ -20,6 +21,7 @@ test("builds one environment for persistent CLI installs", () => {
   assert.equal(environment.NPM_CONFIG_USERCONFIG, "/home/cliweb/.npmrc");
   assert.equal(environment.PYTHONUSERBASE, "/home/cliweb/.local");
   assert.equal(environment.HOME, "/home/cliweb");
+  assert.equal(environment.CHROMIUM_PATH, "/usr/bin/chromium");
   assert.equal(environment.SHELL, "/bin/bash");
 });
 
@@ -44,6 +46,7 @@ test("passes the persistent environment into every new tmux session", () => {
       NPM_CONFIG_PREFIX: "/home/cliweb/.local",
       PATH: "/usr/local/bin:/usr/bin:/bin",
       CLIWEB_NANOBREW_ROOT: "/opt/nanobrew",
+      CHROMIUM_PATH: "/usr/bin/chromium",
       SHELL: "/bin/bash",
     }),
     [
@@ -59,6 +62,8 @@ test("passes the persistent environment into every new tmux session", () => {
       "PYTHONUSERBASE=/home/cliweb/.local",
       "-e",
       "CLIWEB_NANOBREW_ROOT=/opt/nanobrew",
+      "-e",
+      "CHROMIUM_PATH=/usr/bin/chromium",
       "-e",
       "SHELL=/bin/bash",
       "-e",

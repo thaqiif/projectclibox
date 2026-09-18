@@ -11,6 +11,7 @@ services:
       CLIWEB_PORT: 3011
       CLIWEB_NANOBREW_ROOT: /opt/nanobrew
       CLIWEB_NANOBREW_BIN: /usr/local/bin/nb
+      CHROMIUM_PATH: /usr/bin/chromium
       NANOBREW_NO_TELEMETRY: "1"
       LANG: C.UTF-8
       LC_ALL: C.UTF-8

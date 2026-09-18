@@ -67,10 +67,13 @@ export function tmuxSessionEnvironmentArgs(
     "NPM_CONFIG_USERCONFIG",
     "PYTHONUSERBASE",
     "CLIWEB_NANOBREW_ROOT",
+    "CHROMIUM_PATH",
     "SHELL",
     "USER",
     "LOGNAME",
-  ].flatMap((key) => ["-e", `${key}=${environment[key]}`]);
+  ]
+    .filter((key) => environment[key] !== undefined)
+    .flatMap((key) => ["-e", `${key}=${environment[key]}`]);
 }
 
 /**

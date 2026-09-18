@@ -33,12 +33,13 @@ controls.
   a terminal out of the sidebar opens it and gives the terminal somewhere to
   land.
 - A non-root runtime user with host-matched `PUID`/`PGID`.
-- Node/npm, Python/pip, git, SSH, tmux, ripgrep, jq, curl, and build tools.
+- Node/npm, Python/pip, git, SSH, tmux, ripgrep, jq, curl, build tools, and
+  the Debian Chromium CLI at `/usr/bin/chromium`.
 
 There are no preinstalled Claude, Codex, OpenCode, Command Code, harness
-profiles, autopilot files, browser bundle, Docker CLI, or Docker socket. If you
-want Claude (or another CLI), install it manually inside a terminal, for
-example:
+profiles, autopilot files, browser automation frameworks, Docker CLI, or Docker
+socket. If you want Claude (or another CLI), install it manually inside a
+terminal, for example:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
@@ -46,6 +47,35 @@ npm install -g @anthropic-ai/claude-code
 
 The UI always opens a plain shell and never auto-detects or launches installed
 CLIs.
+
+## Chromium CLI
+
+The image installs Debian's Chromium package and its sandbox helper with
+the fixed runtime path `/usr/bin/chromium`, then exports it as
+`CHROMIUM_PATH`. Debian resolves Chromium's runtime libraries as package
+dependencies, including the trixie `libglib2.0-0t64` transition package. The
+container's web process runs as the unprivileged `cliweb` user. Use the same
+user for ad-hoc commands instead of running Chromium as root:
+
+```bash
+# Confirm the image contains the expected Chromium binary and version.
+docker compose exec --user cliweb cliweb sh -lc '"$CHROMIUM_PATH" --version'
+
+# Render a page without a display and print its resulting HTML.
+docker compose exec --user cliweb cliweb sh -lc '"$CHROMIUM_PATH" --headless=new --disable-dev-shm-usage --dump-dom https://example.com'
+```
+
+`--headless=new` is required in this display-less container. CLI tools
+should point at `$CHROMIUM_PATH` (or the `chromium` command on `PATH`) rather
+than downloading a second browser bundle.
+`--disable-dev-shm-usage` is useful for pages that exceed Docker's default
+shared-memory allocation. Keep the Chromium sandbox enabled: run it as the
+unprivileged `cliweb` user and do not add `--no-sandbox`. Rebuild the image
+after changing the Dockerfile:
+
+```bash
+docker compose up -d --build
+```
 
 ## Persistence
 
