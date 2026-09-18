@@ -11,6 +11,7 @@ services:
       CLIWEB_PORT: 3011
       CLIWEB_NANOBREW_ROOT: /opt/nanobrew
       CLIWEB_NANOBREW_BIN: /usr/local/bin/nb
+      CHROMIUM_PATH: /usr/bin/chromium
       NANOBREW_NO_TELEMETRY: "1"
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
@@ -44,9 +45,14 @@ services:
           create_host_path: true
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces
 
-    # Pass the host's KVM device through so web terminals can use hardware
-    # virtualization (QEMU/KVM guests, Android emulators, microVMs, …). This
-    # requires /dev/kvm on the host; remove these lines on hosts that lack it.
-    # The entrypoint grants the unprivileged `cliweb` user access to the device.
+    # Pass host devices through so web terminals can use hardware features.
+    # /dev/kvm: hardware virtualization (QEMU/KVM guests, Android emulators,
+    # microVMs, …). Requires /dev/kvm on the host; remove this line on hosts
+    # that lack it.
+    # /dev/dri: Intel iGPU for ffmpeg VA-API/QSV transcode (H264 encode,
+    # H264/HEVC/VP9 decode on HD 620-class GPUs). Requires /dev/dri on the
+    # host; remove this line on hosts without an iGPU. The entrypoint grants
+    # the unprivileged `cliweb` user access to the devices.
     devices:
       - /dev/kvm:/dev/kvm
+      - /dev/dri:/dev/dri

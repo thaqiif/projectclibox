@@ -2,22 +2,32 @@
 #
 # The image contains the web UI and a useful, non-root shell environment. It
 # deliberately does not install an AI coding CLI, harness, autopilot workflow,
-# browser bundle, Docker client, or Docker socket. Install tools from the web
-# terminal as needed; user-local installs live in the persisted home volume.
+# browser automation framework, Docker client, or Docker socket. Install tools
+# from the web terminal as needed; user-local installs live in the persisted
+# home volume.
 
 FROM node:22-trixie-slim
 
+# Intel iGPU (VA-API/QSV) + ffmpeg for hardware transcode on hosts with
+# /dev/dri (e.g. HD 620 via iHD driver). vainfo is kept for bring-up checks.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash \
         build-essential \
         ca-certificates \
+        chromium \
+        chromium-sandbox \
         curl \
+        ffmpeg \
         file \
         git \
         gosu \
+        intel-media-va-driver \
         jq \
         less \
+        libva-drm2 \
+        libva2 \
+        libvpl2 \
         openssh-client \
         procps \
         python3 \
@@ -28,6 +38,9 @@ RUN apt-get update \
         tmux \
         unzip \
         util-linux \
+        vainfo \
+    && test -x /usr/bin/chromium \
+    && test -u /usr/lib/chromium/chrome-sandbox \
     && rm -rf /var/lib/apt/lists/*
 
 # nanobrew publishes verified architecture-specific Linux release tarballs.
@@ -90,6 +103,7 @@ ENV HOME=/home/cliweb \
     DB_PATH=/home/cliweb/.cliweb/cliweb.db \
     CLIWEB_NANOBREW_ROOT=/opt/nanobrew \
     CLIWEB_NANOBREW_BIN=/usr/local/bin/nb \
+    CHROMIUM_PATH=/usr/bin/chromium \
     NANOBREW_NO_TELEMETRY=1 \
     NODE_ENV=production \
     NPM_CONFIG_PREFIX=/home/cliweb/.local \
