@@ -14,6 +14,7 @@ import {
   Folder,
   Loader2,
   RefreshCw,
+  Check,
   Save,
   X,
 } from "lucide-react";
@@ -31,6 +32,8 @@ import type { FileNode } from "@/lib/file-utils";
 import { matchesFilter } from "@/lib/file-utils";
 import type { OpenFile } from "@/hooks/useFileEditor";
 import { FileOpsMenu } from "./TreeNodeActions";
+import { BulkActionBar } from "./BulkActionBar";
+import { clearSelection, toggleSelection } from "@/lib/file-bulk";
 import { fileRename, fileDelete } from "@/lib/file-ops";
 import { ListFilter } from "./ListFilter";
 import { UploadProgressBanner } from "./UploadProgressBanner";
@@ -875,6 +878,14 @@ function ListingBody({
   activePath,
 }: ListingBodyProps) {
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+  // Minimal multi-select wiring: checkbox per row, selection owned here and
+  // consumed by the floating BulkActionBar. Coordinator may lift this later.
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+
+  // Selection refers to paths in the listing; start fresh when navigating.
+  useEffect(() => {
+    setSelectedPaths(clearSelection());
+  }, [workingDirectory]);
 
   // Move node A into directory B via rename op (full destination path).
   const handleDropMove = useCallback(
@@ -979,8 +990,9 @@ function ListingBody({
   }
 
   return (
-    <div className="scrollbar-thin flex-1 overflow-y-auto">
-      <div className="py-1">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="scrollbar-thin flex-1 overflow-y-auto">
+        <div className="py-1">
         {files.map((node) => {
           const isDirectory = node.type === "directory";
           const isActive = activePath === node.path;
@@ -1029,6 +1041,27 @@ function ListingBody({
                 <span className="bg-primary absolute inset-y-0 left-0 w-0.5" />
               )}
 
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={selectedPaths.has(node.path)}
+                aria-label={`Select ${node.name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedPaths((prev) => toggleSelection(prev, node.path));
+                }}
+                className={cn(
+                  "flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border transition-opacity",
+                  selectedPaths.has(node.path)
+                    ? "border-primary bg-primary text-primary-foreground opacity-100"
+                    : "border-input opacity-0 hover:bg-accent group-hover/node:opacity-100"
+                )}
+              >
+                {selectedPaths.has(node.path) && (
+                  <Check className="h-2.5 w-2.5" />
+                )}
+              </button>
+
               <span className="flex-shrink-0">
                 {isDirectory ? (
                   <Folder className="text-muted-foreground h-3.5 w-3.5" />
@@ -1062,7 +1095,15 @@ function ListingBody({
             </div>
           );
         })}
+        </div>
       </div>
+
+      <BulkActionBar
+        selectedPaths={Array.from(selectedPaths)}
+        workingDirectory={workingDirectory}
+        onRefresh={onRefresh}
+        onClear={() => setSelectedPaths(clearSelection())}
+      />
     </div>
   );
 }
