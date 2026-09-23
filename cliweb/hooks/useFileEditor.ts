@@ -6,6 +6,12 @@ export interface OpenFile {
   content: string;
   currentContent: string;
   isBinary: boolean;
+  /**
+   * The server could not return the full file (size over the read limit).
+   * The content here is a placeholder note, never the document; saving it
+   * would destroy the real file, so saves are refused.
+   */
+  truncated: boolean;
   language: string;
   /**
    * Server mtime captured when the content was last read from (or written
@@ -114,6 +120,7 @@ export function useFileEditor(): UseFileEditorReturn {
                     ...f,
                     content: data.content,
                     isBinary: data.isBinary,
+                    truncated: data.truncated === true,
                     mtimeMs: typeof data.mtimeMs === "number" ? data.mtimeMs : null,
                   }
                 : f
@@ -145,6 +152,7 @@ export function useFileEditor(): UseFileEditorReturn {
           content: data.content,
           currentContent: data.content,
           isBinary: data.isBinary,
+          truncated: data.truncated === true,
           mtimeMs: typeof data.mtimeMs === "number" ? data.mtimeMs : null,
           language: getLanguageFromExtension(ext),
         };
@@ -199,8 +207,9 @@ export function useFileEditor(): UseFileEditorReturn {
         setSaveError(message);
         return { ok: false, error: message };
       }
-      if (file.isBinary) {
-        const message = "Cannot save binary files";
+      if (file.isBinary || file.truncated) {
+        const message =
+          "This file is binary or too large to edit and cannot be saved. Use download instead.";
         setSaveError(message);
         return { ok: false, error: message };
       }
@@ -318,6 +327,7 @@ export function useFileEditor(): UseFileEditorReturn {
                   content: data.content,
                   currentContent: data.content,
                   isBinary: data.isBinary,
+                  truncated: data.truncated === true,
                   mtimeMs:
                     typeof data.mtimeMs === "number" ? data.mtimeMs : null,
                 }
