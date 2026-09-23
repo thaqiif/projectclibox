@@ -354,6 +354,43 @@ test("zip: archives a small tree successfully", async () => {
   assert.equal(buf.charCodeAt(1), 0x4b);
 });
 
+test("zip: over-depth tree returns 413 without hanging", async () => {
+  mkdirSync(`${WS}/ziptest`, { recursive: true });
+  let deep = `${WS}/ziptest`;
+  for (let i = 0; i < 25; i++) {
+    deep = join(deep, `d${i}`); // real nesting, not a long sibling name
+    mkdirSync(deep, { recursive: true });
+    writeFileSync(join(deep, "f.txt"), "x");
+  }
+  const res = await zipGet(
+    getReq(`http://x/api/files/zip?path=${encodeURIComponent(`${WS}/ziptest`)}`)
+  );
+  const s = await status(res);
+  assert.equal(s, 413);
+});
+
+// --- unicode trash paths ------------------------------------------------------
+
+test("delete: unicode filename trashes, restores with meta intact", async () => {
+  const weird = `${WS}/中文-#%-emoji-🚀.txt`;
+  writeFileSync(weird, "unicode\n");
+  const res = await opsPost(
+    jsonReq("http://x/api/files/ops", { op: "delete", path: weird })
+  );
+  assert.equal(await status(res), 200);
+  const body = await data(res);
+  assert.ok(existsSync(body.trashPath as string), "trashed file exists");
+  const meta = JSON.parse(
+    readFileSync(`${body.trashPath}.meta.json`, "utf8")
+  );
+  assert.equal(meta.origPath, weird);
+  const rres = await opsPost(
+    jsonReq("http://x/api/files/ops", { op: "restore", path: body.trashPath })
+  );
+  assert.equal(await status(rres), 200);
+  assert.equal(readFileSync(weird, "utf8"), "unicode\n");
+});
+
 // --- createFile race ---------------------------------------------------------
 
 test("createFile: two concurrent creates -> one 200 and one 409", async () => {
