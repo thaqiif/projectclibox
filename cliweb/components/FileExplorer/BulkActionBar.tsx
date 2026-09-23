@@ -50,9 +50,14 @@ export function BulkActionBar({
   const [running, setRunning] = useState(false);
 
   const count = selectedPaths.length;
-  // Browsing into the current directory itself is a no-op move, and choosing
-  // any selected directory would nest items inside themselves; both blocked.
-  const blockedDirs = [workingDirectory, ...selectedPaths];
+  // Product rule: the ONLY blocked bulk destination is the current directory
+  // itself (moving items into the folder they are already listed from is at
+  // best a no-op / conflict). Everything else — the parent, sibling folders,
+  // subfolders — must stay pickable. Only an exact match is blocked; per-item
+  // cycle checks (a selected directory moved into itself) stay on the server.
+  const blockedDirs = [workingDirectory];
+  const blockedMessage =
+    "The current directory is the only destination that is blocked: pick any other folder.";
 
   const report = (verb: string, result: BulkOpResult) => {
     if (result.succeeded.length > 0) {
@@ -154,6 +159,8 @@ export function BulkActionBar({
         itemLabel={`${count} selected ${noun}`}
         startDir={workingDirectory}
         blockedDirs={blockedDirs}
+        blockExact
+        blockedMessage={blockedMessage}
         busy={running}
         onChoose={(dir) => void runBulkOp(dialog === "copy" ? "copy" : "move", dir)}
         onCancel={() => setDialog(null)}

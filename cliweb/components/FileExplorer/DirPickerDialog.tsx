@@ -34,6 +34,21 @@ export interface DirPickerDialogProps {
    * (e.g. the source dirs when moving a directory). Optional.
    */
   blockedDirs?: readonly string[];
+  /**
+   * When true, a blockedDirs entry blocks only an exact match (the directory
+   * itself), not its whole subtree. Bulk flows use this so the parent and
+   * sibling folders stay pickable: per the product rule the ONLY forbidden
+   * bulk destination is the current directory itself. Subtree-level cycle
+   * safety stays on the server, which rejects moving a directory into itself
+   * or a descendant per item.
+   */
+  blockExact?: boolean;
+  /**
+   * Override the hint shown when the picked directory is blocked. Bulk flows
+   * pass a message that does not interpolate the synthetic count label
+   * ("4 selected items") into a path-like sentence.
+   */
+  blockedMessage?: string;
   /** Disable Choose while the resulting operation is in flight. */
   busy?: boolean;
   onChoose: (dir: string) => void;
@@ -62,6 +77,8 @@ export function DirPickerDialog({
   itemLabel,
   startDir,
   blockedDirs,
+  blockExact = false,
+  blockedMessage,
   busy = false,
   onChoose,
   onCancel,
@@ -181,7 +198,8 @@ export function DirPickerDialog({
         </div>
         {isBlocked && (
           <p className="text-destructive text-xs">
-            Cannot {mode} &ldquo;{itemLabel}&rdquo; into itself or its own subtree
+            {blockedMessage ??
+              `Cannot ${mode} “${itemLabel}” into itself or its own subtree`}
           </p>
         )}
 

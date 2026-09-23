@@ -13,6 +13,7 @@ type FileOp =
   | "rename"
   | "move"
   | "copy"
+  | "copyDir"
   | "delete"
   | "restore"
   | "purge";
@@ -91,6 +92,18 @@ export function fileCopy(
   options: FileOpOptions = {}
 ): Promise<FileOpResponse> {
   return fileOp("copy", path, { to: toDir, force: options.force });
+}
+
+/**
+ * Recursively copy a DIRECTORY into a destination directory (keeps its
+ * basename). Caps on the server: depth 20, 200MB total, symlinks skipped.
+ */
+export function fileCopyDir(
+  path: string,
+  toDir: string,
+  options: FileOpOptions = {}
+): Promise<FileOpResponse> {
+  return fileOp("copyDir", path, { to: toDir, force: options.force });
 }
 
 /**

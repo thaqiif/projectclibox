@@ -4,7 +4,7 @@
  * The listing (ListingBody in FileExplorer/index.tsx) wires these into its
  * rows; BulkActionBar consumes the selection and calls the bulk op helpers.
  */
-import { fileDelete, fileMove, fileCopy } from "./file-ops";
+import { fileDelete, fileMove, fileCopy, fileCopyDir } from "./file-ops";
 
 /** Result of a per-item loop: successes by path, failures with error text. */
 export interface BulkOpResult {
@@ -85,7 +85,13 @@ export function bulkDelete(paths: readonly string[]): Promise<BulkOpResult> {
   return runBulk(paths, (path) => fileDelete(path));
 }
 
-/** Move every selected path into destination directory `toDir`. */
+/**
+ * Move every selected path into destination directory `toDir`.
+ * No blanket subtree pre-check is applied here: the only destination the UI
+ * forbids is the directory the listing was made from, and real cycle errors
+ * (a selected directory moved into itself or a descendant) are caught per
+ * item by the server, so a single bad path stays a single failed item.
+ */
 export function bulkMove(
   paths: readonly string[],
   toDir: string
@@ -93,12 +99,30 @@ export function bulkMove(
   return runBulk(paths, (path) => fileMove(path, toDir));
 }
 
-/** Copy every selected path into destination directory `toDir`. */
-export function bulkCopy(
+/**
+ * Copy every selected path into destination directory `toDir`. Plain `copy`
+ * op handles files; when the server reports the source is a folder (copy of
+ * folders not supported) the item falls back to the recursive copyDir op so
+ * copying a mixed selection succeeds item by item.
+ */
+export async function bulkCopy(
   paths: readonly string[],
   toDir: string
 ): Promise<BulkOpResult> {
-  return runBulk(paths, (path) => fileCopy(path, toDir));
+  return runBulk(paths, async (path) => {
+    try {
+      await fileCopy(path, toDir);
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        /copy of folders not supported/i.test(err.message)
+      ) {
+        await fileCopyDir(path, toDir);
+        return;
+      }
+      throw err;
+    }
+  });
 }
 
 /** Human-readable summary for a toast/alert after a bulk operation. */
