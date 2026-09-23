@@ -28,9 +28,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { FileNode } from "@/lib/file-utils";
+import { matchesFilter } from "@/lib/file-utils";
 import type { OpenFile } from "@/hooks/useFileEditor";
 import { FileOpsMenu } from "./TreeNodeActions";
 import { fileRename, fileDelete } from "@/lib/file-ops";
+import { ListFilter } from "./ListFilter";
+import { UploadProgressBanner } from "./UploadProgressBanner";
+import { SaveConflictDialog } from "./SaveConflictDialog";
 
 // The CodeMirror stack is heavy and only loads once a file is actually
 // opened, not when the explorer pane first appears.
@@ -92,6 +96,14 @@ export function FileExplorer({
     setRefreshKey((k) => k + 1);
   }, []);
 
+  // FILTER_INTEGRATION: basename substring filter over the listing
+  const [filter, setFilter] = useState("");
+  const filteredFiles = useMemo(
+    () => (filter.trim() ? files.filter((n) => matchesFilter(n, filter)) : files),
+    [files, filter]
+  );
+
+
   // Breadcrumb segments for the current dir (root first, null path = root).
   const breadcrumbs = useMemo(() => {
     const root = workingDirectory.replace(/\/+$/, "");
@@ -121,9 +133,27 @@ export function FileExplorer({
     setActiveFile,
     updateContent,
     saveFile,
+    conflictFilePath,
+    conflictServerMtimeMs,
+    reloadConflictedFile,
+    dismissConflict,
     isDirty,
     getFile,
   } = fileEditor;
+
+  const handleConflictOverwrite = useCallback(async () => {
+    if (conflictFilePath) {
+      await saveFile(conflictFilePath, { force: true });
+      dismissConflict();
+    }
+  }, [conflictFilePath, saveFile, dismissConflict]);
+
+  const handleConflictReload = useCallback(async () => {
+    if (conflictFilePath) {
+      await reloadConflictedFile(conflictFilePath);
+      dismissConflict();
+    }
+  }, [conflictFilePath, reloadConflictedFile, dismissConflict]);
 
   const effectiveDir = currentDir ?? workingDirectory;
 
@@ -246,7 +276,7 @@ export function FileExplorer({
   if (isMobile) {
     return (
       <MobileFileExplorer
-        files={files}
+        files={filteredFiles}
         loading={loading}
         error={error}
         fileLoading={fileLoading}
@@ -276,6 +306,9 @@ export function FileExplorer({
         onSaveAndClose={handleSaveAndClose}
         saveError={visibleSaveError}
         onDismissSaveError={() => setDismissedSaveErrorFor(activeFilePath)}
+        conflictFilePath={conflictFilePath}
+        filter={filter}
+        onFilterChange={setFilter}
       />
     );
   }
@@ -283,7 +316,7 @@ export function FileExplorer({
   // Desktop layout: side-by-side tree + editor
   return (
     <DesktopFileExplorer
-      files={files}
+      files={filteredFiles}
       loading={loading}
       error={error}
       fileLoading={fileLoading}
@@ -312,6 +345,12 @@ export function FileExplorer({
       onSaveAndClose={handleSaveAndClose}
       saveError={visibleSaveError}
       onDismissSaveError={() => setDismissedSaveErrorFor(activeFilePath)}
+      conflictFilePath={conflictFilePath}
+      onConflictOverwrite={handleConflictOverwrite}
+      onConflictReload={handleConflictReload}
+      onDismissConflict={dismissConflict}
+      filter={filter}
+      onFilterChange={setFilter}
     />
   );
 }
@@ -347,6 +386,12 @@ interface DesktopFileExplorerProps {
   onSaveAndClose: () => void;
   saveError: string | null;
   onDismissSaveError: () => void;
+  conflictFilePath?: string | null;
+  onConflictOverwrite?: () => Promise<void> | void;
+  onConflictReload?: () => Promise<void> | void;
+  onDismissConflict?: () => void;
+  filter?: string;
+  onFilterChange?: (value: string) => void;
 }
 
 function DesktopFileExplorer({
@@ -379,6 +424,12 @@ function DesktopFileExplorer({
   onSaveAndClose,
   saveError,
   onDismissSaveError,
+  conflictFilePath,
+  onConflictOverwrite,
+  onConflictReload,
+  onDismissConflict,
+  filter,
+  onFilterChange,
 }: DesktopFileExplorerProps) {
   const [treeWidth, setTreeWidth] = useState(280);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -436,6 +487,12 @@ function DesktopFileExplorer({
             onRefresh={onRefresh}
           />
         </div>
+        {/* FILTER_INTEGRATION: filter input above listing */}
+        {onFilterChange && (
+          <div className="shrink-0 px-2 py-1">
+            <ListFilter value={filter ?? ""} onChange={onFilterChange} />
+          </div>
+        )}
         <ListingBody
           files={files}
           loading={loading}
@@ -446,6 +503,8 @@ function DesktopFileExplorer({
           onRefresh={onRefresh}
           activePath={activeFilePath ?? undefined}
         />
+        {/* UPLOAD_PROGRESS_INTEGRATION: aggregate upload progress */}
+        <UploadProgressBanner className="absolute bottom-2 left-2 right-2 z-20" />
       </div>
 
       {/* Resize handle */}
@@ -512,6 +571,16 @@ function DesktopFileExplorer({
         onDiscard={onConfirmClose}
         onSave={onSaveAndClose}
       />
+      {/* Save conflict dialog */}
+      {conflictFilePath && onConflictOverwrite && onConflictReload && onDismissConflict && (
+        <SaveConflictDialog
+          open
+          fileName={conflictFilePath.split("/").pop() || conflictFilePath}
+          onOverwrite={onConflictOverwrite}
+          onReload={onConflictReload}
+          onCancel={onDismissConflict}
+        />
+      )}
     </div>
   );
 }
@@ -551,6 +620,12 @@ function MobileFileExplorer({
   onSaveAndClose,
   saveError,
   onDismissSaveError,
+  conflictFilePath,
+  onConflictOverwrite,
+  onConflictReload,
+  onDismissConflict,
+  filter,
+  onFilterChange,
 }: MobileFileExplorerProps) {
   // Show editor when a file is active
   if (activeFile) {
@@ -625,6 +700,16 @@ function MobileFileExplorer({
           onDiscard={onConfirmClose}
           onSave={onSaveAndClose}
         />
+        {/* Save conflict dialog */}
+        {conflictFilePath && onConflictOverwrite && onConflictReload && onDismissConflict && (
+          <SaveConflictDialog
+            open
+            fileName={conflictFilePath.split("/").pop() || conflictFilePath}
+            onOverwrite={onConflictOverwrite}
+            onReload={onConflictReload}
+            onCancel={onDismissConflict}
+          />
+        )}
       </div>
     );
   }
@@ -655,6 +740,13 @@ function MobileFileExplorer({
         </div>
       </div>
 
+      {/* FILTER_INTEGRATION: filter input above listing */}
+      {onFilterChange && (
+        <div className="shrink-0 px-2 py-1">
+          <ListFilter value={filter ?? ""} onChange={onFilterChange} />
+        </div>
+      )}
+
       <ListingBody
         files={files}
         loading={loading}
@@ -671,6 +763,8 @@ function MobileFileExplorer({
           <Loader2 className="text-primary h-6 w-6 animate-spin" />
         </div>
       )}
+      {/* UPLOAD_PROGRESS_INTEGRATION: aggregate upload progress */}
+      <UploadProgressBanner className="absolute bottom-2 left-2 right-2 z-20" />
     </div>
   );
 }
