@@ -6,10 +6,13 @@ import {
   rmSync,
   writeFileSync,
   statSync,
+  lstatSync,
+  readdirSync,
   readFileSync,
 } from "fs";
 import { resolve, dirname, basename, join } from "path";
 import { guardJsonSameOrigin } from "@/lib/route-guards";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 
 /**
  * Trash directory for "soft" deletes: deleted items are moved here instead of
@@ -70,8 +73,75 @@ function uniqueTrashPath(origPath: string): string {
 }
 
 /**
+ * copyDir caps: guard against runaway recursion and unbounded size.
+ * Depth counts levels below the copied root; the total byte budget counts
+ * regular file bytes (symlinks are skipped, not followed).
+ */
+const COPY_DIR_MAX_DEPTH = 20;
+const COPY_DIR_MAX_TOTAL_BYTES = MAX_UPLOAD_BYTES; // 200MB, matches upload cap
+
+interface CopyBudget {
+  bytes: number;
+}
+
+function copyLimitError(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code });
+}
+
+/**
+ * Recursively copy directory `src` to `dest` synchronously.
+ * - Creates `dest` (and missing parents) with mkdirSync recursive.
+ * - Skips symlinks (lstat, never follow) and other non-regular entries.
+ * - Throws ECOPYDEPTH past COPY_DIR_MAX_DEPTH, ECOPYBYTES past
+ *   COPY_DIR_MAX_TOTAL_BYTES cumulative file bytes.
+ */
+function copyDirRecursive(
+  src: string,
+  dest: string,
+  depth: number,
+  budget: CopyBudget
+): void {
+  if (depth > COPY_DIR_MAX_DEPTH) {
+    throw copyLimitError(
+      "ECOPYDEPTH",
+      `Directory nesting exceeds the copy depth limit (${COPY_DIR_MAX_DEPTH})`
+    );
+  }
+  const st = lstatSync(src);
+  if (st.isSymbolicLink()) {
+    return; // skip symlinks, do not follow
+  }
+  if (st.isFile()) {
+    budget.bytes += st.size;
+    if (budget.bytes > COPY_DIR_MAX_TOTAL_BYTES) {
+      throw copyLimitError(
+        "ECOPYBYTES",
+        `Copy exceeds the total size limit of ${Math.round(
+          COPY_DIR_MAX_TOTAL_BYTES / (1024 * 1024)
+        )}MB`
+      );
+    }
+    copyFileSync(src, dest);
+    return;
+  }
+  if (st.isDirectory()) {
+    mkdirSync(dest, { recursive: true });
+    for (const entry of readdirSync(src)) {
+      copyDirRecursive(join(src, entry), join(dest, entry), depth + 1, budget);
+    }
+    return;
+  }
+  // FIFOs, sockets, devices etc. are skipped
+}
+
+/**
  * POST /api/files/ops
- * JSON body: { op: "mkdir" | "createFile" | "rename" | "move" | "copy" | "delete" | "restore" | "purge", path: string, to?: string, force?: boolean }
+ * JSON body: { op: "mkdir" | "createFile" | "rename" | "move" | "copy" | "copyDir" | "delete" | "restore" | "purge", path: string, to?: string, force?: boolean }
+ *
+ * copyDir: recursive directory copy. "to" is a destination directory; the
+ * source basename is joined onto it. 409 if the destination exists unless
+ * force. Refuses to copy a directory into itself. Caps: depth 20, 200MB
+ * total file bytes, symlinks skipped.
  *
  * delete: move the target into ~/.cliweb-trash/ (soft delete, returns trashPath).
  * restore: { path: trashPath, to?: original override } move it back to its
@@ -106,7 +176,17 @@ export async function POST(request: NextRequest) {
   }
 
   if (
-    !["mkdir", "createFile", "rename", "move", "copy", "delete", "restore", "purge"].includes(op)
+    ![
+      "mkdir",
+      "createFile",
+      "rename",
+      "move",
+      "copy",
+      "copyDir",
+      "delete",
+      "restore",
+      "purge",
+    ].includes(op)
   ) {
     return NextResponse.json(
       { error: `Unsupported op: ${op}` },
@@ -141,6 +221,7 @@ export async function POST(request: NextRequest) {
     op === "rename" ||
     op === "move" ||
     op === "copy" ||
+    op === "copyDir" ||
     (op === "restore" && rawTo !== undefined)
   ) {
     if (!rawTo) {
@@ -156,9 +237,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    if (op === "move" || op === "copy") {
-      // For move/copy, "to" is a destination directory and the source
-      // basename is joined onto it.
+    if (op === "move" || op === "copy" || op === "copyDir") {
+      // For move/copy/copyDir, "to" is a destination directory and the
+      // source basename is joined onto it.
       if (!existsSync(to)) {
         return NextResponse.json(
           { error: "Destination directory does not exist" },
@@ -276,15 +357,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, restoredTo: target });
     }
 
-    // purge: permanently remove a trashed item (used by empty-trash later)
-    try {
-      statSync(path);
-    } catch {
-      return NextResponse.json({ error: "Path does not exist" }, { status: 404 });
+    if (op === "copyDir") {
+      const srcStat = (() => {
+        try {
+          return statSync(path);
+        } catch {
+          return null;
+        }
+      })();
+      if (!srcStat) {
+        return NextResponse.json(
+          { error: "Source path does not exist" },
+          { status: 404 }
+        );
+      }
+      if (!srcStat.isDirectory()) {
+        return NextResponse.json(
+          { error: "copyDir requires a directory source" },
+          { status: 400 }
+        );
+      }
+      if (!force && existsSync(to!)) {
+        return NextResponse.json(
+          { error: "Destination already exists" },
+          { status: 409 }
+        );
+      }
+      if (to === path || to!.startsWith(path + "/")) {
+        return NextResponse.json(
+          { error: "Cannot copy a directory into itself" },
+          { status: 400 }
+        );
+      }
+      copyDirRecursive(path, to!, 0, { bytes: 0 });
+      return NextResponse.json({ ok: true });
     }
-    rmSync(path, { recursive: true, force: false });
-    rmSync(metaPathFor(path), { force: true });
-    return NextResponse.json({ ok: true });
+
+    if (op === "purge") {
+      // purge: permanently remove a trashed item (used by empty-trash later)
+      try {
+        statSync(path);
+      } catch {
+        return NextResponse.json(
+          { error: "Path does not exist" },
+          { status: 404 }
+        );
+      }
+      rmSync(path, { recursive: true, force: false });
+      rmSync(metaPathFor(path), { force: true });
+      return NextResponse.json({ ok: true });
+    }
 
     // delete: soft delete -> move into the trash directory instead of removal
     try {
@@ -328,6 +450,12 @@ export async function POST(request: NextRequest) {
         { error: "Permission denied" },
         { status: 403 }
       );
+    }
+    if (code === "ECOPYDEPTH") {
+      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+    }
+    if (code === "ECOPYBYTES") {
+      return NextResponse.json({ error: (error as Error).message }, { status: 413 });
     }
     return NextResponse.json(
       { error: "Operation failed" },
