@@ -215,7 +215,10 @@ the same repo, e.g. two Coolify applications). Differences from production:
   completely separate.
 - Workspaces: `./workspaces-test` (override with `WORKSPACE_DIR`), so project
   folders are separate too.
-- Host port: `3012` (override with `HOST_PORT`); production stays on `3011`.
+- Host port: `3012` (override with `TEST_HOST_PORT`, bind with
+  `TEST_HOST_BIND`); production stays on `3011`. The `TEST_` prefix means a
+  `.env` that sets `HOST_PORT=3011` for production cannot make the test
+  stack collide with it.
 - `CLIWEB_PROFILE=test`, so app state lives under `~/.cliweb-test/` inside
   its own home (redundant with the separate home, but harmless).
 - Tailscale state: `/var/lib/cliweb-tailscale-test`, so the two deployments

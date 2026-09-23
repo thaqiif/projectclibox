@@ -41,9 +41,11 @@ services:
       PIP_USER: "1"
       PYTHONUSERBASE: /home/cliweb/.local
     ports:
-      # Test port: 3012 host-side. Set HOST_BIND=0.0.0.0 only when the test UI
-      # should be reachable from other devices.
-      - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3012}:3011"
+      # Test port: 3012 host-side, via TEST_* variables so a shared .env that
+      # already sets HOST_PORT=3011 for production cannot collide. Set
+      # TEST_HOST_BIND=0.0.0.0 only when the test UI should be reachable from
+      # other devices.
+      - "${TEST_HOST_BIND:-127.0.0.1}:${TEST_HOST_PORT:-3012}:3011"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
