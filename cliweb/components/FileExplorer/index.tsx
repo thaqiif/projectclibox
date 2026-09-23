@@ -14,6 +14,7 @@ import {
   Loader2,
   RefreshCw,
   Save,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,7 @@ export function FileExplorer({
     activeFilePath,
     loading: fileLoading,
     saving,
+    saveError,
     openFile,
     closeFile,
     setActiveFile,
@@ -190,6 +192,16 @@ export function FileExplorer({
 
   const activeFile = activeFilePath ? getFile(activeFilePath) : undefined;
 
+  // Only show the save error for the file the user failed to save; switching
+  // files hides it again.
+  const [dismissedSaveErrorFor, setDismissedSaveErrorFor] = useState<
+    string | null
+  >(null);
+  const visibleSaveError =
+    activeFilePath && saveError !== null && dismissedSaveErrorFor !== activeFilePath
+      ? saveError
+      : null;
+
   // Loading state before hydration
   if (!isHydrated) {
     return (
@@ -229,6 +241,8 @@ export function FileExplorer({
         onCancelClose={() => setPendingClose(null)}
         onConfirmClose={handleConfirmClose}
         onSaveAndClose={handleSaveAndClose}
+        saveError={visibleSaveError}
+        onDismissSaveError={() => setDismissedSaveErrorFor(activeFilePath)}
       />
     );
   }
@@ -261,6 +275,8 @@ export function FileExplorer({
       onCancelClose={() => setPendingClose(null)}
       onConfirmClose={handleConfirmClose}
       onSaveAndClose={handleSaveAndClose}
+      saveError={visibleSaveError}
+      onDismissSaveError={() => setDismissedSaveErrorFor(activeFilePath)}
     />
   );
 }
@@ -292,6 +308,8 @@ interface DesktopFileExplorerProps {
   onCancelClose: () => void;
   onConfirmClose: () => void;
   onSaveAndClose: () => void;
+  saveError: string | null;
+  onDismissSaveError: () => void;
 }
 
 function DesktopFileExplorer({
@@ -320,6 +338,8 @@ function DesktopFileExplorer({
   onCancelClose,
   onConfirmClose,
   onSaveAndClose,
+  saveError,
+  onDismissSaveError,
 }: DesktopFileExplorerProps) {
   const [treeWidth, setTreeWidth] = useState(280);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -410,6 +430,11 @@ function DesktopFileExplorer({
           />
         )}
 
+        {/* Save error banner */}
+        {saveError && (
+          <SaveErrorBanner message={saveError} onDismiss={onDismissSaveError} />
+        )}
+
         {/* Editor or empty state */}
         <div className="min-h-0 flex-1 overflow-hidden">
           {fileLoading ? (
@@ -483,6 +508,8 @@ function MobileFileExplorer({
   onCancelClose,
   onConfirmClose,
   onSaveAndClose,
+  saveError,
+  onDismissSaveError,
 }: MobileFileExplorerProps) {
   // Show editor when a file is active
   if (activeFile) {
@@ -522,6 +549,11 @@ function MobileFileExplorer({
             </Button>
           )}
         </div>
+
+        {/* Save error banner */}
+        {saveError && (
+          <SaveErrorBanner message={saveError} onDismiss={onDismissSaveError} />
+        )}
 
         {/* Editor */}
         <div className="min-h-0 flex-1 overflow-hidden">
@@ -763,6 +795,32 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+// Dismissible inline banner for a failed save. No toast lib: a small inline
+// error strip in the editor header area.
+interface SaveErrorBannerProps {
+  message: string;
+  onDismiss: () => void;
+}
+
+function SaveErrorBanner({ message, onDismiss }: SaveErrorBannerProps) {
+  return (
+    <div
+      role="alert"
+      className="bg-destructive/10 text-destructive ui-meta flex items-center gap-2 border-b border-b-destructive/20 px-3 py-1.5"
+    >
+      <span className="min-w-0 flex-1 truncate">{message}</span>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss save error"
+        className="text-destructive/80 hover:text-destructive flex-shrink-0 cursor-pointer"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
 }
 
 // Unsaved changes confirmation dialog
