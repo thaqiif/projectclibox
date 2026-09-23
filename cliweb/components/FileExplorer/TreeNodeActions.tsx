@@ -230,7 +230,7 @@ export function FileOpsMenu({ node, workingDirectory, onDone }: FileOpsMenuProps
           >
             <Trash2 className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="max-w-[40ch] truncate text-sm">
-              Moved "{trashUndo.name}" to trash
+              Moved &ldquo;{trashUndo.name}&rdquo; to trash
             </span>
             <button
               type="button"

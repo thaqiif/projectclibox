@@ -883,9 +883,12 @@ function ListingBody({
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
 
   // Selection refers to paths in the listing; start fresh when navigating.
-  useEffect(() => {
+  // Derived-reset pattern: adjust state during render instead of an effect.
+  const [prevWorkingDir, setPrevWorkingDir] = useState(workingDirectory);
+  if (prevWorkingDir !== workingDirectory) {
+    setPrevWorkingDir(workingDirectory);
     setSelectedPaths(clearSelection());
-  }, [workingDirectory]);
+  }
 
   // Move node A into directory B via rename op (full destination path).
   const handleDropMove = useCallback(
