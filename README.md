@@ -204,6 +204,28 @@ The terminal registry survives restarts, but running processes do not: Docker
 stopping a container stops its tmux server. Stopped terminals reappear in the
 sidebar and can be reopened in their previous folder.
 
+## Test deployment
+
+`docker-compose.test.yml` runs a second, fully isolated copy alongside
+production (handy when the production app and a test app are deployed from
+the same repo, e.g. two Coolify applications). Differences from production:
+
+- Persisted home: `/home/cliweb-test` on the host (production uses
+  `/home/cliweb`), so settings, database, trash, and installed tools are
+  completely separate.
+- Workspaces: `./workspaces-test` (override with `WORKSPACE_DIR`), so project
+  folders are separate too.
+- Host port: `3012` (override with `HOST_PORT`); production stays on `3011`.
+- `CLIWEB_PROFILE=test`, so app state lives under `~/.cliweb-test/` inside
+  its own home (redundant with the separate home, but harmless).
+- Tailscale state: `/var/lib/cliweb-tailscale-test`, so the two deployments
+  hold separate tailnet identities.
+
+Because every persisted path is hardcoded in this file, no environment
+variables are required: point the second Coolify application at this compose
+file and deploy. The startup ownership guard (`.deployment-owner`) is still
+satisfied, since each deployment now chowns its own home only.
+
 ## Configuration
 
 See [.env.example](.env.example) for the small set of supported settings:

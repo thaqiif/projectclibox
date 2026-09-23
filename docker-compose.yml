@@ -33,12 +33,8 @@ services:
       # CLIWeb call APIs from sibling containers through their host ports.
       - "host.docker.internal:host-gateway"
     volumes:
-      # Per-deployment host paths via env vars (same pattern as WORKSPACE_DIR,
-      # which Coolify already accepts). Set CLIWEB_HOME_DIR to a different
-      # absolute host path per Coolify app so production and test get their
-      # own persisted home.
-      - ${CLIWEB_HOME_DIR:-/home/cliweb}:/home/cliweb
-      - ${CLIWEB_HOME_DIR:-/home/cliweb}/nanobrew:/opt/nanobrew
+      - /home/cliweb:/home/cliweb
+      - /home/cliweb/nanobrew:/opt/nanobrew
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces
 
     # Pass host devices through so web terminals can use hardware features.
