@@ -1,12 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mkdirSync, renameSync, rmSync, writeFileSync, statSync } from "fs";
-import { resolve, dirname } from "path";
+import {
+  copyFileSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+  statSync,
+} from "fs";
+import { resolve, dirname, basename } from "path";
+
+/**
+ * Minimal same-origin guard: allows requests with no Origin/Referer
+ * (same-origin fetches may omit them) and blocks cross-site origins.
+ * Local replacement until cliweb/lib/route-guards.ts lands.
+ */
+export function checkSameOrigin(request: NextRequest): boolean {
+  const origin = request.headers.get("origin");
+  const referer = request.headers.get("referer");
+  if (!origin && !referer) return true;
+
+  const host = request.headers.get("host");
+  if (!host) return false;
+
+  try {
+    if (origin) {
+      return new URL(origin).host === host;
+    }
+    return new URL(referer!).host === host;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * POST /api/files/ops
- * JSON body: { op: "mkdir" | "createFile" | "rename" | "delete", path: string, to?: string, force?: boolean }
+ * JSON body: { op: "mkdir" | "createFile" | "rename" | "move" | "copy" | "delete", path: string, to?: string, force?: boolean }
  */
 export async function POST(request: NextRequest) {
+  if (!checkSameOrigin(request)) {
+    return NextResponse.json({ error: "Cross-origin request rejected" }, { status: 403 });
+  }
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  }
+
   let body: {
     op?: string;
     path?: string;
@@ -30,7 +68,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!["mkdir", "createFile", "rename", "delete"].includes(op)) {
+  if (!["mkdir", "createFile", "rename", "move", "copy", "delete"].includes(op)) {
     return NextResponse.json(
       { error: `Unsupported op: ${op}` },
       { status: 400 }
@@ -60,10 +98,10 @@ export async function POST(request: NextRequest) {
   }
 
   let to: string | undefined;
-  if (op === "rename") {
+  if (op === "rename" || op === "move" || op === "copy") {
     if (!rawTo) {
       return NextResponse.json(
-        { error: "to is required for rename" },
+        { error: `to is required for ${op}` },
         { status: 400 }
       );
     }
@@ -73,6 +111,23 @@ export async function POST(request: NextRequest) {
         { error: "Invalid destination path" },
         { status: 400 }
       );
+    }
+    if (op === "move" || op === "copy") {
+      // For move/copy, "to" is a destination directory and the source
+      // basename is joined onto it.
+      if (!existsSync(to)) {
+        return NextResponse.json(
+          { error: "Destination directory does not exist" },
+          { status: 404 }
+        );
+      }
+      if (!statSync(to).isDirectory()) {
+        return NextResponse.json(
+          { error: "Destination must be a directory" },
+          { status: 400 }
+        );
+      }
+      to = resolve(to, basename(path));
     }
   }
 
@@ -104,6 +159,55 @@ export async function POST(request: NextRequest) {
         );
       }
       renameSync(path, to!);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (op === "move") {
+      try {
+        statSync(path);
+      } catch {
+        return NextResponse.json(
+          { error: "Source path does not exist" },
+          { status: 404 }
+        );
+      }
+      if (!force && existsSync(to!)) {
+        return NextResponse.json(
+          { error: "Destination already exists" },
+          { status: 409 }
+        );
+      }
+      renameSync(path, to!);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (op === "copy") {
+      const srcStat = (() => {
+        try {
+          return statSync(path);
+        } catch {
+          return null;
+        }
+      })();
+      if (!srcStat) {
+        return NextResponse.json(
+          { error: "Source path does not exist" },
+          { status: 404 }
+        );
+      }
+      if (!srcStat.isFile()) {
+        return NextResponse.json(
+          { error: "copy of folders not supported" },
+          { status: 400 }
+        );
+      }
+      if (!force && existsSync(to!)) {
+        return NextResponse.json(
+          { error: "Destination already exists" },
+          { status: 409 }
+        );
+      }
+      copyFileSync(path, to!);
       return NextResponse.json({ ok: true });
     }
 
