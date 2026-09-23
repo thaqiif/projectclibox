@@ -61,6 +61,7 @@ export function listDirectory(
     recursive?: boolean;
     maxDepth?: number;
     currentDepth?: number;
+    showHidden?: boolean;
   } = {}
 ): FileNode[] {
   const {
@@ -68,6 +69,7 @@ export function listDirectory(
     recursive = false,
     maxDepth = 3,
     currentDepth = 0,
+    showHidden = false,
   } = options;
 
   try {
@@ -75,9 +77,14 @@ export function listDirectory(
     const nodes: FileNode[] = [];
 
     for (const entry of entries) {
-      // Skip excluded files
-      if (shouldExclude(entry, excludePatterns)) {
-        continue;
+      const isHiddenDotEntry = entry.startsWith(".") && entry !== "." && entry !== "..";
+
+      // Skip excluded files; with showHidden, dotfiles (including .git etc.)
+      // bypass exclusion so they are visible.
+      if (!showHidden || !isHiddenDotEntry) {
+        if (shouldExclude(entry, excludePatterns)) {
+          continue;
+        }
       }
 
       const fullPath = join(dirPath, entry);
@@ -109,6 +116,7 @@ export function listDirectory(
           recursive: true,
           maxDepth,
           currentDepth: currentDepth + 1,
+          showHidden,
         });
       }
 
