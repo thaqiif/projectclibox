@@ -6,6 +6,7 @@ import {
 } from "@/lib/terminal-registry";
 import { getAllProjects } from "@/lib/projects";
 import { resolveProjectForPath } from "@/lib/terminal-projects";
+import { guardJsonSameOrigin } from "@/lib/route-guards";
 
 /**
  * GET /api/terminals - every terminal, with its project.
@@ -45,6 +46,9 @@ export async function GET() {
  * user's choice, made by typing its name once the shell is up.
  */
 export async function POST(request: NextRequest) {
+  const guard = guardJsonSameOrigin(request);
+  if (guard) return guard;
+
   try {
     const body = await request.json().catch(() => ({}));
     const { cwd, projectId } = body as { cwd?: string; projectId?: string };

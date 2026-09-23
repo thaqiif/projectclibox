@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { guardJsonSameOrigin } from "@/lib/route-guards";
 import { getDb, queries } from "@/lib/db";
 import { isSupportedSettingKey } from "@/lib/settings";
 
@@ -24,6 +25,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const guard = guardJsonSameOrigin(request);
+  if (guard) return guard;
+
   try {
     const body = await request.json();
     const { key, value } = body;

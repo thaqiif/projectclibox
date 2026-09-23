@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { guardJsonSameOrigin } from "@/lib/route-guards";
 import { execFile } from "child_process";
 import { promisify } from "util";
 
@@ -17,6 +18,9 @@ const execFileAsync = promisify(execFile);
  * inverted, so each button produced the other split.
  */
 export async function POST(request: NextRequest) {
+  const guard = guardJsonSameOrigin(request);
+  if (guard) return guard;
+
   try {
     const { terminal, direction } = await request.json();
 

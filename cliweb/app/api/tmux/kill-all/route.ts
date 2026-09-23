@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { killTerminal } from "@/lib/terminals";
 import { forgetTerminal, listKnownTerminals } from "@/lib/terminal-registry";
+import { guardJsonSameOrigin } from "@/lib/route-guards";
 
 /**
  * POST /api/tmux/kill-all - close every terminal for good.
@@ -10,7 +11,10 @@ import { forgetTerminal, listKnownTerminals } from "@/lib/terminal-registry";
  * terminal sitting in the list as a restartable ghost. Forget the same
  * entries the sidebar is showing, live or already stopped.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  const guard = guardJsonSameOrigin(request);
+  if (guard) return guard;
+
   try {
     const terminals = await listKnownTerminals();
     const killed: string[] = [];
