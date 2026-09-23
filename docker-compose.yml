@@ -49,10 +49,40 @@ services:
     # /dev/kvm: hardware virtualization (QEMU/KVM guests, Android emulators,
     # microVMs, …). Requires /dev/kvm on the host; remove this line on hosts
     # that lack it.
-    # /dev/dri: Intel iGPU for ffmpeg VA-API/QSV transcode (H264 encode,
-    # H264/HEVC/VP9 decode on HD 620-class GPUs). Requires /dev/dri on the
-    # host; remove this line on hosts without an iGPU. The entrypoint grants
-    # the unprivileged `cliweb` user access to the devices.
+    # /dev/dri: GPU render/display nodes for ffmpeg VA-API/QSV/VAAPI transcode
+    # (Intel HD 620-class via iHD, AMD amdgpu via radeonsi) and Vulkan/OpenGL.
+    # Requires /dev/dri on the host; remove this line on hosts without a GPU.
+    # The entrypoint grants the unprivileged `cliweb` user access to every
+    # DRI node (card*, renderD*), so multi-GPU hosts (e.g. virtio-gpu +
+    # amdgpu) work without hardcoding card0/renderD128.
+    # /dev/kfd: AMD ROCm/OpenCL compute node (amdgpu hosts only). Requires
+    # /dev/kfd on the host; remove this line on hosts without an AMD GPU.
+    # Docker fails the deploy if a mapped host path is missing.
     devices:
       - /dev/kvm:/dev/kvm
       - /dev/dri:/dev/dri
+      - /dev/kfd:/dev/kfd
+
+  tailscale:
+    image: tailscale/tailscale:v1.94.1@sha256:21df0b5a84efa35c0a507f4dd2340e1b1295683634a28968707354d5bd991d9c
+    depends_on:
+      cliweb:
+        condition: service_started
+    network_mode: service:cliweb
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/tailscaled"]
+    command:
+      - "--state=/var/lib/tailscale/tailscaled.state"
+      - "--socket=/tmp/tailscaled.sock"
+      - "--tun=tailscale0"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - type: bind
+        source: /var/lib/cliweb-tailscale
+        target: /var/lib/tailscale
+        bind:
+          create_host_path: true

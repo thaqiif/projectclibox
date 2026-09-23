@@ -23,18 +23,20 @@ fi
 # unprivileged runtime user can open them. Under runc the mapped nodes may
 # be 0666 root:root, but other runtimes preserve the host's 0660
 # root:kvm / root:video / root:render; either way, chgrping them to the
-# remapped cliweb group lets `cliweb` use hardware virtualization and the
-# iGPU while keeping other container processes out. This sidesteps host
-# GID mismatches (e.g. host render:992 vs Debian container) and survives
-# PUID/PGID remapping above, unlike group_add which setpriv --init-groups
-# below would drop. Each node is guarded so the container still starts on
-# hosts without KVM or DRI.
+# remapped cliweb group lets `cliweb` use hardware virtualization and every
+# GPU (Intel, AMD amdgpu, virtio-gpu) while keeping other container processes
+# out. This sidesteps host GID mismatches (e.g. host render:992 vs Debian
+# container) and survives PUID/PGID remapping above, unlike group_add which
+# setpriv --init-groups below would drop. The glob covers multi-GPU hosts
+# (card0/card1, renderD128/renderD129, …) and /dev/kfd (AMD ROCm/OpenCL
+# compute). Each node is guarded so the container still starts on hosts
+# without KVM, DRI, or KFD.
 if [ -e /dev/kvm ]; then
     chgrp cliweb /dev/kvm
     chmod 660 /dev/kvm
 fi
 
-for dev in /dev/dri/card0 /dev/dri/renderD128; do
+for dev in /dev/dri/card* /dev/dri/renderD* /dev/kfd; do
     [ -e "$dev" ] || continue
     chgrp cliweb "$dev"
     chmod 660 "$dev"
