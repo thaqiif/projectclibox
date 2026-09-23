@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 
 /**
  * Accept a user-supplied target directory for uploads.
@@ -36,8 +37,32 @@ function decodeBase64(base64: string): Buffer {
 
 export async function POST(request: Request) {
   try {
+    // Cheap gate first: a Content-Length that already exceeds the limit can
+    // bail before the body is parsed. Best-effort only — chunked or encoding
+    // without a length is still caught by the decoded-size check below.
+    const contentLength = Number(request.headers.get("content-length"));
+    if (Number.isFinite(contentLength) && contentLength > MAX_UPLOAD_BYTES) {
+      return NextResponse.json(
+        { error: "File too large" },
+        { status: 413 }
+      );
+    }
+
     const { filename, base64, mimeType, targetDir, overwrite } =
       await request.json();
+
+    // base64 inflates by 4/3, so the decoded payload is what must fit under
+    // the limit. Checking the raw string would let a ~1.33x oversized file
+    // through.
+    if (
+      typeof base64 !== "string" ||
+      base64.length * 0.75 > MAX_UPLOAD_BYTES
+    ) {
+      return NextResponse.json(
+        { error: "File too large" },
+        { status: 413 }
+      );
+    }
 
     if (!base64) {
       return NextResponse.json({ error: "No image data" }, { status: 400 });
