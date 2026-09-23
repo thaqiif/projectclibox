@@ -85,6 +85,35 @@ after changing the Dockerfile:
 docker compose up -d --build
 ```
 
+### GPU acceleration (AMD)
+
+The image drops `/etc/chromium.d/amd-gpu`, which Debian's Chromium launcher
+sources before every exec. It appends `--use-angle=vulkan
+--enable-features=Vulkan` so WebGL/compositing runs on the AMD GPU (RADV)
+instead of falling back to SwiftShader (CPU). Verify:
+
+```bash
+# Should report RADV PHOENIX, not SwiftShader.
+docker compose exec --user cliweb cliweb sh -lc '
+  tmp=$(mktemp -d)
+  cat > "$tmp/p.html" <<HTML
+<html><body><script>
+const c=document.createElement("canvas");
+const g=c.getContext("webgl2")||c.getContext("webgl");
+const d=g&&g.getExtension("WEBGL_debug_renderer_info");
+document.title=g?(d?g.getParameter(d.UNMASKED_RENDERER_WEBGL):g.getParameter(g.RENDERER)):"NO_WEBGL";
+</script></body></html>
+HTML
+  "$CHROMIUM_PATH" --headless=new --no-sandbox --disable-dev-shm-usage \
+    --virtual-time-budget=5000 --dump-dom "file://$tmp/p.html" \
+    | grep -o "<title>[^<]*</title>"
+  rm -rf "$tmp"
+'
+```
+
+On hosts without a Vulkan device the flags are harmless — Chromium degrades
+to SwiftShader, matching stock behaviour.
+
 ## Tailscale sidecar
 
 Compose runs a pinned Tailscale daemon in a sidecar that shares CLIWeb's

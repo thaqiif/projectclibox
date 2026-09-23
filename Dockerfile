@@ -131,6 +131,14 @@ ENV HOME=/home/cliweb \
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY docker-nanobrew-bootstrap.sh /usr/local/libexec/cliweb-nanobrew-bootstrap
 COPY docker-cliweb-persistent-env.sh /usr/local/libexec/cliweb-persistent-env
+
+# Force Chromium onto the AMD GPU (RADV/Vulkan via ANGLE). Debian's
+# launcher sources /etc/chromium.d/* before exec, so dropping a file
+# there applies the flags to every chromium invocation — including
+# $CHROMIUM_PATH. On hosts without Vulkan Chromium falls back to
+# SwiftShader, matching stock behaviour.
+COPY chromium-amd-gpu.conf /etc/chromium.d/amd-gpu
+
 RUN chmod +x \
     /usr/local/bin/nb \
     /usr/local/bin/docker-entrypoint.sh \
