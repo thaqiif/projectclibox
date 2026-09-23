@@ -8,8 +8,13 @@
 
 FROM node:22-trixie-slim
 
-# Intel iGPU (VA-API/QSV) + ffmpeg for hardware transcode on hosts with
-# /dev/dri (e.g. HD 620 via iHD driver). vainfo is kept for bring-up checks.
+# Intel iGPU (VA-API/QSV) + AMD amdgpu (VA-API/VDPAU/Vulkan/OpenCL) + ffmpeg
+# for hardware transcode on hosts with /dev/dri (e.g. HD 620 via iHD driver,
+# AMD Raven Ridge and newer via radeonsi). vainfo/vulkaninfo/clinfo are kept
+# for bring-up checks. /dev/kfd (mapped in compose) enables ROCm/OpenCL
+# compute on AMD hosts; the full ROCm stack itself is intentionally not baked
+# in — install it or use a ROCm-enabled tool (PyTorch ROCm, Ollama ROCm) when
+# needed.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash \
@@ -17,6 +22,7 @@ RUN apt-get update \
         ca-certificates \
         chromium \
         chromium-sandbox \
+        clinfo \
         curl \
         ffmpeg \
         file \
@@ -25,20 +31,27 @@ RUN apt-get update \
         intel-media-va-driver \
         jq \
         less \
+        libdrm-amdgpu1 \
         libva-drm2 \
         libva2 \
         libvpl2 \
+        mesa-opencl-icd \
+        mesa-va-drivers \
+        mesa-vdpau-drivers \
+        mesa-vulkan-drivers \
         openssh-client \
         procps \
         python3 \
         python3-pip \
         python3-venv \
+        radeontop \
         ripgrep \
         ruby-full \
         tmux \
         unzip \
         util-linux \
         vainfo \
+        vulkan-tools \
     && test -x /usr/bin/chromium \
     && test -u /usr/lib/chromium/chrome-sandbox \
     && rm -rf /var/lib/apt/lists/*
