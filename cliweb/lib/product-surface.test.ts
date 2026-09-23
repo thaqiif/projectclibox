@@ -259,8 +259,8 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
     "the image should configure nanobrew's persistent root"
   );
   assert.ok(
-    compose.includes("source: /home/cliweb/nanobrew") &&
-      compose.includes("target: /opt/nanobrew"),
+    compose.includes("/home/cliweb/nanobrew:/opt/nanobrew") &&
+    compose.includes("/home/cliweb:/home/cliweb"),
     "nanobrew's fixed data root should be a host bind mount"
   );
   assert.ok(
