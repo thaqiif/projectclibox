@@ -19,6 +19,9 @@ test("removed integrations are no longer shipped", () => {
     "components/GitDrawer/index.tsx",
     "components/DiffViewer/index.tsx",
     "components/PRCreationModal.tsx",
+    // The shell drawer: its only entry point was the workbench bar toggle,
+    // which is gone. The tmux split route stays; only its UI buttons left.
+    "components/ShellDrawer/index.tsx",
     "lib/model-catalog.ts",
     "lib/providers.ts",
     "lib/providers/registry.ts",
