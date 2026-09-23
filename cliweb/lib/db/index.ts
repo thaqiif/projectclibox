@@ -60,6 +60,10 @@ function withInitLock<T>(fn: () => T): T {
 // Initialize database with schema
 function initDb(): Database.Database {
   return withInitLock(() => {
+    // better-sqlite3 does not create missing parent directories. This
+    // matters for non-default profiles (CLIWEB_PROFILE=test -> ~/.cliweb-test),
+    // which the container entrypoint does not pre-create.
+    fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     const db = new Database(DB_PATH, { timeout: 10000 });
 
     // Enable WAL mode for better concurrency

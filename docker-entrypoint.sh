@@ -51,6 +51,19 @@ mkdir -p \
     "${HOME}/.gitstate" \
     "${HOME}/.ssh" \
     "${NANOBREW_ROOT}"
+
+# Pre-create the profile data directory when CLIWEB_PROFILE is set so the
+# app never has to self-bootstrap its DB folder (see lib/db/index.ts).
+PROFILE_SUFFIX=""
+if [ -n "${CLIWEB_PROFILE:-}" ]; then
+    PROFILE_SUFFIX="-$(printf '%s' "${CLIWEB_PROFILE}" | tr -c 'a-zA-Z0-9_-' '-' | tr '[:upper:]' '[:lower:]')"
+    PROFILE_SUFFIX="${PROFILE_SUFFIX%%-}"
+    PROFILE_SUFFIX="${PROFILE_SUFFIX#-}"
+    PROFILE_SUFFIX="${PROFILE_SUFFIX:-}"
+    if [ -n "${PROFILE_SUFFIX}" ]; then
+        mkdir -p "${HOME}/.cliweb${PROFILE_SUFFIX}"
+    fi
+fi
 chmod 700 "${HOME}/.ssh"
 
 # Guard against two deployments sharing this persisted home mount with
