@@ -7,6 +7,13 @@ export interface OpenFile {
   currentContent: string;
   isBinary: boolean;
   language: string;
+  /**
+   * Server mtime captured when the content was last read from (or written
+   * to) disk. Sent as expectedMtimeMs on save so the server can reject a
+   * write when the file changed underneath us. Null for never-fetched
+   * files (new files), which skips conflict detection.
+   */
+  mtimeMs: number | null;
 }
 
 export interface UseFileEditorReturn {
@@ -16,12 +23,34 @@ export interface UseFileEditorReturn {
   saving: boolean;
   /** Last save failure message, or null when the last save succeeded. */
   saveError: string | null;
+  /**
+   * Path of a save that was rejected with a conflict (file changed on disk
+   * since open), or null. While set, the local edits are intact and the
+   * file stays dirty; the UI should show the SaveConflictDialog.
+   */
+  conflictFilePath: string | null;
+  /** Server mtime reported by the 409 response for conflictFilePath. */
+  conflictServerMtimeMs: number | null;
   openFile: (path: string) => Promise<void>;
   closeFile: (path: string) => void;
   setActiveFile: (path: string) => void;
   updateContent: (path: string, content: string) => void;
-  saveFile: (path: string) => Promise<{ ok: boolean; error?: string }>;
+  saveFile: (
+    path: string,
+    options?: { force?: boolean }
+  ) => Promise<{
+    ok: boolean;
+    error?: string;
+    /** True when the save was rejected because the file changed on disk. */
+    conflict?: boolean;
+    /** Server mtime at conflict time, when conflict is true. */
+    serverMtimeMs?: number;
+  }>;
   saveAllFiles: () => Promise<void>;
+  /** Discard local edits for a conflicted file and reload the server version. */
+  reloadConflictedFile: (path: string) => Promise<void>;
+  /** Clear the conflict flag without changing file state (dialog Cancel). */
+  dismissConflict: () => void;
   isDirty: (path: string) => boolean;
   hasUnsavedChanges: boolean;
   getFile: (path: string) => OpenFile | undefined;
@@ -34,6 +63,10 @@ export function useFileEditor(): UseFileEditorReturn {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [conflictFilePath, setConflictFilePath] = useState<string | null>(null);
+  const [conflictServerMtimeMs, setConflictServerMtimeMs] = useState<
+    number | null
+  >(null);
 
   const getFile = useCallback(
     (path: string) => openFiles.find((f) => f.path === path),
@@ -77,7 +110,12 @@ export function useFileEditor(): UseFileEditorReturn {
           setOpenFiles((prev) =>
             prev.map((f) =>
               f.path === data.path
-                ? { ...f, content: data.content, isBinary: data.isBinary }
+                ? {
+                    ...f,
+                    content: data.content,
+                    isBinary: data.isBinary,
+                    mtimeMs: typeof data.mtimeMs === "number" ? data.mtimeMs : null,
+                  }
                 : f
             )
           );
@@ -107,6 +145,7 @@ export function useFileEditor(): UseFileEditorReturn {
           content: data.content,
           currentContent: data.content,
           isBinary: data.isBinary,
+          mtimeMs: typeof data.mtimeMs === "number" ? data.mtimeMs : null,
           language: getLanguageFromExtension(ext),
         };
 
@@ -145,7 +184,15 @@ export function useFileEditor(): UseFileEditorReturn {
   }, []);
 
   const saveFile = useCallback(
-    async (path: string): Promise<{ ok: boolean; error?: string }> => {
+    async (
+      path: string,
+      options?: { force?: boolean }
+    ): Promise<{
+      ok: boolean;
+      error?: string;
+      conflict?: boolean;
+      serverMtimeMs?: number;
+    }> => {
       const file = openFiles.find((f) => f.path === path);
       if (!file) {
         const message = "File not found";
@@ -163,9 +210,36 @@ export function useFileEditor(): UseFileEditorReturn {
         const res = await fetch("/api/files/content", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path, content: file.currentContent }),
+          body: JSON.stringify({
+            path,
+            content: file.currentContent,
+            // Omit for new files we have never fetched (server force
+            // writes); the server ignores it when force is true anyway.
+            ...(file.mtimeMs !== null ? { expectedMtimeMs: file.mtimeMs } : {}),
+            ...(options?.force ? { force: true } : {}),
+          }),
         });
         const data = await res.json();
+
+        // 409 from the server means the file changed on disk since we
+        // read it. Leave the local content and dirty state untouched and
+        // flag the conflict for the dialog.
+        if (res.status === 409 && data.error === "conflict") {
+          const message = "File changed on disk since it was opened";
+          setSaveError(message);
+          setConflictFilePath(path);
+          setConflictServerMtimeMs(
+            typeof data.serverMtimeMs === "number" ? data.serverMtimeMs : null
+          );
+          return {
+            ok: false,
+            conflict: true,
+            error: message,
+            ...(typeof data.serverMtimeMs === "number"
+              ? { serverMtimeMs: data.serverMtimeMs }
+              : {}),
+          };
+        }
 
         if (data.error) {
           const message: string = data.error;
@@ -173,11 +247,22 @@ export function useFileEditor(): UseFileEditorReturn {
           return { ok: false, error: message };
         }
 
-        // Update the saved content to match current
+        // Update the saved content to match current and record the
+        // post-write mtime so our next save does not conflict with our
+        // own write.
         setSaveError(null);
+        setConflictFilePath(null);
+        setConflictServerMtimeMs(null);
         setOpenFiles((prev) =>
           prev.map((f) =>
-            f.path === path ? { ...f, content: f.currentContent } : f
+            f.path === path
+              ? {
+                  ...f,
+                  content: f.currentContent,
+                  mtimeMs:
+                    typeof data.mtimeMs === "number" ? data.mtimeMs : f.mtimeMs,
+                }
+              : f
           )
         );
 
@@ -201,10 +286,68 @@ export function useFileEditor(): UseFileEditorReturn {
     }
   }, [openFiles, saveFile]);
 
+  /**
+   * Discard local edits and reload the server version for a conflicted
+   * file. Implemented directly (not via openFile) so it works even though
+   * the file is still in openFiles with unsaved edits; the tab stays open,
+   * content/currentContent are reset to the server version, and the fresh
+   * mtime is captured for future saves.
+   */
+  const reloadConflictedFile = useCallback(
+    async (path: string) => {
+      setConflictFilePath(null);
+      setConflictServerMtimeMs(null);
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `/api/files/content?path=${encodeURIComponent(path)}`
+        );
+        const data = await res.json();
+
+        if (data.error) {
+          console.error("Failed to reload file:", data.error);
+          setSaveError(data.error);
+          return;
+        }
+
+        setOpenFiles((prev) =>
+          prev.map((f) =>
+            f.path === path
+              ? {
+                  ...f,
+                  content: data.content,
+                  currentContent: data.content,
+                  isBinary: data.isBinary,
+                  mtimeMs:
+                    typeof data.mtimeMs === "number" ? data.mtimeMs : null,
+                }
+              : f
+          )
+        );
+      } catch (error) {
+        console.error("Failed to reload file:", error);
+        setSaveError(
+          error instanceof Error ? error.message : "Failed to reload file"
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  /** Clear the conflict flag without changing any file state. */
+  const dismissConflict = useCallback(() => {
+    setConflictFilePath(null);
+    setConflictServerMtimeMs(null);
+  }, []);
+
   const reset = useCallback(() => {
     setOpenFiles([]);
     setActiveFilePath(null);
     setSaveError(null);
+    setConflictFilePath(null);
+    setConflictServerMtimeMs(null);
   }, []);
 
   return {
@@ -213,11 +356,15 @@ export function useFileEditor(): UseFileEditorReturn {
     loading,
     saving,
     saveError,
+    conflictFilePath,
+    conflictServerMtimeMs,
     openFile,
     closeFile,
     setActiveFile: setActiveFilePath,
     updateContent,
     saveFile,
+    reloadConflictedFile,
+    dismissConflict,
     saveAllFiles,
     isDirty,
     hasUnsavedChanges,
