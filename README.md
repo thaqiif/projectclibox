@@ -217,6 +217,10 @@ See [.env.example](.env.example) for the small set of supported settings:
   `~/.cliweb-<profile>/` instead of `~/.cliweb/`, so they coexist without
   sharing data. Explicit `DB_PATH` still takes precedence if you need full
   manual control.
+  Two deployments sharing the persisted home mount MUST also set identical
+  `PUID`/`PGID`: container startup marks the home with its ownership and
+  refuses to start with different ids (a mismatched restart would chown the
+  shared tree and steal ownership from the other, running, deployment).
 - Any additional variables in `.env` are passed through to terminal shells,
   which is useful for API keys or project-specific configuration.
 

@@ -53,6 +53,27 @@ mkdir -p \
     "${NANOBREW_ROOT}"
 chmod 700 "${HOME}/.ssh"
 
+# Guard against two deployments sharing this persisted home mount with
+# different PUID/PGID. Ownership is applied with chown -R on every boot
+# below, so a second deployment with different ids would steal ownership of
+# files the first deployment (still running) needs to access - the other
+# instance then corrupts or crashes with permission errors. Record the
+# current deployment's ownership in a marker and refuse to start mismatched
+# deployments: the fix is to set identical PUID/PGID on both, or give each
+# deployment its own persisted home on the host.
+OWNER_MARKER="${HOME}/.cliweb/.deployment-owner"
+WANT_OWNER="${PUID}:${PGID}"
+if [ -f "${OWNER_MARKER}" ]; then
+    existing_owner=$(cat "${OWNER_MARKER}" 2>/dev/null || echo "")
+    if [ -n "${existing_owner}" ] && [ "${existing_owner}" != "${WANT_OWNER}" ]; then
+        echo "This persisted home is owned by UID owner ${existing_owner} (deployment owner marker ${OWNER_MARKER})." >&2
+        echo "This deployment wants ${WANT_OWNER}. Starting would chown the shared /home and break the other deployment (permission errors)." >&2
+        echo "Fix: set identical PUID and PGID on every deployment that shares this home volume, or mount a separate home path for this deployment." >&2
+        exit 1
+    fi
+fi
+echo "${WANT_OWNER}" > "${OWNER_MARKER}"
+
 # `.bash_profile` is on this list because bash reads only the *first* of
 # ~/.bash_profile, ~/.bash_login and ~/.profile for a login shell. Tool
 # installers (bun, rustup) create ~/.bash_profile, which then shadows
