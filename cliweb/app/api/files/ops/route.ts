@@ -12,6 +12,7 @@ import {
 } from "fs";
 import { resolve, dirname, basename, join } from "path";
 import { guardJsonSameOrigin } from "@/lib/route-guards";
+import { cliwebProfileSuffix } from "@/lib/runtime-environment";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 
 /**
@@ -19,7 +20,12 @@ import { MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
  * being permanently removed, together with a <name>.meta.json sibling that
  * records the original absolute path so they can be restored.
  */
-const TRASH_DIR = join(process.env.HOME || "", ".cliweb-trash");
+// Trash lives under the persistent home, suffixed per CLIWEB_PROFILE so a
+// test deployment never deletes into production's trash.
+const TRASH_DIR = join(
+  process.env.HOME || "",
+  `.cliweb-trash${cliwebProfileSuffix()}`
+);
 
 interface TrashMeta {
   origPath: string;

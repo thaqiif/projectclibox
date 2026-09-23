@@ -117,7 +117,6 @@ ENV HOME=/home/cliweb \
     LC_ALL=C.UTF-8 \
     CLIWEB_HOME=/home/cliweb/.cliweb \
     CLIWEB_PORT=3011 \
-    DB_PATH=/home/cliweb/.cliweb/cliweb.db \
     CLIWEB_NANOBREW_ROOT=/opt/nanobrew \
     CLIWEB_NANOBREW_BIN=/usr/local/bin/nb \
     CHROMIUM_PATH=/usr/bin/chromium \
