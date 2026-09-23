@@ -13,7 +13,19 @@ type FileOp =
   | "rename"
   | "move"
   | "copy"
-  | "delete";
+  | "delete"
+  | "restore"
+  | "purge";
+
+export interface FileDeleteResponse extends FileOpResponse {
+  /** Location the deleted item was moved to inside the trash directory. */
+  trashPath?: string;
+}
+
+export interface FileRestoreResponse extends FileOpResponse {
+  /** Path the item was restored to (original location or override). */
+  restoredTo?: string;
+}
 
 interface FileOpOptions {
   force?: boolean;
@@ -81,7 +93,29 @@ export function fileCopy(
   return fileOp("copy", path, { to: toDir, force: options.force });
 }
 
-/** Delete a file or directory (recursive). */
-export function fileDelete(path: string): Promise<FileOpResponse> {
-  return fileOp("delete", path);
+/**
+ * Soft-delete a file or directory (recursive): it is moved into the server's
+ * trash directory (~/.cliweb-trash) with a collision-safe timestamped name.
+ * Returns { ok, trashPath } so callers can offer Undo via fileRestore.
+ */
+export function fileDelete(path: string): Promise<FileDeleteResponse> {
+  return fileOp("delete", path) as Promise<FileDeleteResponse>;
+}
+
+/**
+ * Restore a trashed item back to its original location (or `toDir` override,
+ * treated as the destination directory). 409 if the target already exists.
+ */
+export function fileRestore(
+  trashPath: string,
+  toDir?: string
+): Promise<FileRestoreResponse> {
+  return fileOp("restore", trashPath, {
+    to: toDir,
+  }) as Promise<FileRestoreResponse>;
+}
+
+/** Permanently delete a trashed item and its metadata file. */
+export function filePurge(trashPath: string): Promise<FileOpResponse> {
+  return fileOp("purge", trashPath);
 }

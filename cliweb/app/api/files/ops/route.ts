@@ -6,13 +6,77 @@ import {
   rmSync,
   writeFileSync,
   statSync,
+  readFileSync,
 } from "fs";
-import { resolve, dirname, basename } from "path";
+import { resolve, dirname, basename, join } from "path";
 import { guardJsonSameOrigin } from "@/lib/route-guards";
 
 /**
+ * Trash directory for "soft" deletes: deleted items are moved here instead of
+ * being permanently removed, together with a <name>.meta.json sibling that
+ * records the original absolute path so they can be restored.
+ */
+const TRASH_DIR = join(process.env.HOME || "", ".cliweb-trash");
+
+interface TrashMeta {
+  origPath: string;
+  trashPath: string;
+  deletedAt: string;
+}
+
+function metaPathFor(trashPath: string): string {
+  return `${trashPath}.meta.json`;
+}
+
+function readTrashMeta(trashPath: string): TrashMeta | null {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(metaPathFor(trashPath), "utf8")
+    ) as Partial<TrashMeta>;
+    if (!parsed || typeof parsed.origPath !== "string" || !parsed.origPath) {
+      return null;
+    }
+    return {
+      origPath: parsed.origPath,
+      trashPath: typeof parsed.trashPath === "string" ? parsed.trashPath : trashPath,
+      deletedAt: typeof parsed.deletedAt === "string" ? parsed.deletedAt : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeTrashMeta(meta: TrashMeta): void {
+  writeFileSync(metaPathFor(meta.trashPath), JSON.stringify(meta, null, 2), {
+    flag: "wx",
+  });
+}
+
+/**
+ * Pick a unique trash name for `origPath`: original basename, then
+ * "name.<timestamp>", "name.<timestamp>-1", ... until a free slot is found.
+ */
+function uniqueTrashPath(origPath: string): string {
+  const base = basename(origPath);
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\..+$/, "");
+  let candidate = join(TRASH_DIR, `${base}.${stamp}`);
+  for (let n = 0; existsSync(candidate); n++) {
+    candidate = join(TRASH_DIR, `${base}.${stamp}-${n}`);
+  }
+  return candidate;
+}
+
+/**
  * POST /api/files/ops
- * JSON body: { op: "mkdir" | "createFile" | "rename" | "move" | "copy" | "delete", path: string, to?: string, force?: boolean }
+ * JSON body: { op: "mkdir" | "createFile" | "rename" | "move" | "copy" | "delete" | "restore" | "purge", path: string, to?: string, force?: boolean }
+ *
+ * delete: move the target into ~/.cliweb-trash/ (soft delete, returns trashPath).
+ * restore: { path: trashPath, to?: original override } move it back to its
+ *   original location (409 if that exists, unless force).
+ * purge: permanently remove a trashed item and its metadata file.
  */
 export async function POST(request: NextRequest) {
   const guard = guardJsonSameOrigin(request);
@@ -41,7 +105,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!["mkdir", "createFile", "rename", "move", "copy", "delete"].includes(op)) {
+  if (
+    !["mkdir", "createFile", "rename", "move", "copy", "delete", "restore", "purge"].includes(op)
+  ) {
     return NextResponse.json(
       { error: `Unsupported op: ${op}` },
       { status: 400 }
@@ -71,7 +137,12 @@ export async function POST(request: NextRequest) {
   }
 
   let to: string | undefined;
-  if (op === "rename" || op === "move" || op === "copy") {
+  if (
+    op === "rename" ||
+    op === "move" ||
+    op === "copy" ||
+    (op === "restore" && rawTo !== undefined)
+  ) {
     if (!rawTo) {
       return NextResponse.json(
         { error: `to is required for ${op}` },
@@ -184,7 +255,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // delete
+    if (op === "restore") {
+      const meta = readTrashMeta(path);
+      if (!meta) {
+        return NextResponse.json(
+          { error: "No trash metadata found for this path" },
+          { status: 400 }
+        );
+      }
+      const target = to ?? meta.origPath;
+      if (!force && existsSync(target)) {
+        return NextResponse.json(
+          { error: "Original path already exists" },
+          { status: 409 }
+        );
+      }
+      mkdirSync(dirname(target), { recursive: true });
+      renameSync(path, target);
+      rmSync(metaPathFor(path), { force: true });
+      return NextResponse.json({ ok: true, restoredTo: target });
+    }
+
+    // purge: permanently remove a trashed item (used by empty-trash later)
+    try {
+      statSync(path);
+    } catch {
+      return NextResponse.json({ error: "Path does not exist" }, { status: 404 });
+    }
+    rmSync(path, { recursive: true, force: false });
+    rmSync(metaPathFor(path), { force: true });
+    return NextResponse.json({ ok: true });
+
+    // delete: soft delete -> move into the trash directory instead of removal
     try {
       statSync(path);
     } catch {
@@ -193,8 +295,22 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
-    rmSync(path, { recursive: true, force: false });
-    return NextResponse.json({ ok: true });
+    mkdirSync(TRASH_DIR, { recursive: true });
+    const trashPath = uniqueTrashPath(path);
+    renameSync(path, trashPath);
+    const meta: TrashMeta = {
+      origPath: path,
+      trashPath,
+      deletedAt: new Date().toISOString(),
+    };
+    try {
+      writeTrashMeta(meta);
+    } catch (metaErr) {
+      console.error("Failed to write trash meta:", metaErr);
+      // Item is already trashed; report success but flag the missing meta
+      return NextResponse.json({ ok: true, trashPath, metaError: true });
+    }
+    return NextResponse.json({ ok: true, trashPath });
   } catch (error) {
     console.error(`File op ${op} failed:`, error);
     const code = (error as { code?: string }).code;
