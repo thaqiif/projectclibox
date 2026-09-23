@@ -56,11 +56,11 @@ mkdir -p \
 # app never has to self-bootstrap its DB folder (see lib/db/index.ts).
 PROFILE_SUFFIX=""
 if [ -n "${CLIWEB_PROFILE:-}" ]; then
-    PROFILE_SUFFIX="-$(printf '%s' "${CLIWEB_PROFILE}" | tr -c 'a-zA-Z0-9_-' '-' | tr '[:upper:]' '[:lower:]')"
-    PROFILE_SUFFIX="${PROFILE_SUFFIX%%-}"
-    PROFILE_SUFFIX="${PROFILE_SUFFIX#-}"
-    PROFILE_SUFFIX="${PROFILE_SUFFIX:-}"
-    if [ -n "${PROFILE_SUFFIX}" ]; then
+    # Match lib/runtime-environment.ts cliwebProfileSuffix(): slugify to
+    # [a-z0-9_-] and collapse runs of other characters to a single dash.
+    slug=$(printf '%s' "${CLIWEB_PROFILE}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^[-._]+//; s/[-._]+$//')
+    if [ -n "${slug}" ] && [ "${slug}" != "default" ]; then
+        PROFILE_SUFFIX="-${slug}"
         mkdir -p "${HOME}/.cliweb${PROFILE_SUFFIX}"
     fi
 fi
