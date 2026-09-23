@@ -35,6 +35,8 @@ import { FileOpsMenu } from "./TreeNodeActions";
 import { BulkActionBar } from "./BulkActionBar";
 import { clearSelection, toggleSelection } from "@/lib/file-bulk";
 import { fileRename, fileDelete } from "@/lib/file-ops";
+import { uploadFileToTemp } from "@/lib/file-upload";
+import { useFileDrop } from "@/hooks/useFileDrop";
 import { ListFilter } from "./ListFilter";
 import { UploadProgressBanner } from "./UploadProgressBanner";
 import { SaveConflictDialog } from "./SaveConflictDialog";
@@ -882,6 +884,22 @@ function ListingBody({
   // consumed by the floating BulkActionBar. Coordinator may lift this later.
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
 
+  // DND_UPLOAD: accept OS file drops into the listing and upload them into
+  // the directory currently shown. The enabled gate ("Files" type) keeps
+  // this hook out of the internal row-move drags, which carry text/plain.
+  const listingRef = useRef<HTMLDivElement>(null);
+  const handleDroppedFile = useCallback(
+    async (file: File) => {
+      await uploadFileToTemp(file, { targetDir: workingDirectory });
+      onRefresh?.();
+    },
+    [workingDirectory, onRefresh]
+  );
+  const { isDragging: isFileDrag, dragHandlers: fileDragHandlers } =
+    useFileDrop(listingRef, handleDroppedFile, {
+      enabled: (e) => e.dataTransfer.types.includes("Files"),
+    });
+
   // Selection refers to paths in the listing; start fresh when navigating.
   // Derived-reset pattern: adjust state during render instead of an effect.
   const [prevWorkingDir, setPrevWorkingDir] = useState(workingDirectory);
@@ -993,7 +1011,18 @@ function ListingBody({
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div
+      ref={listingRef}
+      {...fileDragHandlers}
+      className="relative flex min-h-0 flex-1 flex-col"
+    >
+      {isFileDrag && (
+        <div className="bg-background/60 ring-primary pointer-events-none absolute inset-0 z-10 flex items-center justify-center ring-1 ring-inset">
+          <span className="bg-background text-foreground ui-label px-2 py-1">
+            drop to upload into this folder
+          </span>
+        </div>
+      )}
       <div className="scrollbar-thin flex-1 overflow-y-auto">
         <div className="py-1">
         {files.map((node) => {
@@ -1015,18 +1044,20 @@ function ListingBody({
             e.dataTransfer.effectAllowed = "move";
           }}
           onDragOver={(e) => {
-            if (!isDirectory) return;
+            // OS file drags belong to the listing-level upload drop, not
+            // the row-move gesture.
+            if (!isDirectory || e.dataTransfer.types.includes("Files")) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = "move";
             setDragOverPath(node.path);
           }}
           onDragLeave={(e) => {
-            if (!isDirectory) return;
+            if (!isDirectory || e.dataTransfer.types.includes("Files")) return;
             if (e.currentTarget.contains(e.relatedTarget as Node)) return;
             setDragOverPath((prev) => (prev === node.path ? null : prev));
           }}
           onDrop={async (e) => {
-            if (!isDirectory) return;
+            if (!isDirectory || e.dataTransfer.types.includes("Files")) return;
             e.preventDefault();
             setDragOverPath(null);
             const src = e.dataTransfer.getData("text/plain");

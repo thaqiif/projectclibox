@@ -10,6 +10,14 @@ import {
 interface UseFileDropOptions {
   /** Disable drop handling (e.g., while uploading) */
   disabled?: boolean;
+  /**
+   * Per-event gate. When it returns false the hook ignores the drag
+   * entirely (no preventDefault, no highlight, no drop), leaving the event
+   * for other handlers. Used to accept only OS file drags where a
+   * container also hosts internal element drags (e.g. row moves in the
+   * file listing).
+   */
+  enabled?: (e: React.DragEvent) => boolean;
 }
 
 interface DragHandlers {
@@ -54,18 +62,20 @@ export function useFileDrop(
       // Monitor pane drops use a custom MIME type. Let those events bubble so
       // an occupied pane can still receive a replacement terminal.
       if (isMonitorDrag(e)) return;
+      if (options?.enabled && !options.enabled(e)) return;
       e.preventDefault();
       e.stopPropagation();
       if (!options?.disabled) {
         setIsDragging(true);
       }
     },
-    [options?.disabled]
+    [options?.disabled, options?.enabled]
   );
 
   const handleDragLeave = useCallback(
     (e: React.DragEvent) => {
       if (isMonitorDrag(e)) return;
+      if (options?.enabled && !options.enabled(e)) return;
       e.preventDefault();
       e.stopPropagation();
       // Only clear when the pointer leaves the container entirely, so moving
@@ -80,6 +90,7 @@ export function useFileDrop(
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
       if (isMonitorDrag(e)) return;
+      if (options?.enabled && !options.enabled(e)) return;
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
@@ -117,7 +128,7 @@ export function useFileDrop(
         );
       }
     },
-    [onFileDrop, options?.disabled]
+    [onFileDrop, options?.disabled, options?.enabled]
   );
 
   return {
