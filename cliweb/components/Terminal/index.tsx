@@ -11,7 +11,7 @@ import {
 } from "react";
 import { useTheme } from "next-themes";
 import "@xterm/xterm/css/xterm.css";
-import { Paperclip, WifiOff, Upload, Loader2 } from "lucide-react";
+import { WifiOff, Upload, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ScrollToBottomButton } from "./ScrollToBottomButton";
@@ -20,9 +20,95 @@ import { useTerminalConnection } from "./hooks";
 import type { TerminalScrollState } from "./hooks";
 import { useViewport } from "@/hooks/useViewport";
 import { useFileDrop } from "@/hooks/useFileDrop";
-import { uploadFileToTemp } from "@/lib/file-upload";
-import { FilePicker } from "@/components/FilePicker";
+import {
+  PASTE_AS_FILE_THRESHOLD,
+  pasteLongAsFilePref,
+  uploadFileToTemp,
+  uploadTargetDir,
+  uploadTextAsPasteFile,
+} from "@/lib/file-upload";
 import { useFontScale } from "@/contexts/FontScaleContext";
+
+/**
+ * Mobile long-paste dialog. Clipboard text is captured from the paste event
+ * and prefilled here; the user edits it, then chooses inline paste (typed
+ * into the terminal) or upload-as-file (txt into tmp, path inserted).
+ */
+function LongPasteDialog({
+  initialText,
+  onClose,
+  onPasteAsFile,
+  onPasteInline,
+}: {
+  initialText: string;
+  onClose: () => void;
+  onPasteAsFile: (text: string) => void;
+  onPasteInline: (text: string) => void;
+}) {
+  const [text, setText] = useState(initialText);
+  // Checkbox default follows the stored user preference (default true).
+  const [sendAsFile, setSendAsFile] = useState(() => pasteLongAsFilePref());
+
+  const confirm = () => {
+    if (sendAsFile) onPasteAsFile(text);
+    else onPasteInline(text);
+  };
+
+  return (
+    <div
+      className="animate-in fade-in-0 fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[3px] duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="glass-thick glass-float lift-in w-[90%] max-w-md rounded-2xl p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-[0.9375rem] font-semibold tracking-[-0.014em]">
+            Paste options
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-full transition-colors hover:bg-[var(--fill-3)]"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 h-40 w-full resize-none rounded-lg border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 font-mono text-[0.75rem] outline-none focus-visible:ring-[3px]"
+        />
+        <label className="text-muted-foreground mt-3 flex items-center gap-2 text-[0.8125rem]">
+          <input
+            type="checkbox"
+            checked={sendAsFile}
+            onChange={(e) => setSendAsFile(e.target.checked)}
+            className="accent-primary h-4 w-4"
+          />
+          Send as file
+        </label>
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => onPasteInline(text)}
+            disabled={!text}
+            className="press focus-ring border border-[var(--fill-2)] text-foreground hover:bg-[var(--fill-4)] flex-1 rounded-lg py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
+          >
+            Paste inline
+          </button>
+          <button
+            onClick={confirm}
+            disabled={!text}
+            className="press focus-ring bg-primary text-primary-foreground hover:bg-primary/90 flex-1 rounded-lg py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
+          >
+            Paste as file
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export interface TerminalHandle {
   sendCommand: (command: string) => void;
@@ -35,8 +121,6 @@ interface TerminalProps {
   onDisconnected?: () => void;
   onBeforeUnmount?: (scrollState: TerminalScrollState) => void;
   initialScrollState?: TerminalScrollState;
-  /** Show image picker button (default: true) */
-  showImageButton?: boolean;
   /**
    * Directory file drops should land in (usually the tmux terminal's
    * working_directory). Falls back to /tmp when absent.
@@ -51,7 +135,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       onDisconnected,
       onBeforeUnmount,
       initialScrollState,
-      showImageButton = true,
       workingDirectory,
     },
     ref
@@ -61,9 +144,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
     const { isMobile } = useViewport();
     const { fontScale } = useFontScale();
     const { theme: currentTheme, resolvedTheme } = useTheme();
-    const [showFilePicker, setShowFilePicker] = useState(false);
     const [selectMode, setSelectMode] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
+    // Long clipboard text captured from paste on mobile, shown in the
+    // "Paste options" dialog; null means no dialog.
+    const [longPasteText, setLongPasteText] = useState<string | null>(null);
 
     // Use the full theme string (e.g., "dark-purple") for terminal theming
     const terminalTheme = useMemo(() => {
@@ -96,15 +181,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       selectMode,
     });
 
-    // Handle image selection - paste file path into terminal
-    const handleImageSelect = useCallback(
-      (filePath: string) => {
-        sendInput(filePath);
-        setShowFilePicker(false);
-        focus();
-      },
-      [sendInput, focus]
-    );
+    // Drop/paste uploads land in <cwd>/tmp, not the cwd root; without a
+    // working directory the uploader falls back to /tmp.
+    const targetDir = uploadTargetDir(workingDirectory);
 
     // Handle file drop - upload and insert path into terminal
     const handleFileDrop = useCallback(
@@ -114,9 +193,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
         setIsUploading(true);
         try {
           const path = await uploadFileToTemp(file, {
-            // Drop straight into the terminal's working directory; with no
-            // directory known, the upload falls back to /tmp.
-            targetDir: workingDirectory || undefined,
+            targetDir,
           });
           if (path) {
             sendInput(path);
@@ -126,29 +203,65 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
           setIsUploading(false);
         }
       },
-      [sendInput, focus, workingDirectory]
+      [sendInput, focus, targetDir]
     );
 
     // Drag and drop for file uploads
-    const { isDragging, dragHandlers } = useFileDrop(
-      containerRef,
-      handleFileDrop,
-      { disabled: isUploading || showFilePicker }
+    const { isDragging, dragHandlers } = useFileDrop(containerRef, handleFileDrop, {
+      disabled: isUploading,
+    });
+
+    // Upload clipboard text as a .txt file into tmp and insert its path.
+    const pasteTextAsFile = useCallback(
+      async (text: string) => {
+        setIsUploading(true);
+        try {
+          const path = await uploadTextAsPasteFile(text, { targetDir });
+          if (path) {
+            sendInput(path);
+            focus();
+          }
+        } finally {
+          setIsUploading(false);
+        }
+      },
+      [sendInput, focus, targetDir]
     );
 
     // Intercept clipboard paste on the terminal container. Clipboard events
     // always target xterm's hidden textarea, which lives inside containerRef,
     // so capturing at the container is the reliable interception point. Local
-    // capture listener fires before xterm's own paste listeners; without image
-    // files we do nothing (default text paste continues into xterm).
+    // capture listener fires before xterm's own paste listeners.
     const handlePasteCapture = useCallback(
       (event: ClipboardEvent) => {
         const files = event.clipboardData?.files
           ? Array.from(event.clipboardData.files)
           : [];
-        // Only intercept when the clipboard carries real files (screenshots /
-        // images / PDFs). Text-only pastes keep xterm's normal paste flow.
-        if (files.length === 0) return;
+
+        if (files.length === 0) {
+          // Text-only paste. Typing is never intercepted here: short pastes
+          // keep xterm's default flow, and only long pastes are taken over.
+          const text = event.clipboardData?.getData("text/plain") || "";
+          if (text.length <= PASTE_AS_FILE_THRESHOLD) return;
+
+          if (isMobile) {
+            // Mobile: ask the user how to insert the long text. clipboardData
+            // is available here from the paste event, so prefill the dialog.
+            event.preventDefault();
+            event.stopPropagation();
+            setLongPasteText(text);
+            return;
+          }
+
+          if (pasteLongAsFilePref()) {
+            event.preventDefault();
+            event.stopPropagation();
+            void pasteTextAsFile(text);
+          }
+          // Preference disabled: old typing behavior applies (do nothing and
+          // let xterm handle the paste).
+          return;
+        }
 
         event.preventDefault();
         event.stopPropagation();
@@ -160,9 +273,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
           for (const file of files) {
             try {
               const path = await uploadFileToTemp(file, {
-                // Paste lands in the terminal's working directory, like drag
-                // and drop; without one, uploads fall back to /tmp.
-                targetDir: workingDirectory || undefined,
+                targetDir,
               });
               if (path) {
                 sendInput(path);
@@ -188,7 +299,27 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
           }
         })();
       },
-      [sendInput, focus, workingDirectory]
+      [sendInput, focus, targetDir, isMobile, pasteTextAsFile]
+    );
+
+    // Mobile long-paste dialog resolution handlers (see LongPasteDialog).
+    const handleLongPasteAsFile = useCallback(
+      (text: string) => {
+        setLongPasteText(null);
+        if (text.trim().length > 0) void pasteTextAsFile(text);
+      },
+      [pasteTextAsFile]
+    );
+    const handleLongPasteInline = useCallback(
+      (text: string) => {
+        setLongPasteText(null);
+        if (text) {
+          // Insert as if typed, matching the toolbar paste flow.
+          for (const char of text) sendInput(char);
+          focus();
+        }
+      },
+      [sendInput, focus]
     );
 
     useEffect(() => {
@@ -297,26 +428,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
           </div>
         )}
 
-        {/* File picker button - desktop only */}
-        {!isMobile && showImageButton && (
-          <button
-            onClick={() => setShowFilePicker(true)}
-            className="bg-secondary absolute top-3 right-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--fill-1)] transition-colors hover:bg-[var(--fill-3)]"
-            title="Attach file"
-          >
-            <Paperclip className="h-4 w-4" />
-          </button>
-        )}
-
-        {/* Image picker modal */}
-        {showFilePicker && (
-          <FilePicker
-            initialPath="~"
-            onSelect={handleImageSelect}
-            onClose={() => setShowFilePicker(false)}
-          />
-        )}
-
         {/* Scroll to bottom button */}
         <ScrollToBottomButton visible={!isAtBottom} onClick={scrollToBottom} />
 
@@ -324,10 +435,19 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
         {isMobile && (
           <TerminalToolbar
             onKeyPress={sendInput}
-            onFilePicker={() => setShowFilePicker(true)}
             onCopy={copySelection}
             selectMode={selectMode}
             onSelectModeChange={setSelectMode}
+          />
+        )}
+
+        {/* Mobile long paste: choose inline vs upload-as-file */}
+        {isMobile && longPasteText !== null && (
+          <LongPasteDialog
+            initialText={longPasteText}
+            onClose={() => setLongPasteText(null)}
+            onPasteAsFile={handleLongPasteAsFile}
+            onPasteInline={handleLongPasteInline}
           />
         )}
 

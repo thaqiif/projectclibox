@@ -1,11 +1,74 @@
 import { toast } from "sonner";
 import { MAX_UPLOAD_BYTES, UPLOAD_CHUNK_BYTES } from "@/lib/upload-limits";
 
-interface UploadOptions {
+export interface UploadOptions {
   /** Absolute directory to land the file in (e.g. the terminal cwd). */
   targetDir?: string | null;
   /** Replace an existing file of the same name instead of timestamping. */
   overwrite?: boolean;
+}
+
+/**
+ * Directory terminal drop/paste uploads should land in: the terminal's
+ * working directory joined with `tmp` (so uploads never litter the cwd root).
+ * Without a working directory the caller should fall back to /tmp (targetDir
+ * undefined already does that server-side).
+ */
+export function uploadTargetDir(
+  workingDirectory?: string | null
+): string | undefined {
+  if (!workingDirectory) return undefined;
+  const base = workingDirectory.replace(/\/+$/, "");
+  if (!base) return undefined;
+  return `${base}/tmp`;
+}
+
+/**
+ * Text pastes longer than this become a .txt file upload instead of being
+ * typed into the terminal (see Terminal paste handling).
+ */
+export const PASTE_AS_FILE_THRESHOLD = 2000;
+
+/** localStorage key for the paste-long-as-file user preference. */
+export const PASTE_LONG_AS_FILE_PREF = "paste-long-as-file";
+
+/**
+ * Read the paste-long-as-file user preference. Default is enabled; kept in
+ * localStorage so a future UI settings surface can expose it.
+ */
+export function pasteLongAsFilePref(): boolean {
+  if (typeof window === "undefined" || !window.localStorage) return true;
+  try {
+    const stored = window.localStorage.getItem(PASTE_LONG_AS_FILE_PREF);
+    return stored === null ? true : stored === "true";
+  } catch {
+    return true;
+  }
+}
+
+/** Cache-safe timestamped name like paste-2026-09-24T1530-05.txt. */
+export function pasteFileName(date: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )}T${pad(date.getHours())}${pad(date.getMinutes())}${pad(
+    date.getSeconds()
+  )}`;
+  // Milliseconds keep rapid consecutive pastes collision-safe; the server also
+  // timestamp-prefixes on collision.
+  return `paste-${stamp}-${String(date.getMilliseconds()).padStart(3, "0")}.txt`;
+}
+
+/**
+ * Upload clipboard text as a UTF-8 .txt file into `targetDir` and return the
+ * uploaded path (null on failure; the uploader toasts errors itself).
+ */
+export async function uploadTextAsPasteFile(
+  text: string,
+  options: UploadOptions = {}
+): Promise<string | null> {
+  const file = new File([text], pasteFileName(), { type: "text/plain" });
+  return uploadFileToTemp(file, options);
 }
 
 interface UploadWithProgressOptions extends UploadOptions {
