@@ -8,42 +8,15 @@ import {
   statSync,
 } from "fs";
 import { resolve, dirname, basename } from "path";
-
-/**
- * Minimal same-origin guard: allows requests with no Origin/Referer
- * (same-origin fetches may omit them) and blocks cross-site origins.
- * Local replacement until cliweb/lib/route-guards.ts lands.
- */
-export function checkSameOrigin(request: NextRequest): boolean {
-  const origin = request.headers.get("origin");
-  const referer = request.headers.get("referer");
-  if (!origin && !referer) return true;
-
-  const host = request.headers.get("host");
-  if (!host) return false;
-
-  try {
-    if (origin) {
-      return new URL(origin).host === host;
-    }
-    return new URL(referer!).host === host;
-  } catch {
-    return false;
-  }
-}
+import { guardJsonSameOrigin } from "@/lib/route-guards";
 
 /**
  * POST /api/files/ops
  * JSON body: { op: "mkdir" | "createFile" | "rename" | "move" | "copy" | "delete", path: string, to?: string, force?: boolean }
  */
 export async function POST(request: NextRequest) {
-  if (!checkSameOrigin(request)) {
-    return NextResponse.json({ error: "Cross-origin request rejected" }, { status: 403 });
-  }
-  const contentType = request.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) {
-    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
-  }
+  const guard = guardJsonSameOrigin(request);
+  if (guard) return guard;
 
   let body: {
     op?: string;
