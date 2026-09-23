@@ -215,7 +215,7 @@ export function FileOpsMenu({ node, workingDirectory, onDone }: FileOpsMenuProps
         mode={picker?.mode ?? "move"}
         itemLabel={node.name}
         startDir={workingDirectory || node.path.slice(0, node.path.lastIndexOf("/")) || "/"}
-        blockedDir={node.type === "directory" ? node.path : undefined}
+        blockedDirs={node.type === "directory" ? [node.path] : undefined}
         busy={busy}
         onChoose={confirmPick}
         onCancel={() => setPicker(null)}

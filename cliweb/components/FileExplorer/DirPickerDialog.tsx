@@ -30,10 +30,10 @@ export interface DirPickerDialogProps {
   /** Directory the browsing starts from (usually the current working dir). */
   startDir: string;
   /**
-   * Directory that may not be picked, nor any of its subdirectories
-   * (e.g. the source dir itself when moving a directory). Optional.
+   * Directories that may not be picked, nor any of their subdirectories
+   * (e.g. the source dirs when moving a directory). Optional.
    */
-  blockedDir?: string;
+  blockedDirs?: readonly string[];
   /** Disable Choose while the resulting operation is in flight. */
   busy?: boolean;
   onChoose: (dir: string) => void;
@@ -61,7 +61,7 @@ export function DirPickerDialog({
   mode,
   itemLabel,
   startDir,
-  blockedDir,
+  blockedDirs,
   busy = false,
   onChoose,
   onCancel,
@@ -102,12 +102,14 @@ export function DirPickerDialog({
     };
   }, [open, currentDir]);
 
-  // Refuse the blocked directory and its subtree (moving a dir into itself).
-  const blockedNorm = blockedDir ? normDir(blockedDir) : null;
+  // Refuse blocked directories and their subtrees (moving a dir into itself).
   const isBlocked =
-    blockedNorm !== null &&
-    (normDir(currentDir) === blockedNorm ||
-      normDir(currentDir).startsWith(blockedNorm + "/"));
+    blockedDirs !== undefined &&
+    blockedDirs.some(
+      (b) =>
+        normDir(currentDir) === normDir(b) ||
+        normDir(currentDir).startsWith(normDir(b) + "/")
+    );
 
   const chooseDisabled = loading || busy || isBlocked;
 
