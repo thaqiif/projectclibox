@@ -107,6 +107,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
     // Handle file drop - upload and insert path into terminal
     const handleFileDrop = useCallback(
       async (file: File) => {
+        // Multiple files are processed sequentially by useFileDrop; failures
+        // propagate so the hook can collect and report them.
         setIsUploading(true);
         try {
           const path = await uploadFileToTemp(file, {
@@ -118,8 +120,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
             sendInput(path);
             focus();
           }
-        } catch (err) {
-          console.error("Failed to upload file:", err);
         } finally {
           setIsUploading(false);
         }

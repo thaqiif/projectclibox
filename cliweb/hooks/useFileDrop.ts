@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, type RefObject } from "react";
+import { toast } from "sonner";
 import {
   PANE_DRAG_TYPE,
   TERMINAL_DRAG_TYPE,
@@ -28,13 +29,14 @@ function isMonitorDrag(event: React.DragEvent) {
  * Hook for handling file drag and drop on a container element.
  *
  * @param containerRef - Ref to the container element for relatedTarget checking
- * @param onFileDrop - Callback when a file is dropped
+ * @param onFileDrop - Async callback invoked once per dropped file, in drop
+ *   order; a rejection is collected and does not stop later files
  * @param options - Optional configuration
  * @returns isDragging state and drag event handlers to spread onto the container
  */
 export function useFileDrop(
   containerRef: RefObject<HTMLElement | null>,
-  onFileDrop: (file: File) => void,
+  onFileDrop: (file: File) => void | Promise<void>,
   options?: UseFileDropOptions
 ): { isDragging: boolean; dragHandlers: DragHandlers } {
   const [isDragging, setIsDragging] = useState(false);
@@ -76,7 +78,7 @@ export function useFileDrop(
   );
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    async (e: React.DragEvent) => {
       if (isMonitorDrag(e)) return;
       e.preventDefault();
       e.stopPropagation();
@@ -85,8 +87,34 @@ export function useFileDrop(
       if (options?.disabled) return;
 
       const files = Array.from(e.dataTransfer.files);
-      if (files.length > 0) {
-        onFileDrop(files[0]);
+      if (files.length === 0) return;
+
+      // Process every dropped file, one at a time, so uploads land in a
+      // predictable order and cannot pile up on shared upload state. Each
+      // file's failure is collected so one bad file never aborts the rest.
+      const errors: { file: File; error: unknown }[] = [];
+      for (const file of files) {
+        try {
+          await onFileDrop(file);
+        } catch (error) {
+          errors.push({ file, error });
+        }
+      }
+
+      if (errors.length > 0) {
+        toast.error(
+          `Failed to upload ${errors.length} of ${files.length} file(s)`,
+          {
+            description: errors
+              .map(
+                ({ file, error }) =>
+                  `${file.name}: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`
+              )
+              .join("\n"),
+          }
+        );
       }
     },
     [onFileDrop, options?.disabled]
