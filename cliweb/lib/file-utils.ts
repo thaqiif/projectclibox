@@ -48,3 +48,14 @@ export function getLanguageFromExtension(ext: string): string {
 
   return languageMap[ext.toLowerCase()] || "plaintext";
 }
+
+/**
+ * True when a node matches the filter term. Matching is by basename
+ * substring, case-insensitive; a whitespace-only (or empty) term matches
+ * everything.
+ */
+export function matchesFilter(node: FileNode, term: string): boolean {
+  const t = term.trim().toLowerCase();
+  if (!t) return true;
+  return node.name.toLowerCase().includes(t);
+}
