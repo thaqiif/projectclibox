@@ -21,6 +21,13 @@ interface FileEditorProps {
   content: string;
   language: string;
   isBinary: boolean;
+  /**
+   * The server could only return a placeholder note (file over the read
+   * limit). No editing surface is shown and saves are refused client-side;
+   * rendering the placeholder as editable text just sets users up to lose
+   * their edits to a save that always refuses.
+   */
+  truncated?: boolean;
   /** Absolute file path; enables download and inline image preview. */
   path?: string;
   readOnly?: boolean;
@@ -184,6 +191,7 @@ export function FileEditor({
   content,
   language,
   isBinary,
+  truncated = false,
   path,
   readOnly = false,
   dirty = false,
@@ -232,6 +240,30 @@ export function FileEditor({
       return () => cancelAnimationFrame(frame);
     }
   }, [hasPreview]);
+
+  // Truncated files (placeholder only) get read-only treatment: the real
+  // bytes are not here, so no editing surface and no save path. A truncated
+  // IMAGE also falls through to this notice instead of a broken preview.
+  if (truncated) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
+        <FileCode className="text-muted-foreground/70 h-4 w-4" />
+        <p className="ui-label">File too large to edit</p>
+        <p className="ui-meta text-center">
+          only a preview note is loaded; cannot save from here
+        </p>
+        {path && (
+          <a
+            href={downloadUrl(path)}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-1 ui-meta transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            download file
+          </a>
+        )}
+      </div>
+    );
+  }
 
   // Binary files: images preview inline, everything else gets a download
   // affordance instead of a dead end.

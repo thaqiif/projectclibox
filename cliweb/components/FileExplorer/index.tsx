@@ -16,8 +16,11 @@ import {
   RefreshCw,
   Check,
   Save,
+  Trash2,
+  Undo2,
   X,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,12 +37,14 @@ import type { OpenFile } from "@/hooks/useFileEditor";
 import { FileOpsMenu } from "./TreeNodeActions";
 import { BulkActionBar } from "./BulkActionBar";
 import { clearSelection, toggleSelection } from "@/lib/file-bulk";
-import { fileRename, fileDelete } from "@/lib/file-ops";
+import { fileRename, fileDelete, fileRestore } from "@/lib/file-ops";
 import { uploadFileToTemp } from "@/lib/file-upload";
 import { useFileDrop } from "@/hooks/useFileDrop";
+import { useFileUploadProgress } from "@/hooks/useFileUploadProgress";
 import { ListFilter } from "./ListFilter";
 import { UploadProgressBanner } from "./UploadProgressBanner";
 import { SaveConflictDialog } from "./SaveConflictDialog";
+import { UNDO_WINDOW_MS } from "./TreeNodeActions";
 
 // The CodeMirror stack is heavy and only loads once a file is actually
 // opened, not when the explorer pane first appears.
@@ -148,7 +153,13 @@ export function FileExplorer({
 
   const handleConflictOverwrite = useCallback(async () => {
     if (conflictFilePath) {
-      await saveFile(conflictFilePath, { force: true });
+      await saveFile(conflictFilePath, {
+        force: true,
+        // The user explicitly confirmed the overwrite in the conflict
+        // dialog: this is the only path allowed to replace a text open
+        // whose on-disk bytes became binary. A plain save never sends it.
+        allowBinaryOverwrite: true,
+      });
       dismissConflict();
     }
   }, [conflictFilePath, saveFile, dismissConflict]);
@@ -589,6 +600,7 @@ function DesktopFileExplorer({
               content={activeFile.currentContent}
               language={activeFile.language}
               isBinary={activeFile.isBinary}
+              truncated={activeFile.truncated}
               dirty={activeFilePath ? isDirty(activeFilePath) : false}
               saving={saving}
               onChange={(content) => updateContent(activeFile.path, content)}
@@ -729,6 +741,7 @@ function MobileFileExplorer({
               content={activeFile.currentContent}
               language={activeFile.language}
               isBinary={activeFile.isBinary}
+              truncated={activeFile.truncated}
               dirty={isCurrentDirty}
               saving={saving}
               onChange={(content) => updateContent(activeFile.path, content)}
@@ -808,8 +821,12 @@ function MobileFileExplorer({
           <Loader2 className="text-primary h-6 w-6 animate-spin" />
         </div>
       )}
-      {/* UPLOAD_PROGRESS_INTEGRATION: aggregate upload progress */}
-      <UploadProgressBanner className="absolute bottom-2 left-2 right-2 z-20" />
+      {/* UPLOAD_PROGRESS_INTEGRATION: aggregate upload progress; anchored
+          below the listing instead of overlapping the BulkActionBar with an
+          absolutely-positioned viewport-wide strip. */}
+      <div className="shrink-0 px-2 pb-2">
+        <UploadProgressBanner />
+      </div>
     </div>
   );
 }
@@ -907,6 +924,8 @@ interface ListingBodyProps {
   onFileClick: (path: string) => void;
   onRefresh?: () => void;
   activePath?: string;
+  /** True when a filter term is active, for accurate empty-state copy. */
+  filterActive?: boolean;
 }
 
 function ListingBody({
@@ -918,11 +937,57 @@ function ListingBody({
   onFileClick,
   onRefresh,
   activePath,
+  filterActive = false,
 }: ListingBodyProps) {
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   // Minimal multi-select wiring: checkbox per row, selection owned here and
   // consumed by the floating BulkActionBar. Coordinator may lift this later.
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+
+  // TRASH_UNDO: undo banners live here (the listing) rather than in the
+  // per-row FileOpsMenu, because the refresh after trashing removes the row
+  // and unmounts the menu, destroying its banner before Undo could be
+  // used. A queue of entries keeps Undo available for every item trashed
+  // within its 10s window, not just the most recent one.
+  const { uploading } = useFileUploadProgress();
+  const hasSelection = selectedPaths.size > 0;
+  const [trashQueue, setTrashQueue] = useState<TrashEntry[]>([]);
+  const [undoBusyId, setUndoBusyId] = useState<number | null>(null);
+  const nextTrashId = useRef(1);
+
+  const handleTrashed = useCallback((name: string, trashPath: string) => {
+    const id = nextTrashId.current++;
+    setTrashQueue((prev) => [
+      ...prev,
+      { id, name, trashPath, expiresAt: Date.now() + UNDO_WINDOW_MS },
+    ]);
+  }, []);
+
+  const removeTrashEntry = useCallback((id: number) => {
+    setTrashQueue((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const handleUndoTrash = useCallback(
+    async (entry: TrashEntry) => {
+      if (undoBusyId !== null) return; // rapid double-click guard
+      setUndoBusyId(entry.id);
+      try {
+        await fileRestore(entry.trashPath);
+        removeTrashEntry(entry.id);
+        onRefresh?.(); // restore re-adds the item, so refresh the listing
+      } catch (err) {
+        console.error("Restore failed:", err);
+        window.alert(
+          err instanceof Error
+            ? err.message
+            : "Restore failed; the item stays in trash"
+        );
+      } finally {
+        setUndoBusyId(null);
+      }
+    },
+    [undoBusyId, onRefresh, removeTrashEntry]
+  );
 
   // DND_UPLOAD: accept OS file drops into the listing and upload them into
   // the directory currently shown. The enabled gate ("Files" type) keeps
@@ -1045,7 +1110,11 @@ function ListingBody({
     return (
       <div className="flex h-32 flex-col items-center justify-center gap-2">
         <p className="ui-label">Nothing here</p>
-        <p className="ui-meta">directory has no entries</p>
+        <p className="ui-meta">
+          {filterActive
+            ? "no matches for the filter"
+            : "directory has no entries"}
+        </p>
       </div>
     );
   }
@@ -1120,6 +1189,14 @@ function ListingBody({
                 role="checkbox"
                 aria-checked={selectedPaths.has(node.path)}
                 aria-label={`Select ${node.name}`}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSelectedPaths((prev) => toggleSelection(prev, node.path));
+                  }
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
                   setSelectedPaths((prev) => toggleSelection(prev, node.path));
@@ -1164,6 +1241,7 @@ function ListingBody({
                   node={node}
                   workingDirectory={workingDirectory}
                   onDone={onRefresh}
+                  onTrashed={handleTrashed}
                 />
               </span>
             </div>
@@ -1178,6 +1256,100 @@ function ListingBody({
         onRefresh={onRefresh}
         onClear={() => setSelectedPaths(clearSelection())}
       />
+
+      {trashQueue.length > 0 &&
+        createPortal(
+          // Stacked undo banners, anchored above the bulk bar / upload
+          // banner so all three can be on screen without overlapping.
+          <div
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "fixed left-1/2 z-[100] flex -translate-x-1/2 flex-col items-center gap-2",
+              uploading
+                ? hasSelection
+                  ? "bottom-28"
+                  : "bottom-16"
+                : hasSelection
+                  ? "bottom-14"
+                  : "bottom-4"
+            )}
+          >
+            {trashQueue.map((entry) => (
+              <TrashUndoBannerRow
+                key={entry.id}
+                entry={entry}
+                busy={undoBusyId === entry.id}
+                onUndo={() => void handleUndoTrash(entry)}
+                onExpire={() => removeTrashEntry(entry.id)}
+                onDismiss={() => removeTrashEntry(entry.id)}
+              />
+            ))}
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
+
+interface TrashEntry {
+  id: number;
+  name: string;
+  trashPath: string;
+  expiresAt: number;
+}
+
+function TrashUndoBannerRow({
+  entry,
+  busy,
+  onUndo,
+  onExpire,
+  onDismiss,
+}: {
+  entry: TrashEntry;
+  busy: boolean;
+  onUndo: () => void;
+  onExpire: () => void;
+  onDismiss: () => void;
+}) {
+  // Auto-dismiss when the undo window elapses (the same window the server
+  // purges after; an Undo racing the purge fails with a clear alert).
+  useEffect(() => {
+    const timer = setTimeout(
+      onExpire,
+      Math.max(entry.expiresAt - Date.now(), 0)
+    );
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry.id]);
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-background/95 px-4 py-2.5 shadow-lg backdrop-blur">
+      <Trash2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <span className="max-w-[40ch] truncate text-sm">
+        Moved “{entry.name}” to trash
+      </span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onUndo}
+        className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+      >
+        {busy ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <Undo2 className="h-3 w-3" />
+        )}
+        Undo
+      </button>
+      <button
+        type="button"
+        aria-label="Dismiss undo banner"
+        onClick={onDismiss}
+        className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }

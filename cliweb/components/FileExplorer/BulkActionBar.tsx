@@ -96,7 +96,9 @@ export function BulkActionBar({
       <div
         role="toolbar"
         aria-label="Bulk actions for selected files"
-        className="absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 shadow-lg backdrop-blur"
+        // flex-wrap + max-w so the bar stays usable on narrow screens
+        // (mobile) instead of overflowing horizontally.
+        className="absolute bottom-3 left-1/2 z-30 flex max-w-[calc(100vw-2rem)] flex-wrap-reverse justify-center -translate-x-1/2 items-center gap-2 rounded-2xl border border-border bg-background/95 px-3 py-1.5 shadow-lg backdrop-blur md:rounded-full md:flex-nowrap md:max-w-full"
       >
         {running ? (
           <span className="ui-meta flex items-center gap-1.5 px-1">

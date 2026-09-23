@@ -1,12 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useState } from "react";
 import {
   MoreHorizontal,
   Loader2,
-  Undo2,
-  X,
   Trash2,
 } from "lucide-react";
 import {
@@ -23,7 +20,6 @@ import {
   fileMove,
   fileCopy,
   fileDelete,
-  fileRestore,
 } from "@/lib/file-ops";
 import { DirPickerDialog } from "./DirPickerDialog";
 import type { FileNode } from "@/lib/file-utils";
@@ -32,17 +28,13 @@ interface FileOpsMenuProps {
   node: FileNode;
   workingDirectory: string;
   onDone?: () => void;
-}
-
-/** Pending trashed item shown in the undo banner. */
-interface TrashUndoState {
-  name: string;
-  trashPath: string;
-  expiresAt: number;
+  /** Called with the trash location after a successful soft-delete, so the
+   *  listing can show an undo banner that survives the row's removal. */
+  onTrashed?: (name: string, trashPath: string) => void;
 }
 
 /** Window during which Undo is offered after a trash delete. */
-const UNDO_WINDOW_MS = 10_000;
+export const UNDO_WINDOW_MS = 10_000;
 
 /**
  * Per-node "..." action menu: New Folder / New File (only on directories),
@@ -52,14 +44,10 @@ const UNDO_WINDOW_MS = 10_000;
  * rendered inside it was destroyed before it could show (the "nothing
  * happens" bug). A portal dialog survives the menu close.
  */
-export function FileOpsMenu({ node, workingDirectory, onDone }: FileOpsMenuProps) {
+export function FileOpsMenu({ node, workingDirectory, onDone, onTrashed }: FileOpsMenuProps) {
   const [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState<{ mode: "move" | "copy" } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [trashUndo, setTrashUndo] = useState<TrashUndoState | null>(null);
-  const [undoBusy, setUndoBusy] = useState(false);
-  const trashUndoRef = useRef<TrashUndoState | null>(null);
-  trashUndoRef.current = trashUndo;
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -118,48 +106,9 @@ export function FileOpsMenu({ node, workingDirectory, onDone }: FileOpsMenuProps
     }
     run(async () => {
       const res = await fileDelete(node.path);
-      if (!res.trashPath) return;
-      setMenuOpen(false);
-      setTrashUndo({
-        name: node.name,
-        trashPath: res.trashPath,
-        expiresAt: Date.now() + UNDO_WINDOW_MS,
-      });
+      if (res.trashPath) onTrashed?.(node.name, res.trashPath);
     });
   };
-
-  const dismissTrashUndo = useCallback(() => setTrashUndo(null), []);
-
-  const handleUndoDelete = async () => {
-    if (!trashUndo || undoBusy) return;
-    setUndoBusy(true);
-    try {
-      await fileRestore(trashUndo.trashPath);
-      setTrashUndo(null);
-      onDone?.(); // restore re-adds the item, so refresh the parent list
-    } catch (err) {
-      console.error("Restore failed:", err);
-      alert(
-        err instanceof Error
-          ? err.message
-          : "Restore failed; the item stays in trash"
-      );
-    } finally {
-      setUndoBusy(false);
-    }
-  };
-
-  // Auto-dismiss the banner when the undo window elapses
-  useEffect(() => {
-    if (!trashUndo) return;
-    const tick = () => {
-      if (Date.now() >= (trashUndoRef.current?.expiresAt ?? 0)) {
-        setTrashUndo(null);
-      }
-    };
-    const interval = setInterval(tick, 250);
-    return () => clearInterval(interval);
-  }, [trashUndo]);
 
   const handleDownloadZip = () => {
     const url = `/api/files/zip?path=${encodeURIComponent(node.path)}`;
@@ -220,42 +169,6 @@ export function FileOpsMenu({ node, workingDirectory, onDone }: FileOpsMenuProps
         onChoose={confirmPick}
         onCancel={() => setPicker(null)}
       />
-
-      {trashUndo &&
-        createPortal(
-          <div
-            role="status"
-            aria-live="polite"
-            className="fixed bottom-4 left-1/2 z-[100] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-background/95 px-4 py-2.5 shadow-lg backdrop-blur"
-          >
-            <Trash2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="max-w-[40ch] truncate text-sm">
-              Moved &ldquo;{trashUndo.name}&rdquo; to trash
-            </span>
-            <button
-              type="button"
-              disabled={undoBusy}
-              onClick={() => void handleUndoDelete()}
-              className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {undoBusy ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Undo2 className="h-3 w-3" />
-              )}
-              Undo
-            </button>
-            <button
-              type="button"
-              aria-label="Dismiss undo banner"
-              onClick={dismissTrashUndo}
-              className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>,
-          document.body
-        )}
     </>
   );
 }
