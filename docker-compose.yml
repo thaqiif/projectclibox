@@ -33,21 +33,12 @@ services:
       # CLIWeb call APIs from sibling containers through their host ports.
       - "host.docker.internal:host-gateway"
     volumes:
-      # Per-deployment host paths. Both PRODUCTION and TEST apps deploy from
-      # this same compose file, so the default must be overridable per app:
-      # set CLIWEB_HOME_DIR to a different absolute host path in each Coolify
-      # app's environment. Defaults keep today's single-home layout for
-      # existing single deployments.
-      - type: bind
-        source: ${CLIWEB_HOME_DIR:-/home/cliweb}
-        target: /home/cliweb
-        bind:
-          create_host_path: true
-      - type: bind
-        source: ${CLIWEB_HOME_DIR:-/home/cliweb}/nanobrew
-        target: /opt/nanobrew
-        bind:
-          create_host_path: true
+      # Per-deployment host paths via env vars (same pattern as WORKSPACE_DIR,
+      # which Coolify already accepts). Set CLIWEB_HOME_DIR to a different
+      # absolute host path per Coolify app so production and test get their
+      # own persisted home.
+      - ${CLIWEB_HOME_DIR:-/home/cliweb}:/home/cliweb
+      - ${CLIWEB_HOME_DIR:-/home/cliweb}/nanobrew:/opt/nanobrew
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces
 
     # Pass host devices through so web terminals can use hardware features.
