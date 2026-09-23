@@ -14,6 +14,25 @@ function formatBytes(bytes: number): string {
 }
 
 /**
+ * Encode bytes as base64 in fixed-size slices.
+ *
+ * Building the binary string from one big Uint8Array a byte at a time with
+ * `data + String.fromCharCode(byte)` is O(n^2): every byte re-copies the
+ * whole string so far. Slicing the view into fixed chunks and feeding each
+ * chunk to String.fromCharCode makes it linear. A full-file btoa on a
+ * 200MB file would also build a ~267MB binary string; the chunks keep the
+ * peak allocation the same but the build loop linear.
+ */
+function toBase64(bytes: Uint8Array): string {
+  const CHUNK = 0x8000; // < the argument-count limit for string building
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    parts.push(String.fromCharCode(...bytes.slice(i, i + CHUNK)));
+  }
+  return btoa(parts.join(""));
+}
+
+/**
  * Upload a file and return its path.
  * Converts the file to base64 and POSTs to /api/files/upload-temp.
  *
@@ -41,12 +60,7 @@ export async function uploadFileToTemp(
   }
 
   const buffer = await file.arrayBuffer();
-  const base64 = btoa(
-    new Uint8Array(buffer).reduce(
-      (data, byte) => data + String.fromCharCode(byte),
-      ""
-    )
-  );
+  const base64 = toBase64(new Uint8Array(buffer));
 
   const res = await fetch("/api/files/upload-temp", {
     method: "POST",
