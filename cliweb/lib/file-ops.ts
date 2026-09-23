@@ -7,7 +7,13 @@ export interface FileOpResponse {
   error?: string;
 }
 
-type FileOp = "mkdir" | "createFile" | "rename" | "delete";
+type FileOp =
+  | "mkdir"
+  | "createFile"
+  | "rename"
+  | "move"
+  | "copy"
+  | "delete";
 
 interface FileOpOptions {
   force?: boolean;
@@ -55,6 +61,24 @@ export function fileRename(
   options: FileOpOptions = {}
 ): Promise<FileOpResponse> {
   return fileOp("rename", path, { to, force: options.force });
+}
+
+/** Move a file or directory into a destination directory (keeps its basename). Pass force: true to overwrite dest. */
+export function fileMove(
+  path: string,
+  toDir: string,
+  options: FileOpOptions = {}
+): Promise<FileOpResponse> {
+  return fileOp("move", path, { to: toDir, force: options.force });
+}
+
+/** Copy a file (or directory when supported) into a destination directory (keeps its basename). Pass force: true to overwrite dest. */
+export function fileCopy(
+  path: string,
+  toDir: string,
+  options: FileOpOptions = {}
+): Promise<FileOpResponse> {
+  return fileOp("copy", path, { to: toDir, force: options.force });
 }
 
 /** Delete a file or directory (recursive). */
