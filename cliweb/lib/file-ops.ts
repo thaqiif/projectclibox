@@ -95,7 +95,7 @@ export function fileCopy(
 
 /**
  * Soft-delete a file or directory (recursive): it is moved into the server's
- * trash directory (~/.cliweb-trash) with a collision-safe timestamped name.
+ * trash directory (~/.cliweb/.trash) with a collision-safe timestamped name.
  * Returns { ok, trashPath } so callers can offer Undo via fileRestore.
  */
 export function fileDelete(path: string): Promise<FileDeleteResponse> {

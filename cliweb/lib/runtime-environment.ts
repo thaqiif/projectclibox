@@ -27,7 +27,7 @@ function uniquePath(entries: string[]): string {
  * Two deployments (production and test) can share the same persisted home
  * volume without seeing each other's data: with CLIWEB_PROFILE=test set on
  * one deployment, its data directories are suffixed, e.g.
- * ~/.cliweb-test/cliweb.db and ~/.cliweb-trash-test. The default profile
+ * ~/.cliweb-test/cliweb.db and ~/.cliweb-test/.trash. The default profile
  * (no variable, or empty) keeps today's paths unchanged for compatibility.
  */
 export function cliwebProfileSuffix(

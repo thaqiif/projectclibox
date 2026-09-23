@@ -213,9 +213,10 @@ See [.env.example](.env.example) for the small set of supported settings:
 - `PUID` / `PGID` — host ownership for `/home/cliweb` and workspace files.
 - `CLIWEB_PROFILE` — optional data-namespace suffix. Set it to a different
   value per deployment (for example `test`) when two deployments share the
-  persisted home mount: state goes to `~/.cliweb-<profile>/cliweb.db` instead
-  of `~/.cliweb/cliweb.db`, so they coexist without sharing data. Explicit
-  `DB_PATH` still takes precedence if you need full manual control.
+  persisted home mount: all state (database, trash) goes under
+  `~/.cliweb-<profile>/` instead of `~/.cliweb/`, so they coexist without
+  sharing data. Explicit `DB_PATH` still takes precedence if you need full
+  manual control.
 - Any additional variables in `.env` are passed through to terminal shells,
   which is useful for API keys or project-specific configuration.
 

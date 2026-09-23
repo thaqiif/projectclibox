@@ -20,11 +20,13 @@ import { MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
  * being permanently removed, together with a <name>.meta.json sibling that
  * records the original absolute path so they can be restored.
  */
-// Trash lives under the persistent home, suffixed per CLIWEB_PROFILE so a
-// test deployment never deletes into production's trash.
+// Trash lives inside the CLIWeb data directory (.cliweb by default, or
+// .cliweb-<profile> when CLIWEB_PROFILE is set), so each deployment has a
+// single self-contained data folder and they never share data.
 const TRASH_DIR = join(
   process.env.HOME || "",
-  `.cliweb-trash${cliwebProfileSuffix()}`
+  `.cliweb${cliwebProfileSuffix()}`,
+  ".trash"
 );
 
 interface TrashMeta {
@@ -149,7 +151,7 @@ function copyDirRecursive(
  * force. Refuses to copy a directory into itself. Caps: depth 20, 200MB
  * total file bytes, symlinks skipped.
  *
- * delete: move the target into ~/.cliweb-trash/ (soft delete, returns trashPath).
+ * delete: move the target into ~/.cliweb/.trash/ (soft delete, returns trashPath).
  * restore: { path: trashPath, to?: original override } move it back to its
  *   original location (409 if that exists, unless force).
  * purge: permanently remove a trashed item and its metadata file.
