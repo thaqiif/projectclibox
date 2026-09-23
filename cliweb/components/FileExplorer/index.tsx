@@ -5,7 +5,16 @@ import dynamic from "next/dynamic";
 import { FileTabs } from "./FileTabs";
 import type { UseFileEditorReturn } from "@/hooks/useFileEditor";
 import { useViewport } from "@/hooks/useViewport";
-import { ArrowLeft, File, Folder, Loader2, Save } from "lucide-react";
+import {
+  ArrowLeft,
+  Eye,
+  EyeOff,
+  File,
+  Folder,
+  Loader2,
+  RefreshCw,
+  Save,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,6 +59,34 @@ export function FileExplorer({
   const [pendingClose, setPendingClose] = useState<string | null>(null);
   // Drill-down navigation: current directory being browsed (null = workingDirectory)
   const [currentDir, setCurrentDir] = useState<string | null>(null);
+  // Show dotfiles; persisted in localStorage
+  const [showHidden, setShowHidden] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Load persisted hidden-files preference once hydrated on the client
+  useEffect(() => {
+    try {
+      setShowHidden(localStorage.getItem("files-show-hidden") === "true");
+    } catch {
+      // localStorage unavailable, keep default
+    }
+  }, []);
+
+  const handleToggleHidden = useCallback(() => {
+    setShowHidden((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("files-show-hidden", String(next));
+      } catch {
+        // localStorage unavailable, ignore
+      }
+      return next;
+    });
+  }, []);
+
+  const handleRefresh = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   const {
     openFiles,
@@ -79,7 +116,7 @@ export function FileExplorer({
       setError(null);
       try {
         const res = await fetch(
-          `/api/files?path=${encodeURIComponent(effectiveDir)}`
+          `/api/files?path=${encodeURIComponent(effectiveDir)}&showHidden=${showHidden}`
         );
         const data = await res.json();
         if (data.error) {
@@ -94,7 +131,7 @@ export function FileExplorer({
       }
     };
     loadFiles();
-  }, [workingDirectory, effectiveDir]);
+  }, [workingDirectory, effectiveDir, showHidden, refreshKey]);
 
   const handleOpenDir = useCallback((path: string) => {
     setCurrentDir(path);
@@ -178,6 +215,9 @@ export function FileExplorer({
         onOpenDir={handleOpenDir}
         canGoUp={currentDir !== null}
         onGoUp={handleNavigateUp}
+        showHidden={showHidden}
+        onToggleHidden={handleToggleHidden}
+        onRefresh={handleRefresh}
         onSelectTab={setActiveFile}
         onCloseTab={handleCloseFile}
         onSave={handleSave}
@@ -208,6 +248,9 @@ export function FileExplorer({
       onOpenDir={handleOpenDir}
       canGoUp={currentDir !== null}
       onGoUp={handleNavigateUp}
+      showHidden={showHidden}
+      onToggleHidden={handleToggleHidden}
+      onRefresh={handleRefresh}
       onSelectTab={setActiveFile}
       onCloseTab={handleCloseFile}
       onSave={handleSave}
@@ -236,6 +279,9 @@ interface DesktopFileExplorerProps {
   onOpenDir: (path: string) => void;
   canGoUp: boolean;
   onGoUp: () => void;
+  showHidden: boolean;
+  onToggleHidden: () => void;
+  onRefresh: () => void;
   onSelectTab: (path: string) => void;
   onCloseTab: (path: string) => void;
   onSave: () => void;
@@ -261,6 +307,9 @@ function DesktopFileExplorer({
   onOpenDir,
   canGoUp,
   onGoUp,
+  showHidden,
+  onToggleHidden,
+  onRefresh,
   onSelectTab,
   onCloseTab,
   onSave,
@@ -321,6 +370,11 @@ function DesktopFileExplorer({
           )}
           <span className="ui-label shrink-0">Files</span>
           <span className="ui-meta truncate">{workingDirectory}</span>
+          <ExplorerListButtons
+            showHidden={showHidden}
+            onToggleHidden={onToggleHidden}
+            onRefresh={onRefresh}
+          />
         </div>
         <ListingBody
           files={files}
@@ -412,6 +466,9 @@ function MobileFileExplorer({
   onOpenDir,
   canGoUp,
   onGoUp,
+  showHidden,
+  onToggleHidden,
+  onRefresh,
   onSelectTab,
   onCloseTab,
   onSave,
@@ -500,16 +557,24 @@ function MobileFileExplorer({
       <div className="glass glass-edge-bottom relative z-10 flex h-12 shrink-0 flex-col justify-center gap-0.5 px-3">
         <span className="ui-label">Files</span>
         <span className="ui-meta truncate">{workingDirectory}</span>
-        {canGoUp && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onGoUp}
-            className="text-muted-foreground absolute top-0 right-0 h-12 px-2 hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        )}
+        <div className="absolute top-0 right-0 flex items-center pr-1">
+          {canGoUp && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onGoUp}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <ExplorerListButtons
+            showHidden={showHidden}
+            onToggleHidden={onToggleHidden}
+            onRefresh={onRefresh}
+          />
+        </div>
       </div>
 
       <ListingBody
@@ -527,6 +592,44 @@ function MobileFileExplorer({
         </div>
       )}
     </div>
+  );
+}
+
+// Eye/eye-off and refresh controls shared by the desktop and mobile headers
+function ExplorerListButtons({
+  showHidden,
+  onToggleHidden,
+  onRefresh,
+}: {
+  showHidden: boolean;
+  onToggleHidden: () => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onToggleHidden}
+        className="text-muted-foreground hover:text-foreground"
+        aria-label={showHidden ? "Hide hidden files" : "Show hidden files"}
+      >
+        {showHidden ? (
+          <Eye className="h-3.5 w-3.5" />
+        ) : (
+          <EyeOff className="h-3.5 w-3.5" />
+        )}
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onRefresh}
+        className="text-muted-foreground hover:text-foreground"
+        aria-label="Refresh"
+      >
+        <RefreshCw className="h-3.5 w-3.5" />
+      </Button>
+    </>
   );
 }
 
