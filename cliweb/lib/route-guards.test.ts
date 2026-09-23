@@ -98,3 +98,50 @@ test("same-origin guard requires Origin to equal Host", async () => {
     })
   );
 });
+
+test("behind a proxy, a rewritten Host with a matching X-Forwarded-Host passes", async () => {
+  // Coolify-style reverse proxy: browser Origin is the public domain, the
+  // proxy may rewrite Host to the internal upstream. The guard must accept
+  // the proxy-declared forwarded host or production POSTs would 403.
+  await expectPass(
+    guardSameOrigin,
+    request({
+      method: "DELETE",
+      headers: {
+        origin: "https://cliweb.example.com",
+        host: "internal-upstream",
+        "x-forwarded-host": "cliweb.example.com",
+      },
+    })
+  );
+});
+
+test("X-Forwarded-Host does not rescue a forged origin", async () => {
+  // The fallback compares against the proxy header, not against attacker data.
+  await expectStatus(
+    guardSameOrigin,
+    request({
+      method: "DELETE",
+      headers: {
+        origin: "https://evil.example",
+        host: "internal-upstream",
+        "x-forwarded-host": "cliweb.example.com",
+      },
+    }),
+    403
+  );
+});
+
+test("first X-Forwarded-Host value wins in a chained proxy", async () => {
+  await expectPass(
+    guardSameOrigin,
+    request({
+      method: "DELETE",
+      headers: {
+        origin: "https://cliweb.example.com",
+        host: "internal-upstream",
+        "x-forwarded-host": "cliweb.example.com, outer-proxy",
+      },
+    })
+  );
+});
