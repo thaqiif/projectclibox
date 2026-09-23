@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
+import { guardJsonSameOrigin } from "@/lib/route-guards";
 
 /**
  * Accept a user-supplied target directory for uploads.
@@ -35,8 +36,17 @@ function decodeBase64(base64: string): Buffer {
   return Buffer.from(base64, "base64");
 }
 
+function isPathInside(parent: string, candidate: string): boolean {
+  const resolved = path.resolve(candidate);
+  return resolved === parent || resolved.startsWith(parent + path.sep);
+}
+
 export async function POST(request: Request) {
   try {
+    // CSRF tripwire: only JSON from our own origin gets to write files.
+    const guard = guardJsonSameOrigin(request);
+    if (guard) return guard;
+
     // Cheap gate first: a Content-Length that already exceeds the limit can
     // bail before the body is parsed. Best-effort only — chunked or encoding
     // without a length is still caught by the decoded-size check below.
@@ -92,6 +102,17 @@ export async function POST(request: Request) {
       }
 
       const writePath = path.join(targetDirectory, finalName);
+
+      // Defensive containment: safeFilename already strips separators and
+      // leading dots, but a filename that normalizes outside targetDir must
+      // never be written — reject rather than resolve away.
+      if (!isPathInside(targetDirectory, writePath)) {
+        return NextResponse.json(
+          { error: "Filename resolves outside the target directory" },
+          { status: 400 }
+        );
+      }
+
       fs.writeFileSync(writePath, decodeBase64(base64));
 
       return NextResponse.json({ path: writePath });
