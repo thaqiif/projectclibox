@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { FileTabs } from "./FileTabs";
 import type { UseFileEditorReturn } from "@/hooks/useFileEditor";
 import { useViewport } from "@/hooks/useViewport";
 import {
   ArrowLeft,
+  ChevronRight,
   Eye,
   EyeOff,
   File,
@@ -29,6 +30,7 @@ import {
 import type { FileNode } from "@/lib/file-utils";
 import type { OpenFile } from "@/hooks/useFileEditor";
 import { FileOpsMenu } from "./TreeNodeActions";
+import { fileRename, fileDelete } from "@/lib/file-ops";
 
 // The CodeMirror stack is heavy and only loads once a file is actually
 // opened, not when the explorer pane first appears.
@@ -88,6 +90,24 @@ export function FileExplorer({
 
   const handleRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
+  }, []);
+
+  // Breadcrumb segments for the current dir (root first, null path = root).
+  const breadcrumbs = useMemo(() => {
+    const root = workingDirectory.replace(/\/+$/, "");
+    const isRoot = !(currentDir && currentDir.replace(/\/+$/, "") !== root);
+    const segments = [{ name: root.split("/").pop() || root, path: null as string | null }];
+    if (!isRoot && currentDir) {
+      const rel = currentDir.length > root.length ? currentDir.slice(root.length + 1) : "";
+      rel.split("/").filter(Boolean).forEach((part, i, arr) => {
+        segments.push({ name: part, path: `${root}/${arr.slice(0, i + 1).join("/")}` });
+      });
+    }
+    return segments;
+  }, [workingDirectory, currentDir]);
+
+  const handleNavigateTo = useCallback((dir: string | null) => {
+    setCurrentDir(dir);
   }, []);
 
   const {
@@ -239,6 +259,8 @@ export function FileExplorer({
         onOpenDir={handleOpenDir}
         canGoUp={currentDir !== null}
         onGoUp={handleNavigateUp}
+        breadcrumbs={breadcrumbs}
+        onNavigateTo={handleNavigateTo}
         showHidden={showHidden}
         onToggleHidden={handleToggleHidden}
         onRefresh={handleRefresh}
@@ -274,6 +296,8 @@ export function FileExplorer({
       onOpenDir={handleOpenDir}
       canGoUp={currentDir !== null}
       onGoUp={handleNavigateUp}
+      breadcrumbs={breadcrumbs}
+      onNavigateTo={handleNavigateTo}
       showHidden={showHidden}
       onToggleHidden={handleToggleHidden}
       onRefresh={handleRefresh}
@@ -307,6 +331,8 @@ interface DesktopFileExplorerProps {
   onOpenDir: (path: string) => void;
   canGoUp: boolean;
   onGoUp: () => void;
+  breadcrumbs: { name: string; path: string | null }[];
+  onNavigateTo: (dir: string | null) => void;
   showHidden: boolean;
   onToggleHidden: () => void;
   onRefresh: () => void;
@@ -337,6 +363,8 @@ function DesktopFileExplorer({
   onOpenDir,
   canGoUp,
   onGoUp,
+  breadcrumbs,
+  onNavigateTo,
   showHidden,
   onToggleHidden,
   onRefresh,
@@ -401,7 +429,7 @@ function DesktopFileExplorer({
             </Button>
           )}
           <span className="ui-label shrink-0">Files</span>
-          <span className="ui-meta truncate">{workingDirectory}</span>
+          <ExplorerBreadcrumb breadcrumbs={breadcrumbs} onNavigateTo={onNavigateTo} />
           <ExplorerListButtons
             showHidden={showHidden}
             onToggleHidden={onToggleHidden}
@@ -506,6 +534,8 @@ function MobileFileExplorer({
   onOpenDir,
   canGoUp,
   onGoUp,
+  breadcrumbs,
+  onNavigateTo,
   showHidden,
   onToggleHidden,
   onRefresh,
@@ -604,7 +634,7 @@ function MobileFileExplorer({
     <div className="bg-background flex h-full w-full flex-col">
       <div className="glass glass-edge-bottom relative z-10 flex h-12 shrink-0 flex-col justify-center gap-0.5 px-3">
         <span className="ui-label">Files</span>
-        <span className="ui-meta truncate">{workingDirectory}</span>
+        <ExplorerBreadcrumb breadcrumbs={breadcrumbs} onNavigateTo={onNavigateTo} />
         <div className="absolute top-0 right-0 flex items-center pr-1">
           {canGoUp && (
             <Button
@@ -683,6 +713,50 @@ function ExplorerListButtons({
   );
 }
 
+// Clickable path segments: root (workingDirectory basename) > each subdir.
+function ExplorerBreadcrumb({
+  breadcrumbs,
+  onNavigateTo,
+}: {
+  breadcrumbs: { name: string; path: string | null }[];
+  onNavigateTo: (dir: string | null) => void;
+}) {
+  return (
+    <nav
+      aria-label="Directory path"
+      className="ui-meta flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden"
+    >
+      {breadcrumbs.map((seg, i) => {
+        const last = i === breadcrumbs.length - 1;
+        return (
+          <span
+            key={seg.path ?? "root"}
+            className="flex min-w-0 items-center gap-0.5"
+          >
+            {i > 0 && (
+              <ChevronRight className="text-muted-foreground/50 h-3 w-3 shrink-0" />
+            )}
+            <button
+              type="button"
+              disabled={last}
+              onClick={() => onNavigateTo(seg.path)}
+              className={cn(
+                "truncate",
+                last
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground cursor-pointer"
+              )}
+              title={seg.path ?? seg.name}
+            >
+              {seg.name}
+            </button>
+          </span>
+        );
+      })}
+    </nav>
+  );
+}
+
 // Drill-down directory listing: clicking a folder replaces the listing with
 // its contents; back button in the header navigates up.
 interface ListingBodyProps {
@@ -706,6 +780,83 @@ function ListingBody({
   onRefresh,
   activePath,
 }: ListingBodyProps) {
+  const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+
+  // Move node A into directory B via rename op (full destination path).
+  const handleDropMove = useCallback(
+    async (srcPath: string, destDirPath: string) => {
+      const base = srcPath.replace(/\/+$/, "").split("/").pop() || srcPath;
+      const cleanDest = destDirPath.replace(/\/+$/, "");
+      if (srcPath === cleanDest) return;
+      // Refuse moving a directory into itself or its own subtree
+      if (
+        cleanDest.startsWith(srcPath.replace(/\/+$/, "") + "/")
+      ) {
+        window.alert(`Cannot move "${base}" into itself or its own subtree`);
+        return;
+      }
+      try {
+        await fileRename(srcPath, `${cleanDest}/${base}`);
+        onRefresh?.();
+      } catch (err) {
+        console.error("Move failed:", err);
+        window.alert(err instanceof Error ? err.message : "Move failed");
+      }
+    },
+    [onRefresh]
+  );
+
+  const handleRowKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>, node: FileNode) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const row = e.currentTarget;
+        const rows = Array.from(
+          row.parentElement?.querySelectorAll<HTMLDivElement>("[role=button]") ?? []
+        );
+        const idx = rows.indexOf(row);
+        const next = rows[idx + (e.key === "ArrowDown" ? 1 : -1)];
+        next?.focus();
+        return;
+      }
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (node.type === "directory") onOpenDir(node.path);
+        else onFileClick(node.path);
+        return;
+      }
+      if (e.key === "F2") {
+        e.preventDefault();
+        const name = window.prompt("New name:", node.name);
+        if (!name || name === node.name) return;
+        const parent = node.path.slice(0, node.path.lastIndexOf("/")) || "/";
+        fileRename(node.path, `${parent.replace(/\/+$/, "")}/${name}`)
+          .then(() => onRefresh?.())
+          .catch((err) => {
+            console.error("Rename failed:", err);
+            window.alert(err instanceof Error ? err.message : "Rename failed");
+          });
+        return;
+      }
+      if (e.key === "Delete") {
+        e.preventDefault();
+        if (
+          !window.confirm(
+            `Delete "${node.name}"${node.type === "directory" ? " (and all contents)" : ""}? This cannot be undone.`
+          )
+        )
+          return;
+        fileDelete(node.path)
+          .then(() => onRefresh?.())
+          .catch((err) => {
+            console.error("Delete failed:", err);
+            window.alert(err instanceof Error ? err.message : "Delete failed");
+          });
+      }
+    },
+    [onOpenDir, onFileClick, onRefresh]
+  );
+
   if (loading) {
     return (
       <div className="flex h-32 items-center justify-center gap-2">
@@ -748,17 +899,37 @@ function ListingBody({
               onClick={() =>
                 isDirectory ? onOpenDir(node.path) : onFileClick(node.path)
               }
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  if (isDirectory) onOpenDir(node.path);
-                  else onFileClick(node.path);
-                }
-              }}
-              className={cn(
-                "group/node group relative flex h-10 w-full cursor-pointer items-center gap-1.5 pr-3 pl-2 text-left transition-colors hover:bg-[var(--fill-4)] md:h-7",
-                isActive && "bg-[var(--fill-3)]"
-              )}
+          onKeyDown={(e) => handleRowKeyDown(e, node)}
+          draggable={true}
+          onDragStart={(e) => {
+            e.dataTransfer.setData("text/plain", node.path);
+            e.dataTransfer.effectAllowed = "move";
+          }}
+          onDragOver={(e) => {
+            if (!isDirectory) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setDragOverPath(node.path);
+          }}
+          onDragLeave={(e) => {
+            if (!isDirectory) return;
+            if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+            setDragOverPath((prev) => (prev === node.path ? null : prev));
+          }}
+          onDrop={async (e) => {
+            if (!isDirectory) return;
+            e.preventDefault();
+            setDragOverPath(null);
+            const src = e.dataTransfer.getData("text/plain");
+            if (!src) return;
+            await handleDropMove(src, node.path);
+          }}
+          className={cn(
+            "group/node group relative flex h-10 w-full cursor-pointer items-center gap-1.5 pr-3 pl-2 text-left transition-colors hover:bg-[var(--fill-4)] md:h-7",
+            isActive && "bg-[var(--fill-3)]",
+            isDirectory && dragOverPath === node.path &&
+              "bg-[var(--fill-3)] ring-1 ring-primary ring-inset"
+          )}
             >
               {isActive && (
                 <span className="bg-primary absolute inset-y-0 left-0 w-0.5" />
