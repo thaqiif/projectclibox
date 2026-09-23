@@ -251,6 +251,23 @@ export function FileExplorer({
     }
   }, [activeFilePath, saveFile]);
 
+  // CLOSE_ALL: close every open tab; confirm first when any tab is dirty.
+  const dirtyCount = openFiles.filter((f) => f.content !== f.currentContent)
+    .length;
+  const [pendingCloseAll, setPendingCloseAll] = useState(false);
+  const handleCloseAll = useCallback(() => {
+    if (openFiles.length === 0) return;
+    if (openFiles.some((f) => f.content !== f.currentContent)) {
+      setPendingCloseAll(true);
+      return;
+    }
+    openFiles.forEach((f) => closeFile(f.path));
+  }, [openFiles, closeFile]);
+  const handleConfirmCloseAll = useCallback(() => {
+    openFiles.forEach((f) => closeFile(f.path));
+    setPendingCloseAll(false);
+  }, [openFiles, closeFile]);
+
   const activeFile = activeFilePath ? getFile(activeFilePath) : undefined;
 
   // Only show the save error for the file the user failed to save; switching
@@ -280,6 +297,7 @@ export function FileExplorer({
   // Mobile layout: full-screen tree OR full-screen editor
   if (isMobile) {
     return (
+      <>
       <MobileFileExplorer
         files={filteredFiles}
         loading={loading}
@@ -312,14 +330,23 @@ export function FileExplorer({
         saveError={visibleSaveError}
         onDismissSaveError={() => setDismissedSaveErrorFor(activeFilePath)}
         conflictFilePath={conflictFilePath}
+        onCloseAll={handleCloseAll}
         filter={filter}
         onFilterChange={setFilter}
       />
+      <CloseAllDialog
+        open={pendingCloseAll}
+        count={dirtyCount}
+        onCancel={() => setPendingCloseAll(false)}
+        onConfirm={handleConfirmCloseAll}
+      />
+      </>
     );
   }
 
   // Desktop layout: side-by-side tree + editor
   return (
+    <>
     <DesktopFileExplorer
       files={filteredFiles}
       loading={loading}
@@ -354,9 +381,17 @@ export function FileExplorer({
       onConflictOverwrite={handleConflictOverwrite}
       onConflictReload={handleConflictReload}
       onDismissConflict={dismissConflict}
+      onCloseAll={handleCloseAll}
       filter={filter}
       onFilterChange={setFilter}
     />
+    <CloseAllDialog
+      open={pendingCloseAll}
+      count={dirtyCount}
+      onCancel={() => setPendingCloseAll(false)}
+      onConfirm={handleConfirmCloseAll}
+    />
+    </>
   );
 }
 
@@ -395,6 +430,7 @@ interface DesktopFileExplorerProps {
   onConflictOverwrite?: () => Promise<void> | void;
   onConflictReload?: () => Promise<void> | void;
   onDismissConflict?: () => void;
+  onCloseAll?: () => void;
   filter?: string;
   onFilterChange?: (value: string) => void;
 }
@@ -433,6 +469,7 @@ function DesktopFileExplorer({
   onConflictOverwrite,
   onConflictReload,
   onDismissConflict,
+  onCloseAll,
   filter,
   onFilterChange,
 }: DesktopFileExplorerProps) {
@@ -530,6 +567,7 @@ function DesktopFileExplorer({
             onSelect={onSelectTab}
             onClose={onCloseTab}
             isDirty={isDirty}
+            onCloseAll={onCloseAll}
           />
         )}
 
@@ -629,6 +667,7 @@ function MobileFileExplorer({
   onConflictOverwrite,
   onConflictReload,
   onDismissConflict,
+  onCloseAll,
   filter,
   onFilterChange,
 }: MobileFileExplorerProps) {
@@ -655,6 +694,7 @@ function MobileFileExplorer({
               onSelect={onSelectTab}
               onClose={onCloseTab}
               isDirty={isDirty}
+              onCloseAll={onCloseAll}
             />
           </div>
           {isCurrentDirty && (
@@ -1171,6 +1211,43 @@ function SaveErrorBanner({ message, onDismiss }: SaveErrorBannerProps) {
         <X className="h-3.5 w-3.5" />
       </button>
     </div>
+  );
+}
+
+// Close-all confirmation: shown when at least one open tab is dirty.
+// Confirming discards the unsaved changes and closes every tab.
+interface CloseAllDialogProps {
+  open: boolean;
+  count: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function CloseAllDialog({ open, count, onCancel, onConfirm }: CloseAllDialogProps) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen: boolean) => !isOpen && onCancel()}
+    >
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <span className="ui-label">Unsaved changes</span>
+          <DialogTitle className="type-title-3">Close all files</DialogTitle>
+          <DialogDescription>
+            {count} {count === 1 ? "file has" : "files have"} unsaved changes.
+            Discard and close all?
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={onConfirm}>
+            Close all
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
