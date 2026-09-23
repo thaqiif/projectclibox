@@ -42,6 +42,15 @@ export function guardJsonContent(request: Request): NextResponse | null {
  * If Origin is absent (same-origin fetches may omit it; curl and native
  * clients never send it) the request passes, so this hardens rather than
  * locks down.
+ *
+ * Behind reverse proxies that rewrite the Host header (various PaaS
+ * proxies do), the browser's Origin no longer matches Host and every
+ * POST would 403. When the proxy supplies X-Forwarded-Host, that value
+ * is accepted as an alternative comparison target: it is only consulted
+ * when the plain Host comparison fails, so direct deployments are
+ * unaffected and a proxy without the header keeps the strict check.
+ * Proxies that strip BOTH Host and X-Forwarded-Host need their own
+ * forwarding config; see README "Production migration checklist".
  */
 export function guardSameOrigin(request: Request): NextResponse | null {
   const origin = request.headers.get("origin");
@@ -58,14 +67,21 @@ export function guardSameOrigin(request: Request): NextResponse | null {
   }
 
   const host = request.headers.get("host");
-  if (!host || originHost !== host) {
-    return NextResponse.json(
-      { error: "Origin does not match Host" },
-      { status: 403 }
-    );
-  }
+  if (host && originHost === host) return null;
 
-  return null;
+  // Proxy fallback: compare against the host the proxy says it forwarded
+  // for (first value wins; X-Forwarded-Host: a, b means the outermost hop).
+  const forwardedHost = request.headers
+    .get("x-forwarded-host")
+    ?.split(",")[0]
+    ?.trim()
+    .toLowerCase();
+  if (forwardedHost && originHost.toLowerCase() === forwardedHost) return null;
+
+  return NextResponse.json(
+    { error: "Origin does not match Host" },
+    { status: 403 }
+  );
 }
 
 /** Both guards: JSON content-type plus same-origin check. */

@@ -332,7 +332,89 @@ H264/HEVC/VP9 decode; use `h264_qsv` / `h264_vaapi` (`hevc_qsv`,
 
 The database uses one baseline migration in
 `cliweb/lib/db/migrations.ts`. It creates the final workspace schema directly
-and intentionally has no compatibility path for older CLIWeb volumes.
+via `CREATE TABLE IF NOT EXISTS` plus `INSERT OR IGNORE`, so it is idempotent
+and safe against databases created by earlier images: a volume that already
+has the old (32b74ba-era) `projects` schema keeps its extra columns, which the
+current `SELECT *` queries tolerate, and the data stays intact. This was
+verified by replaying the current migrations against clones of every historical
+prod schema (migration rows `{1}`, `{1,2}`, `{1,2,3}`, and an empty `_migrations`
+table), in all cases with successful queries and unchanged row data.
+
+## Production migration checklist (develop -> master deploy)
+
+Pre-deploy checks and steps for merging develop into master and letting
+Coolify rebuild production. Read end to end before deploying.
+
+### 1. Back up first (rollback anchor)
+
+```sh
+# On the Docker host, before deploying:
+cp -a /home/cliweb/.cliweb/cliweb.db /home/cliweb/.cliweb/cliweb.db.bak
+```
+
+Rollback procedure: revert the Coolify application to the previous deploy
+(the previous image is kept), or checkout this repo to master before the
+merge and redeploy. The old code runs against the same database file; the
+migration for a DB that already has `_migrations` row 1 is a no-op, so old
+code + old DB = exactly today's behavior. Take the `.db.bak` backup anyway
+if anything abnormal appears in the first-boot logs.
+
+### 2. Data and layout compatibility (verified)
+
+- Default DB path: new code resolves `HOME/.cliweb/cliweb.db`; with prod
+  `HOME=/home/cliweb` this is exactly `/home/cliweb/.cliweb/cliweb.db` — the
+  same file prod already uses. `DB_PATH` also remains explicitly supported
+  if it is set anywhere.
+- First boot with the existing prod DB does not rewrite it: the baseline
+  migration is skipped (already applied) and all queries are verified against
+  the old schema (see "Fresh database" above).
+- No destructive `ALTER` / `NOT NULL DEFAULT` hazards exist in the current
+  migration set.
+
+### 3. Environment contract (no action needed)
+
+- `DB_PATH` was removed from the image's Dockerfile `ENV`, but the default
+  matches the old setting byte-for-byte, and an explicitly set `DB_PATH`
+  still wins over the default.
+- `CLIWEB_PROFILE` is optional; production sets nothing and keeps the
+  `~/.cliweb/` paths unchanged.
+- The `.deployment-owner` ownership guard resolves against the production
+  home (`/home/cliweb/.cliweb/.deployment-owner`) and simply re-records
+  prod's `PUID:PGID` on first boot. The test deployment lives under
+  `/home/cliweb-test` (see "Test deployment"), so it can never write a
+  conflicting marker into prod's home.
+
+### 4. HTTP same-origin guard behind the proxy
+
+New API routes enforce an Origin-vs-Host check on mutating requests. Browsers
+always send `Origin` on POST, and it usually matches the proxied `Host`, so
+same-origin UI traffic passes. Two residual risks and their handling:
+
+- Proxies that rewrite `Host` (Coolify generally forwards it, but other
+  front-ends or TLS terminators may not): the guard now also honors the
+  `X-Forwarded-Host` header the proxy should send as a fallback comparison.
+  If a request is still rejected with `403 "Origin does not match Host"`,
+  first check that the proxy sends `X-Forwarded-Host` with the public domain;
+  if the proxy strips both `Host` and `X-Forwarded-Host`, add proxy
+  forwarding (e.g. proxy_set_header Host $host plus X-Forwarded-Host in the
+  reverse proxy config) or temporarily roll back by pinning the previous
+  image.
+- Absence of `Origin` passes (curl/CLI clients unaffected).
+
+### 5. Post-deploy smoke test
+
+After Coolify redeploys, verify before declaring success:
+
+- Container starts; logs show no `This persisted home is owned by ...` guard
+  error and no migration traceback.
+- `GET /api/projects` and the UI load; create a terminal (POST path through
+  the origin guard, proving the proxy/host contract works).
+- `sqlite3 /home/cliweb/.cliweb/cliweb.db "SELECT count(*) FROM projects"`
+  unchanged.
+
+If item 4 fails with 403s or item 2 shows an unexpected migration error,
+rollback per section 1 and investigate; the image-to-image rollback is safe
+because the migration set is forward-only and skipped when already applied.
 
 ## Credits
 
