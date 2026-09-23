@@ -179,7 +179,13 @@ export function FileExplorer({
 
   const handleSaveAndClose = useCallback(async () => {
     if (!pendingClose) return;
-    await saveFile(pendingClose);
+    const result = await saveFile(pendingClose);
+    if (!result.ok) {
+      // Save failed: keep the tab open and show the error (via saveError)
+      // so edits are not lost. Dismiss the dialog so the banner is visible.
+      setPendingClose(null);
+      return;
+    }
     closeFile(pendingClose);
     setPendingClose(null);
   }, [pendingClose, saveFile, closeFile]);
