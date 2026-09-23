@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
+import { randomBytes } from "crypto";
 import path from "path";
 import os from "os";
 import { MAX_UPLOAD_BYTES, UPLOAD_CHUNK_BYTES } from "@/lib/upload-limits";
@@ -146,9 +147,15 @@ function writeAssembledFile(
 
     // Prefer the clean name; only touch the filesystem content that is
     // already there when the client explicitly asked for an overwrite.
+    // Collision names disambiguate with a random suffix as well as the
+    // timestamp, so two uploads of the same name landing within the same
+    // millisecond (concurrent drops) always get distinct names.
     if (fs.existsSync(filePath) && !overwrite) {
-      finalName = `${Date.now()}-${finalName}`;
-      filePath = path.join(targetDirectory, finalName);
+      for (;;) {
+        finalName = `${Date.now()}-${randomBytes(4).toString("hex")}-${finalName.replace(/^\d+-[0-9a-f]{8}-/, "")}`;
+        filePath = path.join(targetDirectory, finalName);
+        if (!fs.existsSync(filePath)) break;
+      }
     }
 
     // Defensive containment: safeFilename already strips separators and
@@ -350,7 +357,16 @@ async function handleChunk(
   }
 
   session.receivedBytes += decoded.length;
-  if (session.receivedBytes > session.totalBytes) {
+  // Overflow of either the declared size or the global cap kills the
+  // session AND deletes its partial staging dir: an aborted upload must
+  // leave nothing behind for the next upload (or the TTL sweep) to trip
+  // over. totalBytes is already validated <= MAX_UPLOAD_BYTES at init, so
+  // the declared-size check covers both in practice; the cap is asserted
+  // for defense in depth against a future init change.
+  if (
+    session.receivedBytes > session.totalBytes ||
+    session.receivedBytes > MAX_UPLOAD_BYTES
+  ) {
     sessions.delete(uploadId);
     try {
       fs.rmSync(path.join(PARTIALS_ROOT, uploadId), {
@@ -361,10 +377,6 @@ async function handleChunk(
       // Ignore cleanup failures; the session is gone either way.
     }
     return badRequest("Received more bytes than declared in init", 413);
-  }
-  if (session.receivedBytes > MAX_UPLOAD_BYTES) {
-    sessions.delete(uploadId);
-    return badRequest("File too large", 413);
   }
 
   const partialDir = path.join(PARTIALS_ROOT, uploadId);

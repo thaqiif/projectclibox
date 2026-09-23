@@ -125,7 +125,14 @@ export async function POST(request: NextRequest) {
             ? (error as NodeJS.ErrnoException).code
             : undefined;
         if (code !== "ENOENT") throw error;
-        // File does not exist yet: nothing to conflict with, allow create.
+        // File does not exist AND the client expects an mtime: it was
+        // editing a file that has since been deleted (e.g. trashed from
+        // another tab). Silently recreating it would break the trash/undo
+        // flow, so surface a conflict; overwrite (force) still recreates.
+        return NextResponse.json(
+          { error: "conflict", serverMtimeMs: null, deleted: true },
+          { status: 409 }
+        );
       }
     }
 

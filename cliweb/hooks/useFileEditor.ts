@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { getLanguageFromExtension } from "@/lib/file-utils";
 
 export interface OpenFile {
@@ -43,7 +43,7 @@ export interface UseFileEditorReturn {
   updateContent: (path: string, content: string) => void;
   saveFile: (
     path: string,
-    options?: { force?: boolean }
+    options?: { force?: boolean; allowBinaryOverwrite?: boolean }
   ) => Promise<{
     ok: boolean;
     error?: string;
@@ -73,6 +73,22 @@ export function useFileEditor(): UseFileEditorReturn {
   const [conflictServerMtimeMs, setConflictServerMtimeMs] = useState<
     number | null
   >(null);
+  /** In-flight save promises keyed by path, so rapid re-saves coalesce. */
+  const inFlightSaves = useRef(
+    new Map<
+      string,
+      Promise<{
+        ok: boolean;
+        error?: string;
+        conflict?: boolean;
+        serverMtimeMs?: number;
+      }>
+    >()
+  );
+
+  /** Latest openFiles for use inside async callbacks without stale closures. */
+  const openFilesRef = useRef(openFiles);
+  openFilesRef.current = openFiles;
 
   const getFile = useCallback(
     (path: string) => openFiles.find((f) => f.path === path),
@@ -113,15 +129,24 @@ export function useFileEditor(): UseFileEditorReturn {
             return;
           }
 
+          // Keep the tab's baseline in sync with what we now show. Both
+          // fields move together so a clean file stays clean (a refetch
+          // that only updated `content` would fake a dirty flag), and a
+          // file that became dirty while the request was in flight is
+          // left untouched so the user's typing is never clobbered.
           setOpenFiles((prev) =>
             prev.map((f) =>
-              f.path === data.path
+              (f.path === data.path || f.path === path) &&
+              f.content === f.currentContent
                 ? {
                     ...f,
+                    path: data.path,
                     content: data.content,
+                    currentContent: data.content,
                     isBinary: data.isBinary,
                     truncated: data.truncated === true,
-                    mtimeMs: typeof data.mtimeMs === "number" ? data.mtimeMs : null,
+                    mtimeMs:
+                      typeof data.mtimeMs === "number" ? data.mtimeMs : null,
                   }
                 : f
             )
@@ -194,106 +219,158 @@ export function useFileEditor(): UseFileEditorReturn {
   const saveFile = useCallback(
     async (
       path: string,
-      options?: { force?: boolean }
+      options?: { force?: boolean; allowBinaryOverwrite?: boolean }
     ): Promise<{
       ok: boolean;
       error?: string;
       conflict?: boolean;
       serverMtimeMs?: number;
     }> => {
-      const file = openFiles.find((f) => f.path === path);
+      // Rapid re-saves (double Mod-S, save button plus keymap) must never
+      // interleave two writers for the same file: the second request would
+      // race the first and, with mtime gating, 409 against our own write.
+      // Coalesce instead: a call while a save is in flight receives the
+      // promise already running.
+      const pending = inFlightSaves.current.get(path);
+      if (pending) return pending;
+
+      const file = openFilesRef.current.find((f) => f.path === path);
       if (!file) {
         const message = "File not found";
         setSaveError(message);
         return { ok: false, error: message };
       }
       if (file.isBinary || file.truncated) {
+        // A stale BINARY open is never saved, even by the conflict
+        // overwrite path: the editor has no real bytes, only a placeholder.
         const message =
           "This file is binary or too large to edit and cannot be saved. Use download instead.";
         setSaveError(message);
         return { ok: false, error: message };
       }
 
-      setSaving(true);
-      try {
-        const res = await fetch("/api/files/content", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            path,
-            content: file.currentContent,
-            // Omit for new files we have never fetched (server force
-            // writes); the server ignores it when force is true anyway.
-            ...(file.mtimeMs !== null ? { expectedMtimeMs: file.mtimeMs } : {}),
-            ...(options?.force ? { force: true } : {}),
-          }),
-        });
-        const data = await res.json();
+      const runSave = async (): Promise<{
+        ok: boolean;
+        error?: string;
+        conflict?: boolean;
+        serverMtimeMs?: number;
+      }> => {
+        setSaving(true);
+        try {
+          // Read again at send time: the state this callback closed over
+          // may be one render behind (save while another tab is active,
+          // or content typed between callback creation and invoke).
+          const fresh = openFilesRef.current.find((f) => f.path === path);
+          if (!fresh) {
+            const message = "File not found";
+            setSaveError(message);
+            return { ok: false, error: message };
+          }
+          const contentAtSend = fresh.currentContent;
+          const res = await fetch("/api/files/content", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              path,
+              content: contentAtSend,
+              // Omit for new files we have never fetched (server force
+              // writes); the server ignores it when force is true anyway.
+              ...(fresh.mtimeMs !== null
+                ? { expectedMtimeMs: fresh.mtimeMs }
+                : {}),
+              ...(options?.force ? { force: true } : {}),
+              // Only the explicit conflict-overwrite path may replace a
+              // text open whose on-disk bytes became binary.
+              ...(options?.allowBinaryOverwrite === true
+                ? { allowBinaryOverwrite: true }
+                : {}),
+            }),
+          });
+          const data = await res.json();
 
-        // 409 from the server means the file changed on disk since we
-        // read it. Leave the local content and dirty state untouched and
-        // flag the conflict for the dialog.
-        if (res.status === 409 && data.error === "conflict") {
-          const message = "File changed on disk since it was opened";
-          setSaveError(message);
-          setConflictFilePath(path);
-          setConflictServerMtimeMs(
-            typeof data.serverMtimeMs === "number" ? data.serverMtimeMs : null
+          // 409 from the server means the file changed on disk (or was
+          // deleted) since we read it. Leave the local content and dirty
+          // state untouched and flag the conflict for the dialog.
+          if (res.status === 409 && data.error === "conflict") {
+            const message = data.deleted
+              ? "File was deleted on disk since it was opened"
+              : "File changed on disk since it was opened";
+            setSaveError(message);
+            setConflictFilePath(path);
+            setConflictServerMtimeMs(
+              typeof data.serverMtimeMs === "number" ? data.serverMtimeMs : null
+            );
+            return {
+              ok: false,
+              conflict: true,
+              error: message,
+              ...(typeof data.serverMtimeMs === "number"
+                ? { serverMtimeMs: data.serverMtimeMs }
+                : {}),
+            };
+          }
+
+          if (data.error) {
+            const message: string = data.error;
+            setSaveError(message);
+            return { ok: false, error: message };
+          }
+
+          setSaveError(null);
+          setConflictFilePath(null);
+          setConflictServerMtimeMs(null);
+          setOpenFiles((prev) =>
+            prev.map((f) =>
+              f.path === path
+                ? {
+                    ...f,
+                    // Only clear the dirty flag when the user has not
+                    // typed past the bytes we just committed: grabbing
+                    // currentContent blindly would mark newer edits saved.
+                    ...(f.currentContent === contentAtSend
+                      ? { content: f.currentContent }
+                      : {}),
+                    mtimeMs:
+                      typeof data.mtimeMs === "number"
+                        ? data.mtimeMs
+                        : f.mtimeMs,
+                  }
+                : f
+            )
           );
-          return {
-            ok: false,
-            conflict: true,
-            error: message,
-            ...(typeof data.serverMtimeMs === "number"
-              ? { serverMtimeMs: data.serverMtimeMs }
-              : {}),
-          };
-        }
 
-        if (data.error) {
-          const message: string = data.error;
+          return { ok: true };
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Failed to save";
           setSaveError(message);
           return { ok: false, error: message };
+        } finally {
+          setSaving(false);
         }
+      };
 
-        // Update the saved content to match current and record the
-        // post-write mtime so our next save does not conflict with our
-        // own write.
-        setSaveError(null);
-        setConflictFilePath(null);
-        setConflictServerMtimeMs(null);
-        setOpenFiles((prev) =>
-          prev.map((f) =>
-            f.path === path
-              ? {
-                  ...f,
-                  content: f.currentContent,
-                  mtimeMs:
-                    typeof data.mtimeMs === "number" ? data.mtimeMs : f.mtimeMs,
-                }
-              : f
-          )
-        );
-
-        return { ok: true };
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to save";
-        setSaveError(message);
-        return { ok: false, error: message };
-      } finally {
-        setSaving(false);
-      }
+      const promise = runSave().finally(() => {
+        inFlightSaves.current.delete(path);
+      });
+      inFlightSaves.current.set(path, promise);
+      return promise;
     },
-    [openFiles]
+    []
   );
 
   const saveAllFiles = useCallback(async () => {
-    const dirtyFiles = openFiles.filter((f) => f.content !== f.currentContent);
-    for (const file of dirtyFiles) {
-      await saveFile(file.path);
+    // Recompute dirty files between saves: each saveFile changes openFiles,
+    // so snapshotting the list once would save stale content for later
+    // files in the loop.
+    for (;;) {
+      const nextDirty = openFilesRef.current.find(
+        (f) => f.content !== f.currentContent
+      );
+      if (!nextDirty) return;
+      await saveFile(nextDirty.path);
     }
-  }, [openFiles, saveFile]);
+  }, [saveFile]);
 
   /**
    * Discard local edits and reload the server version for a conflicted

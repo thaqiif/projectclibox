@@ -69,7 +69,7 @@ export function useFileDrop(
         setIsDragging(true);
       }
     },
-    [options?.disabled, options?.enabled]
+    [options]
   );
 
   const handleDragLeave = useCallback(
@@ -84,7 +84,7 @@ export function useFileDrop(
         setIsDragging(false);
       }
     },
-    [containerRef]
+    [containerRef, options]
   );
 
   const handleDrop = useCallback(
@@ -128,7 +128,7 @@ export function useFileDrop(
         );
       }
     },
-    [onFileDrop, options?.disabled, options?.enabled]
+    [onFileDrop, options]
   );
 
   return {
