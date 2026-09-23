@@ -87,8 +87,12 @@ RUN set -eux; \
 # artifacts when the image is rebuilt.
 ENV CLIWEB_REPO=/opt/cliweb
 COPY cliweb/ "${CLIWEB_REPO}"/
+# npm ci + --include=dev: a plain `npm install` can drop devDependencies such
+# as @tailwindcss/postcss, which breaks `next build` with unresolved module
+# errors. ci is deterministic from the lockfile and include=dev guards against
+# production-flavored npm environments during the build.
 RUN cd "${CLIWEB_REPO}" \
-    && npm install --legacy-peer-deps \
+    && npm ci --include=dev --legacy-peer-deps \
     && npm run build \
     && npm cache clean --force
 
