@@ -203,6 +203,11 @@ export function FileExplorer({
   const [dismissedSaveErrorFor, setDismissedSaveErrorFor] = useState<
     string | null
   >(null);
+  // A new save failure re-shows the banner, even if the user dismissed the
+  // previous one.
+  useEffect(() => {
+    if (saveError !== null) setDismissedSaveErrorFor(null);
+  }, [saveError]);
   const visibleSaveError =
     activeFilePath && saveError !== null && dismissedSaveErrorFor !== activeFilePath
       ? saveError
