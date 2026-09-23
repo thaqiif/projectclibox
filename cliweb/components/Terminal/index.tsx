@@ -5,6 +5,7 @@ import {
   forwardRef,
   useImperativeHandle,
   useCallback,
+  useEffect,
   useState,
   useMemo,
 } from "react";
@@ -12,6 +13,7 @@ import { useTheme } from "next-themes";
 import "@xterm/xterm/css/xterm.css";
 import { Paperclip, WifiOff, Upload, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { ScrollToBottomButton } from "./ScrollToBottomButton";
 import { TerminalToolbar } from "./TerminalToolbar";
 import { useTerminalConnection } from "./hooks";
@@ -133,6 +135,70 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       handleFileDrop,
       { disabled: isUploading || showFilePicker }
     );
+
+    // Intercept clipboard paste on the terminal container. Clipboard events
+    // always target xterm's hidden textarea, which lives inside containerRef,
+    // so capturing at the container is the reliable interception point. Local
+    // capture listener fires before xterm's own paste listeners; without image
+    // files we do nothing (default text paste continues into xterm).
+    const handlePasteCapture = useCallback(
+      (event: ClipboardEvent) => {
+        const files = event.clipboardData?.files
+          ? Array.from(event.clipboardData.files)
+          : [];
+        // Only intercept when the clipboard carries real files (screenshots /
+        // images / PDFs). Text-only pastes keep xterm's normal paste flow.
+        if (files.length === 0) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        // Process every pasted file sequentially, mirroring useFileDrop: each
+        // failure is collected so one bad file never aborts the rest.
+        (async () => {
+          const errors: string[] = [];
+          for (const file of files) {
+            try {
+              const path = await uploadFileToTemp(file, {
+                // Paste lands in the terminal's working directory, like drag
+                // and drop; without one, uploads fall back to /tmp.
+                targetDir: workingDirectory || undefined,
+              });
+              if (path) {
+                sendInput(path);
+                focus();
+              } else {
+                errors.push(`${file.name}: upload failed`);
+              }
+            } catch (err) {
+              errors.push(
+                `${file.name}: ${
+                  err instanceof Error ? err.message : String(err)
+                }`
+              );
+            }
+          }
+          if (errors.length > 0) {
+            toast.error(
+              `Failed to upload ${errors.length} of ${files.length} pasted file(s)`,
+              {
+                description: errors.join("\n"),
+              }
+            );
+          }
+        })();
+      },
+      [sendInput, focus, workingDirectory]
+    );
+
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      container.addEventListener("paste", handlePasteCapture, true);
+      return () => {
+        container.removeEventListener("paste", handlePasteCapture, true);
+      };
+    }, [handlePasteCapture]);
 
     // Expose imperative methods
     useImperativeHandle(ref, () => ({
