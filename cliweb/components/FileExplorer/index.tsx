@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
-import { FileTree } from "./FileTree";
 import { FileTabs } from "./FileTabs";
 import type { UseFileEditorReturn } from "@/hooks/useFileEditor";
 import { useViewport } from "@/hooks/useViewport";
-import { Loader2, ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, File, Folder, Loader2, Save } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -48,6 +48,8 @@ export function FileExplorer({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingClose, setPendingClose] = useState<string | null>(null);
+  // Drill-down navigation: current directory being browsed (null = workingDirectory)
+  const [currentDir, setCurrentDir] = useState<string | null>(null);
 
   const {
     openFiles,
@@ -63,6 +65,13 @@ export function FileExplorer({
     getFile,
   } = fileEditor;
 
+  const effectiveDir = currentDir ?? workingDirectory;
+
+  // Reset navigation when the terminal working directory changes
+  useEffect(() => {
+    setCurrentDir(null);
+  }, [workingDirectory]);
+
   // Load directory contents
   useEffect(() => {
     const loadFiles = async () => {
@@ -70,7 +79,7 @@ export function FileExplorer({
       setError(null);
       try {
         const res = await fetch(
-          `/api/files?path=${encodeURIComponent(workingDirectory)}`
+          `/api/files?path=${encodeURIComponent(effectiveDir)}`
         );
         const data = await res.json();
         if (data.error) {
@@ -85,6 +94,23 @@ export function FileExplorer({
       }
     };
     loadFiles();
+  }, [workingDirectory, effectiveDir]);
+
+  const handleOpenDir = useCallback((path: string) => {
+    setCurrentDir(path);
+  }, []);
+
+  const handleNavigateUp = useCallback(() => {
+    setCurrentDir((prev) => {
+      const dir = prev ?? workingDirectory;
+      if (dir === workingDirectory) return null;
+      const parent = dir.split("/").slice(0, -1).join("/");
+      // Don't navigate above the terminal working directory
+      const p = workingDirectory.split("/").slice(0, -1).join("/");
+      if (!parent || parent === p) return null;
+      if (dir.startsWith(workingDirectory)) return parent;
+      return null;
+    });
   }, [workingDirectory]);
 
   const handleFileClick = useCallback(
@@ -143,12 +169,15 @@ export function FileExplorer({
         loading={loading}
         error={error}
         fileLoading={fileLoading}
-        workingDirectory={workingDirectory}
+        workingDirectory={effectiveDir}
         openFiles={openFiles}
         activeFilePath={activeFilePath}
         activeFile={activeFile}
         saving={saving}
         onFileClick={handleFileClick}
+        onOpenDir={handleOpenDir}
+        canGoUp={currentDir !== null}
+        onGoUp={handleNavigateUp}
         onSelectTab={setActiveFile}
         onCloseTab={handleCloseFile}
         onSave={handleSave}
@@ -170,12 +199,15 @@ export function FileExplorer({
       loading={loading}
       error={error}
       fileLoading={fileLoading}
-      workingDirectory={workingDirectory}
+      workingDirectory={effectiveDir}
       openFiles={openFiles}
       activeFilePath={activeFilePath}
       activeFile={activeFile}
       saving={saving}
       onFileClick={handleFileClick}
+      onOpenDir={handleOpenDir}
+      canGoUp={currentDir !== null}
+      onGoUp={handleNavigateUp}
       onSelectTab={setActiveFile}
       onCloseTab={handleCloseFile}
       onSave={handleSave}
@@ -201,6 +233,9 @@ interface DesktopFileExplorerProps {
   activeFile: OpenFile | undefined;
   saving: boolean;
   onFileClick: (path: string) => void;
+  onOpenDir: (path: string) => void;
+  canGoUp: boolean;
+  onGoUp: () => void;
   onSelectTab: (path: string) => void;
   onCloseTab: (path: string) => void;
   onSave: () => void;
@@ -223,6 +258,9 @@ function DesktopFileExplorer({
   activeFile,
   saving,
   onFileClick,
+  onOpenDir,
+  canGoUp,
+  onGoUp,
   onSelectTab,
   onCloseTab,
   onSave,
@@ -269,39 +307,29 @@ function DesktopFileExplorer({
         className="flex h-full min-w-0 shrink-0 flex-col"
         style={{ width: treeWidth }}
       >
-        <div className="glass glass-edge-bottom relative z-10 flex h-9 shrink-0 items-center gap-2 px-2.5">
-          <span className="ui-label">Files</span>
+        <div className="glass glass-edge-bottom relative z-10 flex h-9 shrink-0 items-center gap-1.5 px-2">
+          {canGoUp && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onGoUp}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          <span className="ui-label shrink-0">Files</span>
           <span className="ui-meta truncate">{workingDirectory}</span>
         </div>
-        <div className="scrollbar-thin flex-1 overflow-y-auto">
-          {loading ? (
-            <div className="flex h-32 items-center justify-center gap-2">
-              <Loader2 className="text-muted-foreground h-3.5 w-3.5 animate-spin" />
-              <span className="ui-label">Loading</span>
-            </div>
-          ) : error ? (
-            <div className="flex h-32 flex-col items-center justify-center gap-2 p-4">
-              <span className="text-destructive ui-label">
-                Couldn&apos;t load
-              </span>
-              <p className="ui-meta text-center">{error}</p>
-            </div>
-          ) : files.length === 0 ? (
-            <div className="flex h-32 flex-col items-center justify-center gap-2">
-              <p className="ui-label">Nothing here</p>
-              <p className="ui-meta">directory has no entries</p>
-            </div>
-          ) : (
-            <div className="py-1">
-              <FileTree
-                nodes={files}
-                basePath={workingDirectory}
-                onFileClick={onFileClick}
-                activePath={activeFilePath ?? undefined}
-              />
-            </div>
-          )}
-        </div>
+        <ListingBody
+          files={files}
+          loading={loading}
+          error={error}
+          onOpenDir={onOpenDir}
+          onFileClick={onFileClick}
+          activePath={activeFilePath ?? undefined}
+        />
       </div>
 
       {/* Resize handle */}
@@ -366,7 +394,6 @@ function DesktopFileExplorer({
   );
 }
 
-// Mobile: Full-screen tree OR full-screen editor
 interface MobileFileExplorerProps extends DesktopFileExplorerProps {
   onBack: () => void;
 }
@@ -382,6 +409,9 @@ function MobileFileExplorer({
   activeFile,
   saving,
   onFileClick,
+  onOpenDir,
+  canGoUp,
+  onGoUp,
   onSelectTab,
   onCloseTab,
   onSave,
@@ -470,37 +500,26 @@ function MobileFileExplorer({
       <div className="glass glass-edge-bottom relative z-10 flex h-12 shrink-0 flex-col justify-center gap-0.5 px-3">
         <span className="ui-label">Files</span>
         <span className="ui-meta truncate">{workingDirectory}</span>
-      </div>
-
-      <div className="scrollbar-thin flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="flex h-32 items-center justify-center gap-2">
-            <Loader2 className="text-muted-foreground h-3.5 w-3.5 animate-spin" />
-            <span className="ui-label">Loading</span>
-          </div>
-        ) : error ? (
-          <div className="flex h-32 flex-col items-center justify-center gap-2 p-4">
-            <span className="text-destructive ui-label">
-              Couldn&apos;t load
-            </span>
-            <p className="ui-meta text-center">{error}</p>
-          </div>
-        ) : files.length === 0 ? (
-          <div className="flex h-32 flex-col items-center justify-center gap-2">
-            <p className="ui-label">Nothing here</p>
-            <p className="ui-meta">directory has no entries</p>
-          </div>
-        ) : (
-          <div className="py-1">
-            <FileTree
-              nodes={files}
-              basePath={workingDirectory}
-              onFileClick={onFileClick}
-              activePath={activeFilePath ?? undefined}
-            />
-          </div>
+        {canGoUp && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onGoUp}
+            className="text-muted-foreground absolute top-0 right-0 h-12 px-2 hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
         )}
       </div>
+
+      <ListingBody
+        files={files}
+        loading={loading}
+        error={error}
+        onOpenDir={onOpenDir}
+        onFileClick={onFileClick}
+        activePath={activeFilePath ?? undefined}
+      />
 
       {fileLoading && (
         <div className="bg-background/80 fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
@@ -509,6 +528,110 @@ function MobileFileExplorer({
       )}
     </div>
   );
+}
+
+// Drill-down directory listing: clicking a folder replaces the listing with
+// its contents; back button in the header navigates up.
+interface ListingBodyProps {
+  files: FileNode[];
+  loading: boolean;
+  error: string | null;
+  onOpenDir: (path: string) => void;
+  onFileClick: (path: string) => void;
+  activePath?: string;
+}
+
+function ListingBody({
+  files,
+  loading,
+  error,
+  onOpenDir,
+  onFileClick,
+  activePath,
+}: ListingBodyProps) {
+  if (loading) {
+    return (
+      <div className="flex h-32 items-center justify-center gap-2">
+        <Loader2 className="text-muted-foreground h-3.5 w-3.5 animate-spin" />
+        <span className="ui-label">Loading</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-32 flex-col items-center justify-center gap-2 p-4">
+        <span className="text-destructive ui-label">Couldn&apos;t load</span>
+        <p className="ui-meta text-center">{error}</p>
+      </div>
+    );
+  }
+
+  if (files.length === 0) {
+    return (
+      <div className="flex h-32 flex-col items-center justify-center gap-2">
+        <p className="ui-label">Nothing here</p>
+        <p className="ui-meta">directory has no entries</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="scrollbar-thin flex-1 overflow-y-auto">
+      <div className="py-1">
+        {files.map((node) => {
+          const isDirectory = node.type === "directory";
+          const isActive = activePath === node.path;
+
+          return (
+            <button
+              key={node.path}
+              onClick={() =>
+                isDirectory ? onOpenDir(node.path) : onFileClick(node.path)
+              }
+              className={cn(
+                "group relative flex h-10 w-full items-center gap-1.5 pr-3 pl-2 text-left transition-colors hover:bg-[var(--fill-4)] md:h-7",
+                isActive && "bg-[var(--fill-3)]"
+              )}
+            >
+              {isActive && (
+                <span className="bg-primary absolute inset-y-0 left-0 w-0.5" />
+              )}
+
+              <span className="flex-shrink-0">
+                {isDirectory ? (
+                  <Folder className="text-muted-foreground h-3.5 w-3.5" />
+                ) : (
+                  <File className="text-muted-foreground h-3.5 w-3.5 opacity-70" />
+                )}
+              </span>
+
+              <span
+                className={cn(
+                  "flex-1 truncate font-mono text-xs",
+                  isDirectory ? "text-foreground" : "text-muted-foreground"
+                )}
+              >
+                {node.name}
+              </span>
+
+              {!isDirectory && node.size !== undefined && (
+                <span className="ui-meta hidden flex-shrink-0 text-[10px] md:block">
+                  {formatFileSize(node.size)}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
 // Unsaved changes confirmation dialog
