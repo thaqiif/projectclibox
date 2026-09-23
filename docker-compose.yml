@@ -49,18 +49,22 @@ services:
     # /dev/kvm: hardware virtualization (QEMU/KVM guests, Android emulators,
     # microVMs, …). Requires /dev/kvm on the host; remove this line on hosts
     # that lack it.
-    # /dev/dri: GPU render/display nodes for ffmpeg VA-API/QSV/VAAPI transcode
-    # (Intel HD 620-class via iHD, AMD amdgpu via radeonsi) and Vulkan/OpenGL.
-    # Requires /dev/dri on the host; remove this line on hosts without a GPU.
-    # The entrypoint grants the unprivileged `cliweb` user access to every
-    # DRI node (card*, renderD*), so multi-GPU hosts (e.g. virtio-gpu +
-    # amdgpu) work without hardcoding card0/renderD128.
+    # /dev/dri: individual GPU nodes are mapped with paths swapped so the
+    # AMD amdgpu appears as card0/renderD128 (the "first" GPU) and the
+    # virtio-gpu as card1/renderD129. The host kernel assigns the original
+    # ordering; Docker device mapping lets us choose which node lands at
+    # which path inside the container. Remove any line whose host path is
+    # missing on your machine.
     # /dev/kfd: AMD ROCm/OpenCL compute node (amdgpu hosts only). Requires
     # /dev/kfd on the host; remove this line on hosts without an AMD GPU.
-    # Docker fails the deploy if a mapped host path is missing.
     devices:
       - /dev/kvm:/dev/kvm
-      - /dev/dri:/dev/dri
+      # AMD amdgpu → card0 / renderD128 (primary)
+      - /dev/dri/card1:/dev/dri/card0
+      - /dev/dri/renderD129:/dev/dri/renderD128
+      # virtio-gpu → card1 / renderD129 (secondary)
+      - /dev/dri/card0:/dev/dri/card1
+      - /dev/dri/renderD128:/dev/dri/renderD129
       - /dev/kfd:/dev/kfd
 
   tailscale:
