@@ -15,7 +15,6 @@ export interface WorkbenchState {
   /** tmux name the terminal is attached to, if any. */
   attachedTmux: string | null;
   viewMode: ViewMode;
-  shellDrawerOpen: boolean;
 }
 
 /**
@@ -30,7 +29,6 @@ export function createInitialWorkbenchState(): WorkbenchState {
   return {
     attachedTmux: null,
     viewMode: "terminal",
-    shellDrawerOpen: false,
   };
 }
 
@@ -50,16 +48,11 @@ export function loadWorkbenchState(): WorkbenchState | null {
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as Partial<WorkbenchState>;
-    const base = createInitialWorkbenchState();
 
     return {
       attachedTmux:
         typeof parsed.attachedTmux === "string" ? parsed.attachedTmux : null,
       viewMode: parsed.viewMode === "files" ? parsed.viewMode : "terminal",
-      shellDrawerOpen:
-        typeof parsed.shellDrawerOpen === "boolean"
-          ? parsed.shellDrawerOpen
-          : base.shellDrawerOpen,
     };
   } catch {
     return null;

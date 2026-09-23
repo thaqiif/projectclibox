@@ -21,14 +21,10 @@ interface PaneContextValue {
   paneId: string;
   attachedTmux: string | null;
   viewMode: ViewMode;
-  shellDrawerOpen: boolean;
   attach: (tmuxName: string) => void;
   /** Stop pointing at a terminal. The terminal itself keeps running. */
   detach: () => void;
   setViewMode: (mode: ViewMode) => void;
-  toggleShellDrawer: () => void;
-  /** Ask tmux to split the attached terminal's active pane. */
-  splitPane: (direction: "horizontal" | "vertical") => void;
 }
 
 const PaneContext = createContext<PaneContextValue | null>(null);
@@ -67,37 +63,15 @@ export function PaneProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, viewMode }));
   }, []);
 
-  const toggleShellDrawer = useCallback(() => {
-    setState((prev) => ({ ...prev, shellDrawerOpen: !prev.shellDrawerOpen }));
-  }, []);
-
-  // Fire-and-forget: tmux redraws the attached client itself, so there is
-  // nothing to update on this side. The terminal is showing tmux's output,
-  // and the new pane simply appears in it.
-  const splitPane = useCallback(
-    (direction: "horizontal" | "vertical") => {
-      if (!state.attachedTmux) return;
-      fetch("/api/tmux/split", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ terminal: state.attachedTmux, direction }),
-      }).catch((err) => console.error("Failed to split tmux pane:", err));
-    },
-    [state.attachedTmux]
-  );
-
   return (
     <PaneContext.Provider
       value={{
         paneId: PANE_ID,
         attachedTmux: state.attachedTmux,
         viewMode: state.viewMode,
-        shellDrawerOpen: state.shellDrawerOpen,
         attach,
         detach,
         setViewMode,
-        toggleShellDrawer,
-        splitPane,
       }}
     >
       {children}
