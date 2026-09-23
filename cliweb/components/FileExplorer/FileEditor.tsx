@@ -12,7 +12,7 @@ import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 import { markdown } from "@codemirror/lang-markdown";
 import type { Extension } from "@codemirror/state";
-import { FileCode, Eye, Code2 } from "lucide-react";
+import { FileCode, Download, Eye, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { HtmlRenderer } from "./HtmlRenderer";
@@ -21,6 +21,8 @@ interface FileEditorProps {
   content: string;
   language: string;
   isBinary: boolean;
+  /** Absolute file path; enables download and inline image preview. */
+  path?: string;
   readOnly?: boolean;
   dirty?: boolean;
   saving?: boolean;
@@ -165,10 +167,24 @@ function getLanguageExtension(language: string): Extension | null {
   }
 }
 
+// Extensions the download endpoint can preview inline as an image
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
+
+function isImagePath(path: string | undefined): boolean {
+  if (!path) return false;
+  const ext = path.split(".").pop()?.toLowerCase() || "";
+  return IMAGE_EXTENSIONS.has(ext);
+}
+
+function downloadUrl(path: string): string {
+  return `/api/files/download?path=${encodeURIComponent(path)}`;
+}
+
 export function FileEditor({
   content,
   language,
   isBinary,
+  path,
   readOnly = false,
   dirty = false,
   saving = false,
@@ -208,6 +224,8 @@ export function FileEditor({
   const isHtml = language === "html";
   const hasPreview = isMarkdown || isHtml;
 
+  const isImage = isImagePath(path);
+
   useEffect(() => {
     if (!hasPreview) {
       const frame = requestAnimationFrame(() => setPreviewMode(false));
@@ -215,12 +233,42 @@ export function FileEditor({
     }
   }, [hasPreview]);
 
+  // Binary files: images preview inline, everything else gets a download
+  // affordance instead of a dead end.
   if (isBinary) {
+    if (isImage && path) {
+      return (
+        <div className="flex h-full min-h-0 flex-col items-center justify-center gap-2 overflow-auto p-8">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={downloadUrl(path)}
+            alt={path.split("/").pop() || "image"}
+            className="max-h-full max-w-full rounded-md object-contain"
+          />
+          <a
+            href={downloadUrl(path)}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-1 ui-meta transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            download {path.split("/").pop()}
+          </a>
+        </div>
+      );
+    }
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
         <FileCode className="text-muted-foreground/70 h-4 w-4" />
         <p className="ui-label">Binary file</p>
         <p className="ui-meta">no preview available</p>
+        {path && (
+          <a
+            href={downloadUrl(path)}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-1 ui-meta transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            download file
+          </a>
+        )}
       </div>
     );
   }
@@ -270,6 +318,15 @@ export function FileEditor({
                 )}
               </button>
             </>
+          )}
+          {path && (
+            <a
+              href={downloadUrl(path)}
+              title="Download file"
+              className="border-[var(--fill-2)] text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground flex items-center gap-1 border-l px-2.5 transition-colors"
+            >
+              <Download className="h-3 w-3" />
+            </a>
           )}
           {onSave && (
             <>
