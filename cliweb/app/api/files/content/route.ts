@@ -1,6 +1,18 @@
 import { statSync } from "fs";
 import { NextRequest, NextResponse } from "next/server";
-import { readFileContent, writeFileContent } from "@/lib/files";
+import { readFileContent, writeFileContent, DEFAULT_MAX_READ_BYTES } from "@/lib/files";
+import { guardJsonSameOrigin } from "@/lib/route-guards";
+
+function expandFilePath(path: string): string | null {
+  const expanded = path.replace(/^~(?=\/|$)/, process.env.HOME || "");
+  // Traversal is rejected on the raw expanded string before resolve: resolve
+  // absorbs ".." segments, so a post-resolve check can never catch them.
+  // Same rule as /api/files/ops and upload-temp.
+  if (expanded.split("/").includes("..")) {
+    return null;
+  }
+  return expanded;
+}
 
 /**
  * GET /api/files/content?path=...
@@ -19,8 +31,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Expand ~ to home directory
-    const expandedPath = path.replace(/^~/, process.env.HOME || "");
+    // Expand ~ to home directory, rejecting traversal up front
+    const expandedPath =
+      expandFilePath(path);
+    if (expandedPath === null) {
+      return NextResponse.json(
+        { error: "Path traversal is not allowed" },
+        { status: 400 }
+      );
+    }
 
     // Stat before reading so the client gets the mtime of the content it
     // is about to receive. Throws for missing/unreadable files, which the
@@ -63,6 +82,9 @@ export async function GET(request: NextRequest) {
  * save of a placeholder string from destroying a binary file.
  */
 export async function POST(request: NextRequest) {
+  const guard = guardJsonSameOrigin(request);
+  if (guard) return guard;
+
   try {
     const body = await request.json();
     const { path, content, expectedMtimeMs, force, allowBinaryOverwrite } =
@@ -79,8 +101,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Expand ~ to home directory
-    const expandedPath = path.replace(/^~/, process.env.HOME || "");
+    // Expand ~ to home directory, rejecting traversal up front
+    const expandedPath = expandFilePath(path);
+    if (expandedPath === null) {
+      return NextResponse.json(
+        { error: "Path traversal is not allowed" },
+        { status: 400 }
+      );
+    }
 
     if (typeof expectedMtimeMs === "number" && force !== true) {
       try {
@@ -108,6 +136,10 @@ export async function POST(request: NextRequest) {
         // by writeFileContent with "refusing to overwrite binary file with
         // text", mapped to 415 below.
         allowBinaryOverwrite: force === true && allowBinaryOverwrite === true,
+        // Parity with the read cap: a file that GET can return as savable
+        // text must be re-savable. The 1MB default here silently rejected
+        // edits of any text file between 1MB and the 2MB read cap.
+        maxSize: DEFAULT_MAX_READ_BYTES,
       });
 
       return NextResponse.json({
@@ -130,6 +162,9 @@ export async function POST(request: NextRequest) {
           },
           { status: 415 }
         );
+      }
+      if (message.startsWith("Content too large")) {
+        return NextResponse.json({ error: message }, { status: 413 });
       }
       throw writeError;
     }

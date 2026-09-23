@@ -1,0 +1,367 @@
+/**
+ * Functional tests hitting /api/files API route handlers directly with fake
+ * NextRequest objects. HOME is isolated first (ops-test-env.ts) because the
+ * route modules bind HOME-derived paths (trash dir) at import time.
+ */
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { OPS_TMP_ROOT } from "./ops-test-env";
+import { POST as opsPost } from "../app/api/files/ops/route";
+import { GET as listGet } from "../app/api/files/route";
+import { GET as downloadGet } from "../app/api/files/download/route";
+import { POST as contentPost, GET as contentGet } from "../app/api/files/content/route";
+import { GET as zipGet } from "../app/api/files/zip/route";
+import {
+  mkdirSync,
+  symlinkSync,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+  statSync,
+} from "fs";
+
+// ops-test-env.ts already forces process.env.HOME to the isolated root.
+const HOME = process.env.HOME!;
+assert.equal(HOME, OPS_TMP_ROOT);
+
+const WS = join(HOME, "ws");
+mkdirSync(join(WS, "dir-a"), { recursive: true });
+mkdirSync(join(WS, "dir-a", "sub"), { recursive: true });
+mkdirSync(join(WS, "nested", "deeper"), { recursive: true });
+mkdirSync(join(WS, "dest"), { recursive: true });
+writeFileSync(join(WS, "text.txt"), "hello ops\n");
+writeFileSync(join(WS, "dir-a", "f.txt"), "in a\n");
+writeFileSync(join(WS, "nested", "deeper", "g.txt"), "deep\n");
+writeFileSync(join(WS, "dest", "text.txt"), "target\n");
+writeFileSync(join(WS, ".secret"), "hush");
+
+test.after(() => {
+  rmSync(OPS_TMP_ROOT, { recursive: true, force: true });
+});
+
+function jsonReq(url: string, body: unknown) {
+  return {
+    url,
+    method: "POST",
+    headers: new Headers({
+      "content-type": "application/json",
+      origin: "http://localhost:3000",
+      host: "localhost:3000",
+    }),
+    nextUrl: new URL(url),
+    json: async () => JSON.parse(JSON.stringify(body)),
+  } as unknown as import("next/server").NextRequest;
+}
+
+function getReq(url: string) {
+  return {
+    url,
+    method: "GET",
+    headers: new Headers(),
+    nextUrl: new URL(url),
+  } as unknown as import("next/server").NextRequest;
+}
+
+async function status(res: unknown): Promise<number> {
+  return (res as { status: number }).status;
+}
+async function data(res: unknown): Promise<Record<string, unknown>> {
+  return JSON.parse(await (res as { text: () => Promise<string> }).text());
+}
+
+// --- move into own descendant -----------------------------------------------
+
+test("move: moving a dir into its own descendant is blocked", async () => {
+  const res = await opsPost(
+    jsonReq("http://x/api/files/ops", {
+      op: "move",
+      path: `${WS}/dir-a`,
+      to: `${WS}/dir-a/sub`,
+    })
+  );
+  assert.equal(await status(res), 400);
+  assert.ok(existsSync(`${WS}/dir-a/f.txt`));
+});
+
+test("move: moving a dir into itself is blocked", async () => {
+  const res = await opsPost(
+    jsonReq("http://x/api/files/ops", {
+      op: "move",
+      path: `${WS}/dir-a`,
+      to: `${WS}/dir-a`,
+    })
+  );
+  assert.equal(await status(res), 400);
+});
+
+test("rename: renaming a dir to a path inside itself is blocked", async () => {
+  const res = await opsPost(
+    jsonReq("http://x/api/files/ops", {
+      op: "rename",
+      path: `${WS}/dir-a`,
+      to: `${WS}/dir-a/renamed`,
+    })
+  );
+  assert.equal(await status(res), 400);
+  assert.ok(existsSync(`${WS}/dir-a/f.txt`));
+});
+
+test("move: a legitimate move still works after the guard", async () => {
+  writeFileSync(`${WS}/movable.txt`, "movable\n");
+  const res = await opsPost(
+    jsonReq("http://x/api/files/ops", {
+      op: "move",
+      path: `${WS}/movable.txt`,
+      to: `${WS}/dest`,
+    })
+  );
+  assert.equal(await status(res), 200);
+  assert.ok(existsSync(`${WS}/dest/movable.txt`));
+});
+
+// --- delete with symlinks ----------------------------------------------------
+
+test("delete: directory containing symlinks trashes fine and restores", async () => {
+  symlinkSync(`${WS}/dest/text.txt`, `${WS}/dir-a/link.txt`);
+  const res = await opsPost(
+    jsonReq("http://x/api/files/ops", { op: "delete", path: `${WS}/dir-a` })
+  );
+  assert.equal(await status(res), 200);
+  const body = await data(res);
+  const trashPath = body.trashPath as string;
+  assert.ok(trashPath.startsWith(`${HOME}/.cliweb/.trash/`));
+  assert.ok(existsSync(`${trashPath}/f.txt`));
+  const rres = await opsPost(
+    jsonReq("http://x/api/files/ops", { op: "restore", path: trashPath })
+  );
+  assert.equal(await status(rres), 200);
+  const rbody = await data(rres);
+  assert.equal(rbody.restoredTo, `${WS}/dir-a`);
+  assert.ok(existsSync(`${WS}/dir-a/link.txt`));
+});
+
+test("delete: deleting a symlink itself trashes the link, not the target", async () => {
+  symlinkSync(`${WS}/dest/text.txt`, `${WS}/link2`);
+  const res = await opsPost(
+    jsonReq("http://x/api/files/ops", { op: "delete", path: `${WS}/link2` })
+  );
+  assert.equal(await status(res), 200);
+  assert.ok(existsSync(`${WS}/dest/text.txt`));
+  const body = await data(res);
+  const pres = await opsPost(
+    jsonReq("http://x/api/files/ops", { op: "purge", path: body.trashPath })
+  );
+  assert.equal(await status(pres), 200);
+  assert.ok(existsSync(`${WS}/dest/text.txt`));
+});
+
+// --- purge outside the trash directory --------------------------------------
+
+test("purge: refuses paths outside the trash directory", async () => {
+  const res = await opsPost(
+    jsonReq("http://x/api/files/ops", { op: "purge", path: `${WS}/dest` })
+  );
+  assert.equal(await status(res), 400);
+  assert.ok(existsSync(`${WS}/dest/text.txt`), "workspace must survive");
+});
+
+test("purge: refuses sibling imitation trash dirs", async () => {
+  mkdirSync(`${HOME}/.cliweb2/.trash/x`, { recursive: true });
+  const res = await opsPost(
+    jsonReq("http://x/api/files/ops", {
+      op: "purge",
+      path: `${HOME}/.cliweb2/.trash/x`,
+    })
+  );
+  assert.equal(await status(res), 400);
+  assert.ok(existsSync(`${HOME}/.cliweb2/.trash/x`));
+});
+
+test("purge: still works on real trash contents", async () => {
+  const res = await opsPost(
+    jsonReq("http://x/api/files/ops", {
+      op: "delete",
+      path: `${WS}/nested/deeper/g.txt`,
+    })
+  );
+  const body = await data(res);
+  const pres = await opsPost(
+    jsonReq("http://x/api/files/ops", { op: "purge", path: body.trashPath })
+  );
+  assert.equal(await status(pres), 200);
+  assert.ok(!existsSync(body.trashPath as string));
+});
+
+// --- traversal / weird paths -------------------------------------------------
+
+test("ops: path traversal is rejected", async () => {
+  const res = await opsPost(
+    jsonReq("http://x/api/files/ops", {
+      op: "delete",
+      path: `${WS}/../elsewhere`,
+    })
+  );
+  assert.equal(await status(res), 400);
+});
+
+// --- showHidden parameter ----------------------------------------------------
+
+test("list: (characterisation) shows .secret by default and with showHidden=true", async () => {
+  const res = await listGet(getReq(`http://x/api/files?path=${encodeURIComponent(WS)}`));
+  const body = await data(res);
+  assert.ok(
+    (body.files as { name: string }[]).some((f) => f.name === ".secret")
+  );
+  const hidden = await listGet(
+    getReq(`http://x/api/files?path=${encodeURIComponent(WS)}&showHidden=true`)
+  );
+  const hbody = await data(hidden);
+  assert.ok((hbody.files as { name: string }[]).some((f) => f.name === ".secret"));
+});
+
+test("list: showHidden=<garbage> does not act as truthy", async () => {
+  mkdirSync(`${WS}/.git`, { recursive: true });
+  const res = await listGet(
+    getReq(`http://x/api/files?path=${encodeURIComponent(WS)}&showHidden=garbage`)
+  );
+  const gbody = await data(res);
+  assert.ok(
+    !(gbody.files as { name: string }[]).some((f) => f.name === ".git"),
+    "only the literal 'true' may bypass exclusions"
+  );
+});
+
+// --- content route -----------------------------------------------------------
+
+test("content GET reads text; POST writes and reports mtime", async () => {
+  const res = await contentGet(
+    getReq(
+      `http://x/api/files/content?path=${encodeURIComponent(`${WS}/dest/text.txt`)}`
+    )
+  );
+  assert.equal(await status(res), 200);
+  const body = await data(res);
+  assert.equal(body.content, "target\n");
+  assert.equal(typeof body.mtimeMs, "number");
+
+  const post = await contentPost(
+    jsonReq("http://x/api/files/content", {
+      path: `${WS}/dest/text.txt`,
+      content: "written\n",
+    })
+  );
+  assert.equal(await status(post), 200);
+  assert.equal(readFileSync(`${WS}/dest/text.txt`, "utf8"), "written\n");
+});
+
+test("content: conflict detection returns 409 on stale mtime", async () => {
+  const stat = statSync(`${WS}/dest/text.txt`);
+  const post = await contentPost(
+    jsonReq("http://x/api/files/content", {
+      path: `${WS}/dest/text.txt`,
+      content: "clobber\n",
+      expectedMtimeMs: stat.mtimeMs - 9999,
+    })
+  );
+  assert.equal(await status(post), 409);
+  assert.equal(readFileSync(`${WS}/dest/text.txt`, "utf8"), "written\n");
+});
+
+test("content: refuses to overwrite binary file with text (415)", async () => {
+  writeFileSync(`${WS}/bin.dat`, Buffer.alloc(100, 0));
+  const post = await contentPost(
+    jsonReq("http://x/api/files/content", {
+      path: `${WS}/bin.dat`,
+      content: "text",
+    })
+  );
+  assert.equal(await status(post), 415);
+});
+
+test("content: POST rejects path traversal", async () => {
+  const post = await contentPost(
+    jsonReq("http://x/api/files/content", {
+      path: `${WS}/../../tmp/traversal.txt`,
+      content: "no",
+    })
+  );
+  assert.ok([400, 500].includes(await status(post)));
+  assert.ok(!existsSync(`/tmp/traversal.txt`));
+});
+
+test("content GET rejects path traversal", async () => {
+  const res = await contentGet(
+    getReq(
+      `http://x/api/files/content?path=${encodeURIComponent(`${WS}/../../etc/passwd`)}`
+    )
+  );
+  assert.ok([400, 500].includes(await status(res)));
+});
+
+// --- download ----------------------------------------------------------------
+
+test("download: symlink target bytes are served", async () => {
+  symlinkSync(`${WS}/dest/text.txt`, `${WS}/dl-link`);
+  const res = await downloadGet(
+    getReq(
+      `http://x/api/files/download?path=${encodeURIComponent(`${WS}/dl-link`)}`
+    )
+  );
+  assert.equal(await status(res), 200);
+  const text = await (res as unknown as { text: () => Promise<string> }).text();
+  assert.equal(text, "written\n");
+});
+
+test("download: dangling symlink responses without crash", async () => {
+  symlinkSync(`${WS}/no-such-file`, `${WS}/dangling`);
+  const res = await downloadGet(
+    getReq(
+      `http://x/api/files/download?path=${encodeURIComponent(`${WS}/dangling`)}`
+    )
+  );
+  const s = await status(res);
+  assert.ok(s >= 400 && s < 600);
+});
+
+test("download: rejects traversal", async () => {
+  const res = await downloadGet(
+    getReq(
+      `http://x/api/files/download?path=${encodeURIComponent(`${WS}/../../etc/passwd`)}`
+    )
+  );
+  assert.equal(await status(res), 400);
+});
+
+// --- zip ---------------------------------------------------------------------
+
+test("zip: rejects traversal", async () => {
+  const res = await zipGet(
+    getReq(`http://x/api/files/zip?path=${encodeURIComponent(`${WS}/../..`)}`)
+  );
+  assert.equal(await status(res), 400);
+});
+
+test("zip: archives a small tree successfully", async () => {
+  const res = await zipGet(
+    getReq(`http://x/api/files/zip?path=${encodeURIComponent(`${WS}/dest`)}`)
+  );
+  assert.equal(await status(res), 200);
+  const buf = await (res as unknown as { text: () => Promise<string> }).text();
+  assert.equal(buf.charCodeAt(0), 0x50); // PK
+  assert.equal(buf.charCodeAt(1), 0x4b);
+});
+
+// --- createFile race ---------------------------------------------------------
+
+test("createFile: two concurrent creates -> one 200 and one 409", async () => {
+  const [a, b] = await Promise.all([
+    opsPost(jsonReq("http://x/api/files/ops", { op: "createFile", path: `${WS}/racefile` })),
+    opsPost(jsonReq("http://x/api/files/ops", { op: "createFile", path: `${WS}/racefile` })),
+  ]);
+  const statuses = [(await status(a)), (await status(b))].sort();
+  assert.deepEqual(statuses, [200, 409]);
+  assert.equal(readFileSync(`${WS}/racefile`, "utf8"), "");
+});

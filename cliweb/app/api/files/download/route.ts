@@ -67,8 +67,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Expand ~ to home directory (same convention as /api/files/content)
+    // Expand ~ to home directory (same convention as /api/files/content);
+    // reject traversal on the raw expanded string before resolve (resolve
+    // absorbs ".." segments). Same rule as ops and upload-temp.
     const expandedPath = requested.replace(/^~(?=\/|$)/, process.env.HOME || os.homedir());
+    if (expandedPath.split(path.sep).includes("..")) {
+      return NextResponse.json(
+        { error: "Path traversal is not allowed" },
+        { status: 400 }
+      );
+    }
     const filePath = path.resolve(expandedPath);
 
     if (!fs.existsSync(filePath)) {

@@ -202,22 +202,29 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Expand ~ to home directory, consistent with the other file routes
-  const expand = (p: string) =>
-    resolve(p.replace(/^~/, process.env.HOME || ""));
+  // Expand ~ to home directory, consistent with the other file routes.
+  // Traversal is rejected on the RAW expanded string before resolve, because
+  // resolve absorbs ".." segments (a post-resolve check can never catch them;
+  // the old predicate was effectively dead code). Same rule as upload-temp.
+  const expand = (p: string) => {
+    const expanded = p.replace(/^~(?=\/|$)/, process.env.HOME || "");
+    if (expanded.split("/").includes("..")) {
+      return null;
+    }
+    return resolve(expanded);
+  };
 
   const path = expand(rawPath);
 
-  // Reject traversal: after resolve, any ".." segment means it escaped
-  if (path.split("/").includes("..")) {
+  if (path === null) {
     return NextResponse.json(
       { error: "Path traversal is not allowed" },
       { status: 400 }
     );
   }
 
-  // Reject "." / root "/" as target
-  if (path === "." || path === "/" || path === "") {
+  // Reject root "/" as target
+  if (path === "/" || path === "") {
     return NextResponse.json(
       { error: "Invalid target path" },
       { status: 400 }
@@ -238,13 +245,14 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    to = expand(rawTo);
-    if (to.split("/").includes("..") || to === "." || to === "/" || to === "") {
+    const expandedTo = expand(rawTo);
+    if (expandedTo === null || expandedTo === "/" || expandedTo === "") {
       return NextResponse.json(
         { error: "Invalid destination path" },
         { status: 400 }
       );
     }
+    to = expandedTo;
     if (op === "move" || op === "copy" || op === "copyDir") {
       // For move/copy/copyDir, "to" is a destination directory and the
       // source basename is joined onto it.
@@ -261,6 +269,18 @@ export async function POST(request: NextRequest) {
         );
       }
       to = resolve(to, basename(path));
+      // A destination inside the source (moving a directory into its own
+      // descendant, or onto itself) would truncate or corrupt the tree.
+      // Linux rename reports a bare EINVAL/ENOTEMPTY as a 500; reject cleanly.
+      if (isInside(path, to)) {
+        return NextResponse.json(
+          {
+            error:
+              "Destination is inside the source: cannot move into itself or a descendant",
+          },
+          { status: 400 }
+        );
+      }
     }
   }
 
@@ -283,6 +303,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: "Source path does not exist" },
           { status: 404 }
+        );
+      }
+      if (isInside(path, to!)) {
+        return NextResponse.json(
+          { error: "Destination is inside the source path" },
+          { status: 400 }
         );
       }
       if (!force && existsSync(to!)) {
@@ -402,7 +428,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (op === "purge") {
-      // purge: permanently remove a trashed item (used by empty-trash later)
+      // purge: permanently remove a trashed item. Contained to the trash
+      // directory itself: without this, any path the client can name (the
+      // whole filesystem for this app) could be recursively destroyed by a
+      // single payload. Only direct children of TRASH_DIR qualify.
+      if (dirname(path) !== TRASH_DIR || path === TRASH_DIR) {
+        return NextResponse.json(
+          { error: "purge only accepts paths inside the trash directory" },
+          { status: 400 }
+        );
+      }
       try {
         statSync(path);
       } catch {
@@ -479,4 +514,9 @@ function existsSync(p: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** True when `candidate` is `parent` itself or a path inside it. */
+function isInside(parent: string, candidate: string): boolean {
+  return candidate === parent || candidate.startsWith(parent + "/");
 }

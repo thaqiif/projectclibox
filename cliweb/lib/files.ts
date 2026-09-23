@@ -140,14 +140,11 @@ export function listDirectory(
  * Read file contents with encoding detection
  */
 /**
- * Default read limit: 2MB.
- *
- * Files larger than this are never returned as editable text: the response
- * is flagged isBinary:true with content set to a size note. ANY response
- * flagged like that must never be POSTed back to /api/files/content, or a
- * placeholder string would overwrite the real file on disk.
+ * Default read limit: 2MB. Exported so the write path in the content route
+ * can use the same cap: a file that GET returns as savable text must be
+ * re-savable via POST.
  */
-const DEFAULT_MAX_READ_BYTES = 2 * 1024 * 1024;
+export const DEFAULT_MAX_READ_BYTES = 2 * 1024 * 1024;
 
 /**
  * Read only the first slice when sniffing for binary content. A video or
