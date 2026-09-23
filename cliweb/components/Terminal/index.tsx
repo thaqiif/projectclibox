@@ -35,6 +35,11 @@ interface TerminalProps {
   initialScrollState?: TerminalScrollState;
   /** Show image picker button (default: true) */
   showImageButton?: boolean;
+  /**
+   * Directory file drops should land in (usually the tmux terminal's
+   * working_directory). Falls back to /tmp when absent.
+   */
+  workingDirectory?: string | null;
 }
 
 export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
@@ -45,6 +50,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       onBeforeUnmount,
       initialScrollState,
       showImageButton = true,
+      workingDirectory,
     },
     ref
   ) {
@@ -103,7 +109,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       async (file: File) => {
         setIsUploading(true);
         try {
-          const path = await uploadFileToTemp(file);
+          const path = await uploadFileToTemp(file, {
+            // Drop straight into the terminal's working directory; with no
+            // directory known, the upload falls back to /tmp.
+            targetDir: workingDirectory || undefined,
+          });
           if (path) {
             sendInput(path);
             focus();
@@ -114,7 +124,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
           setIsUploading(false);
         }
       },
-      [sendInput, focus]
+      [sendInput, focus, workingDirectory]
     );
 
     // Drag and drop for file uploads

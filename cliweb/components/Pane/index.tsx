@@ -128,6 +128,7 @@ export const Pane = memo(function Pane({
     <Terminal
       ref={setTerminalRef}
       onConnected={handleTerminalConnected}
+      workingDirectory={currentTerminal?.working_directory}
       onBeforeUnmount={(scrollState) => {
         terminalStateRegistry.saveTerminalState(paneId, "terminal", {
           scrollTop: scrollState.scrollTop,

@@ -82,7 +82,7 @@ function MonitorTerminal({
     }, 100);
   }, [name, cwd, onRestarted]);
 
-  return <Terminal ref={ref} onConnected={handleConnected} />;
+  return <Terminal ref={ref} onConnected={handleConnected} workingDirectory={cwd} />;
 }
 
 function MonitorPane({

@@ -96,6 +96,7 @@ export function ShellDrawer({
           ref={terminalRef}
           onConnected={handleConnected}
           showImageButton={false}
+          workingDirectory={workingDirectory}
         />
       </div>
     </div>
