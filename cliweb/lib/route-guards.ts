@@ -18,8 +18,14 @@ import { NextResponse } from "next/server";
  * Upload-style POSTs are always JSON, and browsers will not let a
  * cross-origin page POST application/json without CORS preflight, so this
  * doubles as a CSRF tripwire.
+ *
+ * Bodyless requests — a bare `fetch(url, { method: "DELETE" })` sends
+ * neither a body nor a Content-Type — carry nothing that a hostile page
+ * could use to change data, so the content-type only guards requests that
+ * actually have a body.
  */
 export function guardJsonContent(request: Request): NextResponse | null {
+  if (request.body == null) return null;
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
   if (contentType !== "application/json") {
     return NextResponse.json(
