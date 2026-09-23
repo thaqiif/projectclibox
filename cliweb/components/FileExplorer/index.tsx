@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import type { FileNode } from "@/lib/file-utils";
 import type { OpenFile } from "@/hooks/useFileEditor";
+import { FileOpsMenu } from "./TreeNodeActions";
 
 // The CodeMirror stack is heavy and only loads once a file is actually
 // opened, not when the explorer pane first appears.
@@ -380,8 +381,10 @@ function DesktopFileExplorer({
           files={files}
           loading={loading}
           error={error}
+          workingDirectory={workingDirectory}
           onOpenDir={onOpenDir}
           onFileClick={onFileClick}
+          onRefresh={onRefresh}
           activePath={activeFilePath ?? undefined}
         />
       </div>
@@ -416,6 +419,7 @@ function DesktopFileExplorer({
             </div>
           ) : activeFile ? (
             <FileEditor
+              path={activeFile.path}
               content={activeFile.currentContent}
               language={activeFile.language}
               isBinary={activeFile.isBinary}
@@ -528,6 +532,7 @@ function MobileFileExplorer({
             </div>
           ) : (
             <FileEditor
+              path={activeFile.path}
               content={activeFile.currentContent}
               language={activeFile.language}
               isBinary={activeFile.isBinary}
@@ -581,8 +586,10 @@ function MobileFileExplorer({
         files={files}
         loading={loading}
         error={error}
+        workingDirectory={workingDirectory}
         onOpenDir={onOpenDir}
         onFileClick={onFileClick}
+        onRefresh={onRefresh}
         activePath={activeFilePath ?? undefined}
       />
 
@@ -639,8 +646,10 @@ interface ListingBodyProps {
   files: FileNode[];
   loading: boolean;
   error: string | null;
+  workingDirectory: string;
   onOpenDir: (path: string) => void;
   onFileClick: (path: string) => void;
+  onRefresh?: () => void;
   activePath?: string;
 }
 
@@ -648,8 +657,10 @@ function ListingBody({
   files,
   loading,
   error,
+  workingDirectory,
   onOpenDir,
   onFileClick,
+  onRefresh,
   activePath,
 }: ListingBodyProps) {
   if (loading) {
@@ -687,13 +698,22 @@ function ListingBody({
           const isActive = activePath === node.path;
 
           return (
-            <button
+            <div
               key={node.path}
+              role="button"
+              tabIndex={0}
               onClick={() =>
                 isDirectory ? onOpenDir(node.path) : onFileClick(node.path)
               }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  if (isDirectory) onOpenDir(node.path);
+                  else onFileClick(node.path);
+                }
+              }}
               className={cn(
-                "group relative flex h-10 w-full items-center gap-1.5 pr-3 pl-2 text-left transition-colors hover:bg-[var(--fill-4)] md:h-7",
+                "group/node group relative flex h-10 w-full cursor-pointer items-center gap-1.5 pr-3 pl-2 text-left transition-colors hover:bg-[var(--fill-4)] md:h-7",
                 isActive && "bg-[var(--fill-3)]"
               )}
             >
@@ -723,7 +743,15 @@ function ListingBody({
                   {formatFileSize(node.size)}
                 </span>
               )}
-            </button>
+
+              <span className="flex-shrink-0">
+                <FileOpsMenu
+                  node={node}
+                  workingDirectory={workingDirectory}
+                  onDone={onRefresh}
+                />
+              </span>
+            </div>
           );
         })}
       </div>
