@@ -14,11 +14,13 @@ export interface UseFileEditorReturn {
   activeFilePath: string | null;
   loading: boolean;
   saving: boolean;
+  /** Last save failure message, or null when the last save succeeded. */
+  saveError: string | null;
   openFile: (path: string) => Promise<void>;
   closeFile: (path: string) => void;
   setActiveFile: (path: string) => void;
   updateContent: (path: string, content: string) => void;
-  saveFile: (path: string) => Promise<{ success: boolean; error?: string }>;
+  saveFile: (path: string) => Promise<{ ok: boolean; error?: string }>;
   saveAllFiles: () => Promise<void>;
   isDirty: (path: string) => boolean;
   hasUnsavedChanges: boolean;
@@ -31,6 +33,7 @@ export function useFileEditor(): UseFileEditorReturn {
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const getFile = useCallback(
     (path: string) => openFiles.find((f) => f.path === path),
@@ -55,6 +58,34 @@ export function useFileEditor(): UseFileEditorReturn {
       const existing = openFiles.find((f) => f.path === path);
       if (existing) {
         setActiveFilePath(path);
+        // Keep server_fetch freshness: refetch the current content unless the
+        // user has unsaved edits that a refetch would overwrite.
+        if (existing.content !== existing.currentContent) return;
+
+        setLoading(true);
+        try {
+          const res = await fetch(
+            `/api/files/content?path=${encodeURIComponent(path)}`
+          );
+          const data = await res.json();
+
+          if (data.error) {
+            console.error("Failed to refresh file:", data.error);
+            return;
+          }
+
+          setOpenFiles((prev) =>
+            prev.map((f) =>
+              f.path === data.path
+                ? { ...f, content: data.content, isBinary: data.isBinary }
+                : f
+            )
+          );
+        } catch (error) {
+          console.error("Failed to refresh file:", error);
+        } finally {
+          setLoading(false);
+        }
         return;
       }
 
@@ -114,11 +145,18 @@ export function useFileEditor(): UseFileEditorReturn {
   }, []);
 
   const saveFile = useCallback(
-    async (path: string): Promise<{ success: boolean; error?: string }> => {
+    async (path: string): Promise<{ ok: boolean; error?: string }> => {
       const file = openFiles.find((f) => f.path === path);
-      if (!file) return { success: false, error: "File not found" };
-      if (file.isBinary)
-        return { success: false, error: "Cannot save binary files" };
+      if (!file) {
+        const message = "File not found";
+        setSaveError(message);
+        return { ok: false, error: message };
+      }
+      if (file.isBinary) {
+        const message = "Cannot save binary files";
+        setSaveError(message);
+        return { ok: false, error: message };
+      }
 
       setSaving(true);
       try {
@@ -130,22 +168,25 @@ export function useFileEditor(): UseFileEditorReturn {
         const data = await res.json();
 
         if (data.error) {
-          return { success: false, error: data.error };
+          const message: string = data.error;
+          setSaveError(message);
+          return { ok: false, error: message };
         }
 
         // Update the saved content to match current
+        setSaveError(null);
         setOpenFiles((prev) =>
           prev.map((f) =>
             f.path === path ? { ...f, content: f.currentContent } : f
           )
         );
 
-        return { success: true };
+        return { ok: true };
       } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : "Failed to save",
-        };
+        const message =
+          error instanceof Error ? error.message : "Failed to save";
+        setSaveError(message);
+        return { ok: false, error: message };
       } finally {
         setSaving(false);
       }
@@ -163,6 +204,7 @@ export function useFileEditor(): UseFileEditorReturn {
   const reset = useCallback(() => {
     setOpenFiles([]);
     setActiveFilePath(null);
+    setSaveError(null);
   }, []);
 
   return {
@@ -170,6 +212,7 @@ export function useFileEditor(): UseFileEditorReturn {
     activeFilePath,
     loading,
     saving,
+    saveError,
     openFile,
     closeFile,
     setActiveFile: setActiveFilePath,
