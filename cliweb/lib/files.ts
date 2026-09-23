@@ -139,32 +139,60 @@ export function listDirectory(
 /**
  * Read file contents with encoding detection
  */
+/**
+ * Default read limit: 2MB.
+ *
+ * Files larger than this are never returned as editable text: the response
+ * is flagged isBinary:true with content set to a size note. ANY response
+ * flagged like that must never be POSTed back to /api/files/content, or a
+ * placeholder string would overwrite the real file on disk.
+ */
+const DEFAULT_MAX_READ_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Read only the first slice when sniffing for binary content. A video or
+ * archive has a null byte near the start long before 8KB; text files
+ * almost never do (the one exception, UTF-16 content, also begins with a
+ * BOM or null byte and is not editable as UTF-8 text anyway).
+ */
+const BINARY_SNIFF_BYTES = 8 * 1024;
+
 export function readFileContent(
   filePath: string,
   options: { maxSize?: number } = {}
-): { content: string; isBinary: boolean; size: number } {
-  const { maxSize = 1024 * 1024 } = options; // Default 1MB max
+): { content: string; isBinary: boolean; truncated: boolean; size: number } {
+  const { maxSize = DEFAULT_MAX_READ_BYTES } = options;
 
   try {
     const stat = statSync(filePath);
 
+    // Oversized files: NEVER reports isBinary:false. A truncated read
+    // cannot be saved back without losing the tail (or, worse, a naive
+    // client treating the size note as document content and destroying the
+    // original file), so it is refused on the client and, defense in depth,
+    // again on the server.
     if (stat.size > maxSize) {
       return {
         content: `File too large (${(stat.size / 1024 / 1024).toFixed(2)}MB). Maximum size: ${(maxSize / 1024 / 1024).toFixed(2)}MB`,
-        isBinary: false,
+        isBinary: true,
+        truncated: true,
         size: stat.size,
       };
     }
 
     const buffer = readFileSync(filePath);
 
-    // Simple binary detection: check for null bytes
-    const isBinary = buffer.includes(0);
+    // Null bytes in the sniff window mean binary. Also flagged when the
+    // full-content check later hits a tail null, so no file whose bytes are
+    // not exactly reproducible as text is EVER handed back as savable text.
+    const headIsBinary = buffer.subarray(0, BINARY_SNIFF_BYTES).includes(0);
+    const tailHasNull = !headIsBinary && buffer.includes(0);
 
-    if (isBinary) {
+    if (headIsBinary || tailHasNull) {
       return {
         content: `Binary file (${(stat.size / 1024).toFixed(2)}KB)`,
         isBinary: true,
+        truncated: false,
         size: stat.size,
       };
     }
@@ -172,6 +200,7 @@ export function readFileContent(
     return {
       content: buffer.toString("utf-8"),
       isBinary: false,
+      truncated: false,
       size: stat.size,
     };
   } catch (error) {
@@ -182,14 +211,22 @@ export function readFileContent(
 }
 
 /**
- * Write content to a file
+ * Write content to a file.
+ *
+ * Safety guard: refuses to overwrite a file whose CURRENT on-disk content
+ * is binary (null byte within the first 8KB) with text. This is the last
+ * line of defense against a client that opened a binary file, received a
+ * placeholder string, and saved it back, destroying the original bytes
+ * (this exact flow destroyed a 34MB video once). The conflict/overwrite
+ * confirmation flow may pass { allowBinaryOverwrite: true } to bypass the
+ * guard after an explicit user confirmation.
  */
 export function writeFileContent(
   filePath: string,
   content: string,
-  options: { maxSize?: number } = {}
+  options: { maxSize?: number; allowBinaryOverwrite?: boolean } = {}
 ): { success: boolean; size: number } {
-  const { maxSize = 1024 * 1024 } = options; // Default 1MB max
+  const { maxSize = 1024 * 1024, allowBinaryOverwrite = false } = options;
 
   const contentBuffer = Buffer.from(content, "utf-8");
 
@@ -197,6 +234,35 @@ export function writeFileContent(
     throw new Error(
       `Content too large (${(contentBuffer.length / 1024 / 1024).toFixed(2)}MB). Maximum size: ${(maxSize / 1024 / 1024).toFixed(2)}MB`
     );
+  }
+
+  // Sniff the CURRENT file, before any write. Missing file = nothing to
+  // protect (new file creation). Read errors other than missing are
+  // surfaced: failing closed is the safe default for a data-destruction
+  // guard.
+  let existing: Buffer | null = null;
+  try {
+    existing = readFileSync(filePath);
+  } catch (error) {
+    const code =
+      error instanceof Error && "code" in error
+        ? (error as NodeJS.ErrnoException).code
+        : undefined;
+    if (code !== "ENOENT") {
+      throw new Error(
+        `Failed to write file: cannot verify existing file (${
+          error instanceof Error ? error.message : "Unknown error"
+        })`
+      );
+    }
+  }
+
+  if (
+    existing !== null &&
+    !allowBinaryOverwrite &&
+    existing.subarray(0, BINARY_SNIFF_BYTES).includes(0)
+  ) {
+    throw new Error("refusing to overwrite binary file with text");
   }
 
   try {

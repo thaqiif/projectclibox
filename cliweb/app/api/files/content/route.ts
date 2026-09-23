@@ -55,11 +55,18 @@ export async function GET(request: NextRequest) {
  * send expectedMtimeMs and have decided to overwrite anyway (e.g. after a
  * user confirms a conflict dialog). A missing on-disk file is treated as
  * "no conflict" so new-file creation keeps working.
+ *
+ * Binary guard: writes onto a file whose current on-disk content is binary
+ * are refused with 415 unless the caller passes BOTH { force: true } AND
+ * { allowBinaryOverwrite: true }, which only the conflict-overwrite
+ * confirmation flow sends after the user explicitly confirmed. This stops a
+ * save of a placeholder string from destroying a binary file.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { path, content, expectedMtimeMs, force } = body;
+    const { path, content, expectedMtimeMs, force, allowBinaryOverwrite } =
+      body;
 
     if (!path) {
       return NextResponse.json({ error: "Path is required" }, { status: 400 });
@@ -94,15 +101,38 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const result = writeFileContent(expandedPath, content);
+    try {
+      const result = writeFileContent(expandedPath, content, {
+        // allowBinaryOverwrite is honored only from the explicit
+        // force-overwrite path (conflict dialog); anything else is refused
+        // by writeFileContent with "refusing to overwrite binary file with
+        // text", mapped to 415 below.
+        allowBinaryOverwrite: force === true && allowBinaryOverwrite === true,
+      });
 
-    return NextResponse.json({
-      ...result,
-      path: expandedPath,
-      // Post-write mtime so clients can update their captured value and
-      // save again later without a false conflict against their own write.
-      mtimeMs: statSync(expandedPath).mtimeMs,
-    });
+      return NextResponse.json({
+        ...result,
+        path: expandedPath,
+        // Post-write mtime so clients can update their captured value and
+        // save again later without a false conflict against their own write.
+        mtimeMs: statSync(expandedPath).mtimeMs,
+      });
+    } catch (writeError) {
+      const message =
+        writeError instanceof Error
+          ? writeError.message
+          : "Failed to write file";
+      if (message === "refusing to overwrite binary file with text") {
+        return NextResponse.json(
+          {
+            error:
+              "refusing to overwrite binary file with text. Re-open the file to view or download it instead.",
+          },
+          { status: 415 }
+        );
+      }
+      throw writeError;
+    }
   } catch (error) {
     console.error("Error writing file:", error);
     return NextResponse.json(
