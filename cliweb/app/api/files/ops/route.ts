@@ -4,6 +4,7 @@ import {
   mkdirSync,
   renameSync,
   rmSync,
+  cpSync,
   writeFileSync,
   statSync,
   lstatSync,
@@ -33,6 +34,27 @@ interface TrashMeta {
   origPath: string;
   trashPath: string;
   deletedAt: string;
+}
+
+/**
+ * Rename `src` to `dest`, falling back to copy+remove when rename fails with
+ * EXDEV (crucially when the workspace lives on a different filesystem/mount
+ * from HOME, e.g. /workspaces vs the trashing directory: plain rename cannot
+ * move files across devices and used to surface as a bare 500).
+ */
+function renameAcrossDevices(src: string, dest: string): void {
+  try {
+    renameSync(src, dest);
+    return;
+  } catch (err) {
+    if ((err as { code?: string }).code !== "EXDEV") {
+      throw err;
+    }
+  }
+  // Cross-device: copy the tree (files, dirs; symlinks recreated as-is) then
+  // remove the source. Copy first so a failed copy never destroys the source.
+  cpSync(src, dest, { recursive: true, verbatimSymlinks: true });
+  rmSync(src, { recursive: true, force: true });
 }
 
 function metaPathFor(trashPath: string): string {
@@ -317,7 +339,7 @@ export async function POST(request: NextRequest) {
           { status: 409 }
         );
       }
-      renameSync(path, to!);
+      renameAcrossDevices(path, to!);
       return NextResponse.json({ ok: true });
     }
 
@@ -336,7 +358,7 @@ export async function POST(request: NextRequest) {
           { status: 409 }
         );
       }
-      renameSync(path, to!);
+      renameAcrossDevices(path, to!);
       return NextResponse.json({ ok: true });
     }
 
@@ -386,7 +408,7 @@ export async function POST(request: NextRequest) {
         );
       }
       mkdirSync(dirname(target), { recursive: true });
-      renameSync(path, target);
+      renameAcrossDevices(path, target);
       rmSync(metaPathFor(path), { force: true });
       return NextResponse.json({ ok: true, restoredTo: target });
     }
@@ -462,7 +484,7 @@ export async function POST(request: NextRequest) {
     }
     mkdirSync(TRASH_DIR, { recursive: true });
     const trashPath = uniqueTrashPath(path);
-    renameSync(path, trashPath);
+    renameAcrossDevices(path, trashPath);
     const meta: TrashMeta = {
       origPath: path,
       trashPath,
