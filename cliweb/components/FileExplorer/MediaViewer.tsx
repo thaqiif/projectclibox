@@ -350,35 +350,26 @@ function StreamingPlayer({
   kind: "video" | "audio";
 }) {
   const mediaRef = useRef<HTMLMediaElement>(null);
-  /**
-   * Purely derived failure state: a media element keeps its MediaError object
-   * forever after a failed load, and the element is re-created per src, so
-   * reading it during render is deterministic and covers every window where
-   * an "error" event could have been missed.
-   */
-  const [mediaNode, setMediaNode] = useState<HTMLMediaElement | null>(null);
-  const error = mediaNode !== null && mediaNode.error !== null;
+  const [error, setError] = useState(false);
 
   /**
    * Same reasoning as the image viewer: a fast 404 can beat React's own
    * onError, so also listen natively from the moment the element exists.
    */
   const attachMedia = useCallback((element: HTMLMediaElement | null) => {
+    const previous = mediaRef.current;
     mediaRef.current = element;
-    // Attach is the commit-time truth. The React-detach call clears the
-    // failure record for the outgoing element, which is what effectively
-    // resets the derived error when the src-keyed element is replaced; and
-    // the very same call primes the new element, covering everything else.
-    setMediaNode(element);
     if (!element) return;
-    // No imperative pause/clear here: the element is dropped from the DOM when
-    // rendering switches to the alert, which stops and frees the decoder; the
-    // browser also releases the player's network connection. Keeping the node
-    // would re-trigger a fresh fetch loop on every render, so removal is the
-    // correct release.
-    const onError = () => setMediaNode(element);
-    element.addEventListener("error", onError);
-    return () => element.removeEventListener("error", onError);
+    if (element !== previous) {
+      // A fresh element belongs to a new src (the element is keyed by src), so
+      // the previous failure no longer describes it. Drop it, unless this very
+      // element already failed.
+      setError(element.error === null ? false : true);
+      element.addEventListener("error", () => setError(true));
+      return;
+    }
+    // Same element (StrictMode re-attach): keep existing state and listener.
+    element.addEventListener("error", () => setError(true));
   }, []);
 
   const media =
@@ -392,7 +383,7 @@ function StreamingPlayer({
         preload="metadata"
         playsInline
         className="max-h-full max-w-full rounded-md bg-black object-contain"
-        onError={() => setMediaNode(mediaRef.current)}
+        onError={() => setError(true)}
       />
     ) : (
       <audio
@@ -403,7 +394,7 @@ function StreamingPlayer({
         controls
         preload="metadata"
         className="w-full max-w-md"
-        onError={() => setMediaNode(mediaRef.current)}
+        onError={() => setError(true)}
       />
     );
 
