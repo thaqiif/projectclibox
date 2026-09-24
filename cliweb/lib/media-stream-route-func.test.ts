@@ -120,6 +120,23 @@ test("stream: takes the first satisfiable range from a multi-range request", asy
   assert.equal(await bytes(response), "12");
 });
 
+test("stream: a multi-range request survives an unsatisfiable first member", async () => {
+  const response = await streamGet(
+    request("stream", FILE, { range: "bytes=99-100, 0-1" })
+  );
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get("content-range"), "bytes 0-1/10");
+  assert.equal(await bytes(response), "01");
+});
+
+test("stream: multi-range with only invalid members is ignored", async () => {
+  const response = await streamGet(
+    request("stream", FILE, { range: "items=0-1, nonsense" })
+  );
+  assert.equal(response.status, 200);
+  assert.equal(await bytes(response), "0123456789");
+});
+
 test("stream: returns an empty 200 response for a zero-length file", async () => {
   const response = await streamGet(request("stream", EMPTY));
   assert.equal(response.status, 200);
@@ -269,23 +286,43 @@ test("media extensions classify consistently and non-media stays out of the view
   assert.equal(mediaKindFor("archive.bin"), null);
 });
 
-test("every media path the viewer can display is impossible to save", () => {
+test("every media extension is refused a save, even as clean text", () => {
+  let checked = 0;
   for (const extension of Object.keys(MIME_TYPES)) {
-    if (mediaKindFor(`FILE.${extension}`) === null) continue;
-    // The viewer only replaces the editor for binary or truncated files, and
-    // the hook refuses both, so displayed media is never editable.
+    const filePath = `/tmp/clip.${extension}`;
+    if (mediaKindFor(filePath) === null) {
+      // Non-media keeps its normal editor and stays savable.
+      assert.equal(
+        saveRefusalFor({ path: filePath, isBinary: false, truncated: false }),
+        null,
+        extension
+      );
+      continue;
+    }
+    checked += 1;
+    // Media is viewer-only, so no editor state for it may ever be written.
     assert.match(
-      saveRefusalFor({ isBinary: true, truncated: false }) ?? "",
-      /cannot be saved/,
+      saveRefusalFor({ path: filePath, isBinary: false, truncated: false }) ??
+        "",
+      /cannot be (?:edited or )?saved/,
       extension
     );
     assert.match(
-      saveRefusalFor({ isBinary: false, truncated: true }) ?? "",
-      /cannot be saved/,
+      saveRefusalFor({ isBinary: true, truncated: false }) ?? "",
+      /cannot be (?:edited or )?saved/,
       extension
     );
   }
-  assert.equal(saveRefusalFor({ isBinary: false, truncated: false }), null);
+  assert.ok(checked >= 20, `expected many media extensions, saw ${checked}`);
+  assert.match(
+    saveRefusalFor({ path: "/tmp/vector.svg", isBinary: false, truncated: false }) ??
+      "",
+    /cannot be (?:edited or )?saved/
+  );
+  assert.equal(
+    saveRefusalFor({ path: "/tmp/notes.md", isBinary: false, truncated: false }),
+    null
+  );
 });
 
 test("zoom-to-cursor preserves the image-space point for large offsets", () => {

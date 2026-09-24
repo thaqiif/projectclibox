@@ -40,17 +40,19 @@ interface ByteRange {
  * malformed: RFC 9110 says to ignore a Range field the server cannot satisfy
  * syntactically, so those requests get the full 200 representation. Returns
  * "unsatisfiable" for a syntactically valid but out-of-bounds request (416).
- * Multi-range requests are collapsed to their first range; no browser sends
- * them for media playback.
+ * Multi-range requests are served as their first satisfiable member (a
+ * single-range response is valid for any range set); no browser sends them
+ * for media playback, but one that does still gets bytes rather than a 416
+ * when only its first member is out of bounds.
  */
-function parseRange(
-  header: string | null,
+function parseSingleRange(
+  member: string,
   size: number
 ): ByteRange | null | "unsatisfiable" {
-  if (!header) return null;
-  const first = header.split(",")[0].trim();
   // Range units are case-insensitive ("Bytes=0-1" is valid).
-  const match = /^bytes=(\d*)-(\d*)$/i.exec(first);
+  // In a multi-member set only the first member carries the unit
+  // ("bytes=0-1, 5-6"), so the prefix is optional here.
+  const match = /^(?:bytes=)?(\d*)-(\d*)$/i.exec(member);
   if (!match) return null;
   const [, rawStart, rawEnd] = match;
   if (rawStart === "" && rawEnd === "") return null;
@@ -71,6 +73,23 @@ function parseRange(
   const end = Math.min(parsedEnd, size - 1);
   if (end < start) return "unsatisfiable";
   return { start, end };
+}
+
+function parseRange(
+  header: string | null,
+  size: number
+): ByteRange | null | "unsatisfiable" {
+  if (!header) return null;
+  let sawUnsatisfiable = false;
+  for (const member of header.split(",")) {
+    const parsed = parseSingleRange(member.trim(), size);
+    if (parsed === null) continue;
+    if (parsed !== "unsatisfiable") return parsed;
+    sawUnsatisfiable = true;
+  }
+  // Nothing servable: 416 only when a member was well formed but out of
+  // bounds; otherwise the whole header is unparseable and gets ignored.
+  return sawUnsatisfiable ? "unsatisfiable" : null;
 }
 
 /**

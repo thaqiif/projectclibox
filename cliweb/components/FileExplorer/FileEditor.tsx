@@ -228,6 +228,7 @@ export function FileEditor({
   const isMarkdown = language === "markdown";
   const isHtml = language === "html";
   const hasPreview = isMarkdown || isHtml;
+  const kind = mediaKindFor(path);
 
   useEffect(() => {
     if (!hasPreview) {
@@ -236,15 +237,21 @@ export function FileEditor({
     }
   }, [hasPreview]);
 
+  // Media is viewer-only, at any size: it streams from its own endpoint and
+  // never reaches CodeMirror or a save surface. Text-based media (SVG) is
+  // deliberately included, because an editing surface whose saves are refused
+  // would set users up to lose their edits; the viewer's download link is the
+  // way to get the source. lib/file-editor-save.ts enforces the same rule, so
+  // a stale open cannot be saved through the conflict-overwrite path either.
+  if (path && kind) {
+    return <MediaViewer path={path} kind={kind} fileName={baseName(path)} />;
+  }
+
   // Truncated files (placeholder only) get read-only treatment: the real
   // bytes are not here, so no editing surface and no save path. Media is
   // the exception: the viewer streams from disk directly, so it works at
   // any size.
   if (truncated) {
-    const kind = mediaKindFor(path);
-    if (path && kind) {
-      return <MediaViewer path={path} kind={kind} fileName={baseName(path)} />;
-    }
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
         <FileCode className="text-muted-foreground/70 h-4 w-4" />
@@ -268,14 +275,6 @@ export function FileEditor({
   // Binary files: media streams inline, everything else gets a download
   // affordance instead of a dead end.
   if (isBinary) {
-    // Every path that reaches the viewer is binary or truncated, and the hook
-    // refuses to save both, so displayed media can never be edited in place.
-    // Text-based media (SVG) keeps its normal editor because the bytes really
-    // are loaded, which is the case the refusal exists for.
-    const kind = mediaKindFor(path);
-    if (path && kind) {
-      return <MediaViewer path={path} kind={kind} fileName={baseName(path)} />;
-    }
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
         <FileCode className="text-muted-foreground/70 h-4 w-4" />

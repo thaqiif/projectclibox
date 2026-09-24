@@ -19,6 +19,8 @@ import {
   clampMediaOffset,
   clampMediaZoom,
   offsetAfterZoom,
+  type Point,
+  type Size,
 } from "@/lib/media-viewer";
 
 export type { MediaKind } from "@/lib/media-mime";
@@ -65,10 +67,21 @@ export function MediaViewer({ path, kind, fileName }: MediaViewerProps) {
 // ---------------------------------------------------------------------------
 
 function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
-  const [zoom, setZoom] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  // One state object keeps every update pure: React may invoke an updater
+  // twice (StrictMode), and a second setState inside an updater would then
+  // apply twice, which is what made wheel zoom double-apply its pan.
+  const [view, setView] = useState<{ zoom: number; offset: Point }>({
+    zoom: 1,
+    offset: { x: 0, y: 0 },
+  });
+  const { zoom, offset } = view;
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  /**
+   * Layout sizes captured in event handlers, so the state updaters below stay
+   * pure (no DOM reads while React may replay them).
+   */
+  const layoutRef = useRef<{ fitted: Size; container: Size } | null>(null);
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -79,42 +92,71 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState(false);
 
+  const measure = useCallback(() => {
+    const image = imageRef.current;
+    const container = containerRef.current;
+    layoutRef.current =
+      image && container
+        ? {
+            // offsetWidth/Height are layout sizes, unaffected by the transform.
+            fitted: { width: image.offsetWidth, height: image.offsetHeight },
+            container: {
+              width: container.clientWidth,
+              height: container.clientHeight,
+            },
+          }
+        : null;
+  }, []);
+
+  const clamp = useCallback((offset: Point, zoom: number): Point => {
+    const layout = layoutRef.current;
+    if (!layout) return offset;
+    return clampMediaOffset(offset, layout.fitted, layout.container, zoom);
+  }, []);
+
   const reset = useCallback(() => {
-    setZoom(1);
-    setOffset({ x: 0, y: 0 });
+    setView({ zoom: 1, offset: { x: 0, y: 0 } });
   }, []);
 
   const zoomAt = useCallback(
     (factor: number, cx?: number, cy?: number) => {
-      setZoom((prev) => {
-        const next = clampMediaZoom(prev * factor);
-        if (next === prev) return prev;
-        // Keep the point under the cursor fixed while zooming.
-        setOffset((o) => {
-          if (cx === undefined || cy === undefined) return o;
-          return offsetAfterZoom(o, { x: cx, y: cy }, prev, next);
-        });
-        return next;
+      measure();
+      setView((prev) => {
+        const next = clampMediaZoom(prev.zoom * factor);
+        if (next === prev.zoom) return prev;
+        const moved =
+          cx === undefined || cy === undefined
+            ? prev.offset
+            : // Keep the point under the cursor fixed while zooming.
+              offsetAfterZoom(prev.offset, { x: cx, y: cy }, prev.zoom, next);
+        return { zoom: next, offset: clamp(moved, next) };
       });
     },
-    []
+    [clamp, measure]
   );
 
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
+  // React attaches wheel listeners passively, so preventDefault inside onWheel
+  // is ignored (the page scrolls). A native non-passive listener is required.
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const rect = e.currentTarget.getBoundingClientRect();
-      const cx = e.clientX - rect.left - rect.width / 2;
-      const cy = e.clientY - rect.top - rect.height / 2;
-      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-      zoomAt(factor, cx, cy);
-    },
-    [zoomAt]
-  );
+      const rect = element.getBoundingClientRect();
+      zoomAt(
+        e.deltaY < 0 ? 1.15 : 1 / 1.15,
+        e.clientX - rect.left - rect.width / 2,
+        e.clientY - rect.top - rect.height / 2
+      );
+    };
+    element.addEventListener("wheel", onWheel, { passive: false });
+    return () => element.removeEventListener("wheel", onWheel);
+  }, [zoomAt]);
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (zoom <= 1) return;
+      measure();
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       dragRef.current = {
         pointerId: e.pointerId,
@@ -125,7 +167,7 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
       };
       setDragging(true);
     },
-    [zoom, offset]
+    [measure, zoom, offset]
   );
 
   const handlePointerMove = useCallback(
@@ -136,28 +178,53 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
         x: d.baseX + (e.clientX - d.startX),
         y: d.baseY + (e.clientY - d.startY),
       };
-      const image = imageRef.current;
-      const container = containerRef.current;
-      if (!image || !container) {
-        setOffset(next);
-        return;
-      }
-      setOffset(
-        clampMediaOffset(
-          next,
-          { width: image.offsetWidth, height: image.offsetHeight },
-          { width: container.clientWidth, height: container.clientHeight },
-          zoom
-        )
-      );
+      setView((prev) => ({ ...prev, offset: clamp(next, prev.zoom) }));
     },
-    [zoom]
+    [clamp]
   );
 
   const endDrag = useCallback(() => {
     dragRef.current = null;
     setDragging(false);
   }, []);
+
+  // Keyboard alternative to the mouse gestures: arrows pan, +/- zoom, 0 resets.
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const step = 40;
+      const pans: Record<string, Point> = {
+        ArrowLeft: { x: step, y: 0 },
+        ArrowRight: { x: -step, y: 0 },
+        ArrowUp: { x: 0, y: step },
+        ArrowDown: { x: 0, y: -step },
+      };
+      if (e.key in pans) {
+        if (zoom <= 1) return;
+        e.preventDefault();
+        measure();
+        setView((prev) => {
+          const delta = pans[e.key];
+          const next = {
+            x: prev.offset.x + delta.x,
+            y: prev.offset.y + delta.y,
+          };
+          return { ...prev, offset: clamp(next, prev.zoom) };
+        });
+        return;
+      }
+      if (e.key === "+" || e.key === "=") {
+        e.preventDefault();
+        zoomAt(1.25);
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        zoomAt(1 / 1.25);
+      } else if (e.key === "0") {
+        e.preventDefault();
+        reset();
+      }
+    },
+    [clamp, measure, reset, zoom, zoomAt]
+  );
 
   // Removing src aborts an outstanding image fetch when the tab unmounts.
   // This route never creates object URLs, so there is nothing to revoke.
@@ -197,7 +264,7 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
             download={fileName}
             title="Download file"
             aria-label={`Download ${fileName}`}
-            className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground focus-visible:ring-primary flex h-11 w-11 touch-manipulation items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none sm:h-6 sm:w-6"
+            className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground focus-visible:ring-primary flex h-11 w-11 touch-manipulation items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none sm:h-7 sm:w-7 pointer-coarse:h-11 pointer-coarse:w-11"
           >
             <Download className="h-3 w-3" />
           </a>
@@ -205,8 +272,11 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
       </div>
       <div
         ref={containerRef}
-        className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
-        onWheel={handleWheel}
+        tabIndex={0}
+        role="group"
+        aria-label={`${fileName} image preview. Arrow keys pan, plus and minus zoom, zero resets.`}
+        className="focus-visible:ring-primary relative flex min-h-0 flex-1 items-center justify-center overflow-hidden focus-visible:ring-2 focus-visible:outline-none"
+        onKeyDown={handleKeyDown}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endDrag}
@@ -314,7 +384,7 @@ function StreamingPlayer({
           download={fileName}
           title="Download file"
           aria-label={`Download ${fileName}`}
-          className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground focus-visible:ring-primary flex h-11 w-11 touch-manipulation items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none sm:h-6 sm:w-6"
+            className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground focus-visible:ring-primary flex h-11 w-11 touch-manipulation items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none sm:h-7 sm:w-7 pointer-coarse:h-11 pointer-coarse:w-11"
         >
           <Download className="h-3 w-3" />
         </a>
@@ -356,7 +426,7 @@ function IconOnlyButton({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground focus-visible:ring-primary flex h-11 w-11 touch-manipulation items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none sm:h-6 sm:w-6"
+      className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground focus-visible:ring-primary flex h-11 w-11 touch-manipulation items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none sm:h-7 sm:w-7 pointer-coarse:h-11 pointer-coarse:w-11"
     >
       {icon}
     </button>
