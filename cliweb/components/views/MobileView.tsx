@@ -47,9 +47,18 @@ export function MobileView({
                 setSidebarOpen(false);
               }}
               onNewTerminal={async (projectId) => {
+                let targetPaneId = selectedPane?.id;
+                if (
+                  monitorEnabled &&
+                  selectedPane?.terminalId &&
+                  (monitor.workspace?.panes.length ?? 3) < 3
+                ) {
+                  targetPaneId = monitor.addPane() ?? targetPaneId;
+                  if (targetPaneId) setSelectedPaneId(targetPaneId);
+                }
                 await handleNewTerminal(
                   projectId,
-                  monitorEnabled ? selectedPane?.id : undefined
+                  monitorEnabled ? targetPaneId : undefined
                 );
                 setSidebarOpen(false);
               }}
@@ -74,6 +83,9 @@ export function MobileView({
             activePaneId={selectedPane?.id}
             onSelectPane={setSelectedPaneId}
             onAddPane={monitor.addPane}
+            onCreateTerminal={(paneId) =>
+              handleNewTerminal(undefined, paneId)
+            }
             onToggleMonitor={monitor.toggle}
             onMenuClick={() => setSidebarOpen(true)}
           />

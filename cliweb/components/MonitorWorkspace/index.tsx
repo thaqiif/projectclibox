@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +22,7 @@ import { PANE_DRAG_TYPE, TERMINAL_DRAG_TYPE } from "@/lib/drag-types";
 import {
   Columns3,
   FolderOpen,
+  ListPlus,
   Menu,
   Plus,
   RotateCcw,
@@ -29,6 +30,17 @@ import {
   X,
 } from "lucide-react";
 import { useFileEditor } from "@/hooks/useFileEditor";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const Terminal = dynamic(
   () => import("@/components/Terminal").then((module) => module.Terminal),
@@ -60,6 +72,7 @@ interface MonitorWorkspaceProps {
   activePaneId?: string | null;
   onSelectPane?: (paneId: string) => void;
   onAddPane?: () => string | undefined;
+  onCreateTerminal?: (paneId: string) => void | Promise<void>;
   onToggleMonitor?: () => void;
   onMenuClick?: () => void;
 }
@@ -139,7 +152,7 @@ function MonitorPane({
   const [hoverKind, setHoverKind] = useState<"terminal" | "pane" | null>(null);
   const [showFiles, setShowFiles] = useState(false);
   const fileEditor = useFileEditor();
-  const occupied = Boolean(terminal && (terminal.alive || restart));
+  const { reset: resetFileEditor } = fileEditor;
   const empty = !terminalId && !restart;
 
   const kindFromEvent = (event: React.DragEvent): "terminal" | "pane" | null => {
@@ -179,15 +192,14 @@ function MonitorPane({
     setShowFiles(false);
   }
   useEffect(() => {
-    fileEditor.reset();
-  }, [terminalId, fileEditor]);
+    resetFileEditor();
+  }, [terminalId, resetFileEditor]);
 
   // Pane teardown: when this pane unmounts (removed, its terminal dragged
   // out into the sidebar, or the workspace closed), drop its open-file
   // tabs and dirty state. Without this, an unmounted pane's openFiles
   // leak for the rest of the session and reappear if another pane opens
   // the same path.
-  const { reset: resetFileEditor } = fileEditor;
   useEffect(() => {
     return () => resetFileEditor();
   }, [resetFileEditor]);
@@ -216,7 +228,7 @@ function MonitorPane({
         )}
       >
         <p
-          draggable
+          draggable={!mobile}
           onDragStart={(event) => {
             event.dataTransfer.effectAllowed = "move";
             event.dataTransfer.setData(PANE_DRAG_TYPE, paneId);
@@ -302,13 +314,19 @@ function MonitorPane({
               <RotateCcw className="h-3.5 w-3.5" /> Restart
             </Button>
             <p className="text-muted-foreground text-xs">
-              Drag another terminal here to replace it
+              {mobile
+                ? "Use Add to monitor to choose a terminal"
+                : "Drag another terminal here to replace it"}
             </p>
           </div>
         ) : (
           <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 border-2 border-dashed border-[var(--fill-3)] p-6 text-center text-sm">
             <TerminalSquare className="h-8 w-8" />
-            <p>Drop a terminal here</p>
+            <p>
+              {mobile
+                ? "Use Add to monitor to choose a terminal"
+                : "Drop a terminal here"}
+            </p>
           </div>
         )}
           </>
@@ -359,6 +377,7 @@ export function MonitorWorkspace({
   activePaneId,
   onSelectPane,
   onAddPane,
+  onCreateTerminal,
   onToggleMonitor,
   onMenuClick,
 }: MonitorWorkspaceProps) {
@@ -369,6 +388,9 @@ export function MonitorWorkspace({
   )
     ? activePaneId
     : workspace.panes[0]?.id;
+  const selectedPane = workspace.panes.find(
+    (pane) => pane.id === selectedPaneId
+  );
 
   const handleTabKeyDown = (
     event: React.KeyboardEvent<HTMLButtonElement>,
@@ -383,6 +405,16 @@ export function MonitorWorkspace({
     if (!nextPane) return;
     onSelectPane?.(nextPane.id);
     document.getElementById(`monitor-tab-${nextIndex}`)?.focus();
+  };
+
+  const createTerminalInMonitor = () => {
+    if (!selectedPaneId) return;
+    let targetPaneId = selectedPaneId;
+    if (selectedPane?.terminalId && canInsert && onAddPane) {
+      targetPaneId = onAddPane() ?? selectedPaneId;
+      onSelectPane?.(targetPaneId);
+    }
+    void onCreateTerminal?.(targetPaneId);
   };
 
   return (
@@ -434,21 +466,71 @@ export function MonitorWorkspace({
               );
             })}
           </div>
-          {canInsert && onAddPane && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Add monitor tab"
-              title="Add monitor tab"
-              className="h-11 w-11 shrink-0 rounded-full"
-              onClick={() => {
-                const paneId = onAddPane();
-                if (paneId) onSelectPane?.(paneId);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Add to monitor"
+                title="Add to monitor"
+                className="h-11 w-11 shrink-0 rounded-full"
+              >
+                <ListPlus className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="bottom" className="w-64">
+              <DropdownMenuLabel>Add terminal</DropdownMenuLabel>
+              <DropdownMenuItem
+                disabled={!selectedPaneId || !onCreateTerminal}
+                onSelect={createTerminalInMonitor}
+              >
+                <TerminalSquare />
+                {selectedPane?.terminalId
+                  ? canInsert
+                    ? "Create terminal in new tab"
+                    : "Replace with new terminal"
+                  : "Create terminal in selected tab"}
+              </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger
+                  disabled={!selectedPaneId || terminals.length === 0}
+                >
+                  <ListPlus />
+                  Use existing terminal
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-[60vh] overflow-y-auto">
+                  {terminals.map((terminal) => (
+                    <DropdownMenuItem
+                      key={terminal.id}
+                      disabled={terminal.id === selectedPane?.terminalId}
+                      onSelect={() => {
+                        if (selectedPaneId) {
+                          onAssignTerminal(selectedPaneId, terminal.id);
+                        }
+                      }}
+                    >
+                      <TerminalSquare />
+                      <span className="min-w-0 truncate">{terminal.name}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              {canInsert && onAddPane && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      const paneId = onAddPane();
+                      if (paneId) onSelectPane?.(paneId);
+                    }}
+                  >
+                    <Plus />
+                    Add empty tab
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="ghost"
             size="icon"
@@ -464,8 +546,17 @@ export function MonitorWorkspace({
       <div
         className={cn(
           "min-w-0",
-          mobile ? "min-h-0 flex-1" : "flex h-full"
+          mobile
+            ? "min-h-0 flex-1"
+            : "grid h-full gap-px bg-[var(--fill-2)]"
         )}
+        style={
+          mobile
+            ? undefined
+            : {
+                gridTemplateColumns: `repeat(${workspace.panes.length}, minmax(0, 1fr))`,
+              }
+        }
       >
         {workspace.panes.map((pane, index) => {
           const terminal = terminals.find(
@@ -474,35 +565,28 @@ export function MonitorWorkspace({
           const selected = pane.id === selectedPaneId;
 
           return (
-            <Fragment key={pane.id}>
-              {!mobile && index > 0 && (
-                <div className="w-px shrink-0 bg-[var(--fill-2)]" />
-              )}
-              <div
-                id={`monitor-panel-${index}`}
-                role={mobile ? "tabpanel" : undefined}
-                aria-labelledby={mobile ? `monitor-tab-${index}` : undefined}
-                hidden={mobile && !selected}
-                className={cn(
-                  "min-w-0",
-                  mobile ? "h-full w-full" : "flex-1"
-                )}
-              >
-                <MonitorPane
-                  paneId={pane.id}
-                  terminalId={pane.terminalId}
-                  terminal={terminal}
-                  projectName={projectNameFor(terminal, projects)}
-                  canRemove={canRemove}
-                  canInsert={canInsert}
-                  mobile={mobile}
-                  onAssign={onAssignTerminal}
-                  onMove={onMovePane}
-                  onRemove={onRemovePane}
-                  onTerminalsChanged={onTerminalsChanged}
-                />
-              </div>
-            </Fragment>
+            <div
+              key={pane.id}
+              id={`monitor-panel-${index}`}
+              role={mobile ? "tabpanel" : undefined}
+              aria-labelledby={mobile ? `monitor-tab-${index}` : undefined}
+              hidden={mobile && !selected}
+              className={cn("min-w-0", mobile ? "h-full w-full" : "min-h-0")}
+            >
+              <MonitorPane
+                paneId={pane.id}
+                terminalId={pane.terminalId}
+                terminal={terminal}
+                projectName={projectNameFor(terminal, projects)}
+                canRemove={canRemove}
+                canInsert={canInsert}
+                mobile={mobile}
+                onAssign={onAssignTerminal}
+                onMove={onMovePane}
+                onRemove={onRemovePane}
+                onTerminalsChanged={onTerminalsChanged}
+              />
+            </div>
           );
         })}
       </div>
