@@ -1,13 +1,17 @@
 "use client";
 
-import { Fragment, useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
-import { TerminalSkeleton } from "@/components/Pane/PaneSkeletons";
+import {
+  TerminalSkeleton,
+  FileExplorerSkeleton,
+} from "@/components/Pane/PaneSkeletons";
 import { tmuxAttachCommand } from "@/lib/tmux-attach";
 import type { TerminalHandle } from "@/components/Terminal";
 import type { TerminalRecord } from "@/lib/terminals";
 import type { Project } from "@/lib/db";
+import { cn } from "@/lib/utils";
 import {
   dropSideFromRatio,
   MAX_MONITOR_PANES,
@@ -15,11 +19,17 @@ import {
   type MonitorWorkspaceState,
 } from "@/lib/monitor-workspace";
 import { PANE_DRAG_TYPE, TERMINAL_DRAG_TYPE } from "@/lib/drag-types";
-import { RotateCcw, TerminalSquare, X } from "lucide-react";
+import { RotateCcw, TerminalSquare, X, FolderOpen } from "lucide-react";
+import { useFileEditor } from "@/hooks/useFileEditor";
 
 const Terminal = dynamic(
   () => import("@/components/Terminal").then((module) => module.Terminal),
   { ssr: false, loading: () => <TerminalSkeleton /> }
+);
+
+const FileExplorer = dynamic(
+  () => import("@/components/FileExplorer").then((mod) => mod.FileExplorer),
+  { ssr: false, loading: () => <FileExplorerSkeleton /> }
 );
 
 interface MonitorWorkspaceProps {
@@ -111,6 +121,8 @@ function MonitorPane({
   const [restart, setRestart] = useState(false);
   const [hoverSide, setHoverSide] = useState<MonitorDropSide | null>(null);
   const [hoverKind, setHoverKind] = useState<"terminal" | "pane" | null>(null);
+  const [showFiles, setShowFiles] = useState(false);
+  const fileEditor = useFileEditor();
   const occupied = Boolean(terminal && (terminal.alive || restart));
   const empty = !terminalId && !restart;
 
@@ -139,6 +151,13 @@ function MonitorPane({
   };
 
   const title = terminal?.name ?? terminalId;
+
+  // A different terminal in the pane means a different working directory
+  // for Files, and a torn-down tmux attachment for the editor state.
+  useEffect(() => {
+    setShowFiles(false);
+    fileEditor.reset();
+  }, [terminalId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
@@ -180,6 +199,17 @@ function MonitorPane({
             <span className="text-muted-foreground font-normal">Empty pane</span>
           )}
         </p>
+        {terminal && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Toggle file manager"
+            className={cn("h-6 w-6 shrink-0", showFiles && "bg-[var(--fill-1)]")}
+            onClick={() => setShowFiles((value) => !value)}
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+          </Button>
+        )}
         {canRemove && (
           <Button
             variant="ghost"
@@ -193,6 +223,13 @@ function MonitorPane({
         )}
       </div>
       <div className="min-h-0 flex-1">
+        {showFiles && terminal?.working_directory ? (
+          <FileExplorer
+            workingDirectory={terminal.working_directory}
+            fileEditor={fileEditor}
+          />
+        ) : (
+          <>
         {terminal && (terminal.alive || restart) ? (
           <MonitorTerminal
             key={terminal.id}
@@ -227,6 +264,8 @@ function MonitorPane({
             <TerminalSquare className="h-8 w-8" />
             <p>Drop a terminal here</p>
           </div>
+        )}
+          </>
         )}
       </div>
       {hoverSide && hoverKind && (
