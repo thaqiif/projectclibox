@@ -1,7 +1,10 @@
 import { createHash, randomBytes } from "crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { realpath, stat, readFile } from "fs/promises";
+import { constants } from "fs";
+import { open, realpath, stat, readFile, type FileHandle } from "fs/promises";
+import { join } from "path";
+import { homedir } from "os";
 import { buildCliwebEnvironment } from "./runtime-environment";
 import { listKnownTerminals } from "./terminal-registry";
 import { isValidTerminalGrid } from "./terminal-grid";
@@ -16,11 +19,22 @@ interface TmuxServerIncarnation {
   startTime: string;
 }
 
-interface TerminalCapability {
+export interface TerminalCapabilityRoot {
+  path: string;
+  handle: FileHandle;
+  device: number;
+  inode: number;
+  temporary: boolean;
+}
+
+export interface TerminalCapability {
   sessionId: string;
   server: TmuxServerIncarnation;
   cwd: string;
   roots: string[];
+  temporaryRoots: string[];
+  rootDescriptors: TerminalCapabilityRoot[];
+  urlImagesEnabled: boolean;
   expiresAt: number;
 }
 
@@ -31,9 +45,8 @@ type CapabilityGlobal = typeof globalThis & {
   __cliwebTerminalCapabilitiesV1?: Map<string, TerminalCapability>;
 };
 const capabilityGlobal = globalThis as CapabilityGlobal;
-const capabilities =
-  (capabilityGlobal.__cliwebTerminalCapabilitiesV1 ??=
-    new Map<string, TerminalCapability>());
+const capabilities = (capabilityGlobal.__cliwebTerminalCapabilitiesV1 ??=
+  new Map<string, TerminalCapability>());
 
 async function runTmux(args: string[]): Promise<string> {
   const environment = buildCliwebEnvironment();
@@ -59,7 +72,10 @@ async function serverIncarnation(): Promise<TmuxServerIncarnation> {
   const statLine = await readFile(`/proc/${pid}/stat`, "utf8");
   const closeParen = statLine.lastIndexOf(")");
   if (closeParen < 0) throw new Error("Could not identify the tmux server");
-  const fieldsAfterComm = statLine.slice(closeParen + 2).trim().split(/\s+/);
+  const fieldsAfterComm = statLine
+    .slice(closeParen + 2)
+    .trim()
+    .split(/\s+/);
   const startTime = fieldsAfterComm[19]; // proc stat field 22, starttime
   if (!startTime) throw new Error("Could not identify the tmux server");
   return { pid, startTime };
@@ -95,16 +111,40 @@ async function sessionIdIsLive(sessionId: string): Promise<boolean> {
   }
 }
 
+async function sessionUrlImagesEnabled(sessionId: string): Promise<boolean> {
+  try {
+    return (
+      (await runTmux([
+        "show-option",
+        "-qv",
+        "-t",
+        sessionId,
+        "@cliweb_wterm_url_image",
+      ])) === "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function expandHomePath(path: string, home: string): string {
+  if (path === "~") return home;
+  if (path.startsWith("~/")) return join(home, path.slice(2));
+  return path;
+}
+
 async function canonicalDirectory(path: string): Promise<string> {
-  const canonical = await realpath(path);
+  const environment = buildCliwebEnvironment();
+  const home = environment.HOME || homedir();
+  const canonical = await realpath(expandHomePath(path, home));
   const info = await stat(canonical);
   if (!info.isDirectory()) throw new Error("Terminal root is not a directory");
   return canonical;
 }
 
-async function capabilityRoots(cwd: string): Promise<string[]> {
+async function temporaryRoots(): Promise<string[]> {
   const environment = buildCliwebEnvironment();
-  const requestedRoots = [cwd, environment.TMPDIR, "/tmp"].filter(
+  const requestedRoots = [environment.TMPDIR, "/tmp"].filter(
     (path): path is string => Boolean(path)
   );
   const canonicalRoots: string[] = [];
@@ -113,6 +153,79 @@ async function capabilityRoots(cwd: string): Promise<string[]> {
     if (!canonicalRoots.includes(canonical)) canonicalRoots.push(canonical);
   }
   return canonicalRoots;
+}
+
+async function capabilityRoots(
+  cwd: string,
+  temporary: string[]
+): Promise<string[]> {
+  return [cwd, ...temporary.filter((path) => path !== cwd)];
+}
+
+async function openCapabilityRoots(
+  roots: string[],
+  temporary: string[]
+): Promise<TerminalCapabilityRoot[]> {
+  const descriptors: TerminalCapabilityRoot[] = [];
+  try {
+    for (const path of roots) {
+      const handle = await open(
+        path,
+        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW
+      );
+      try {
+        const info = await handle.stat();
+        if (!info.isDirectory())
+          throw new Error("Terminal root is not a directory");
+        descriptors.push({
+          path,
+          handle,
+          device: info.dev,
+          inode: info.ino,
+          temporary: temporary.includes(path),
+        });
+      } catch (error) {
+        await handle.close().catch(() => {});
+        throw error;
+      }
+    }
+    return descriptors;
+  } catch (error) {
+    await Promise.all(
+      descriptors.map(({ handle }) => handle.close().catch(() => {}))
+    );
+    throw error;
+  }
+}
+
+async function closeCapabilityRoots(entry: TerminalCapability): Promise<void> {
+  await Promise.all(
+    entry.rootDescriptors.map(({ handle }) => handle.close().catch(() => {}))
+  );
+}
+
+async function capabilityRootsAreCurrent(
+  entry: TerminalCapability
+): Promise<boolean> {
+  if (entry.rootDescriptors.length !== entry.roots.length) return false;
+  for (const root of entry.rootDescriptors) {
+    const [openInfo, currentPath, currentInfo] = await Promise.all([
+      root.handle.stat(),
+      realpath(root.path),
+      stat(root.path),
+    ]);
+    if (
+      currentPath !== root.path ||
+      !currentInfo.isDirectory() ||
+      openInfo.dev !== root.device ||
+      openInfo.ino !== root.inode ||
+      currentInfo.dev !== root.device ||
+      currentInfo.ino !== root.inode
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function capabilityKey(token: string): string {
@@ -143,15 +256,24 @@ export async function issueTerminalCapability(
   if (!sessionId) throw new Error("Terminal session is not live");
 
   const cwd = await canonicalDirectory(terminal.path);
-  const roots = await capabilityRoots(cwd);
-  const server = await serverIncarnation();
+  const temporary = await temporaryRoots();
+  const roots = await capabilityRoots(cwd, temporary);
+  const [server, urlImagesEnabled] = await Promise.all([
+    serverIncarnation(),
+    sessionUrlImagesEnabled(sessionId),
+  ]);
   const now = Date.now();
   for (const [key, entry] of capabilities) {
-    if (entry.expiresAt <= now) capabilities.delete(key);
+    if (entry.expiresAt <= now) {
+      capabilities.delete(key);
+      await closeCapabilityRoots(entry);
+    }
   }
   if (capabilities.size >= MAX_CAPABILITIES) {
     throw new Error("Too many pending terminal capabilities");
   }
+
+  const rootDescriptors = await openCapabilityRoots(roots, temporary);
 
   const token = randomBytes(32).toString("base64url");
   capabilities.set(capabilityKey(token), {
@@ -159,9 +281,26 @@ export async function issueTerminalCapability(
     server,
     cwd,
     roots,
+    temporaryRoots: temporary,
+    rootDescriptors,
+    urlImagesEnabled,
     expiresAt: now + CAPABILITY_TTL_MS,
   });
+  const key = capabilityKey(token);
+  const entry = capabilities.get(key)!;
+  const expiryTimer = setTimeout(() => {
+    if (capabilities.get(key) !== entry) return;
+    capabilities.delete(key);
+    void closeCapabilityRoots(entry);
+  }, CAPABILITY_TTL_MS + 1);
+  expiryTimer.unref?.();
   return token;
+}
+
+export async function releaseTerminalCapability(
+  capability: TerminalCapability
+): Promise<void> {
+  await closeCapabilityRoots(capability);
 }
 
 /** Consume a token once, then revalidate the server, session and roots. */
@@ -180,22 +319,40 @@ export async function consumeTerminalCapability(
   const key = capabilityKey(token);
   const entry = capabilities.get(key);
   capabilities.delete(key);
-  if (!entry || entry.expiresAt <= Date.now()) return null;
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    await closeCapabilityRoots(entry);
+    return null;
+  }
 
   try {
-    const [currentServer, live, currentRoots] = await Promise.all([
+    const [currentServer, live, currentTemporaryRoots] = await Promise.all([
       serverIncarnation(),
       sessionIdIsLive(entry.sessionId),
-      capabilityRoots(entry.cwd),
+      temporaryRoots(),
     ]);
-    if (!live || !sameIncarnation(entry.server, currentServer)) return null;
+    const currentRoots = await capabilityRoots(
+      entry.cwd,
+      currentTemporaryRoots
+    );
+    if (!live || !sameIncarnation(entry.server, currentServer)) {
+      await closeCapabilityRoots(entry);
+      return null;
+    }
     if (
       currentRoots.length !== entry.roots.length ||
-      currentRoots.some((root, index) => root !== entry.roots[index])
+      currentRoots.some((root, index) => root !== entry.roots[index]) ||
+      currentTemporaryRoots.length !== entry.temporaryRoots.length ||
+      currentTemporaryRoots.some(
+        (root, index) => root !== entry.temporaryRoots[index]
+      ) ||
+      !(await capabilityRootsAreCurrent(entry))
     ) {
+      await closeCapabilityRoots(entry);
       return null;
     }
   } catch {
+    await closeCapabilityRoots(entry);
     return null;
   }
 

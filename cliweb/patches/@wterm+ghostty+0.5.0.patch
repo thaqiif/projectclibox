@@ -1,8 +1,33 @@
 diff --git a/node_modules/@wterm/ghostty/dist/ghostty-core.d.ts b/node_modules/@wterm/ghostty/dist/ghostty-core.d.ts
-index f93b700..e1bbaa9 100644
+index f93b700..6ad4d2a 100644
 --- a/node_modules/@wterm/ghostty/dist/ghostty-core.d.ts
 +++ b/node_modules/@wterm/ghostty/dist/ghostty-core.d.ts
-@@ -69,7 +69,7 @@ export declare class GhosttyCore implements TerminalCore {
+@@ -9,6 +9,16 @@ export interface GhosttyOptions {
+     /** Decoded Kitty image bytes per screen. Zero disables image support. */
+     imageStorageLimit?: number;
+ }
++export interface HostResourceRequest {
++    id: number;
++    transport: "file" | "temporary-file" | "url";
++    source: string;
++    offset: number;
++    length: number;
++    width: number;
++    height: number;
++    format: 24 | 32 | 100;
++}
+ /**
+  * Terminal core powered by libghostty built from source. Implements the
+  * same `TerminalCore` interface as wterm's built-in Zig core, providing
+@@ -66,10 +76,15 @@ export declare class GhosttyCore implements TerminalCore {
+     getCols(): number;
+     getRows(): number;
+     getCursor(): CursorState;
++    getCursorStyle(): "block" | "underline" | "bar" | "block-hollow";
++    cursorBlinking(): boolean;
++    getCursorColor(): number | null;
++    getTerminalColors(): { foreground: number; background: number };
++    setDefaultColors(foreground: number, background: number): void;
      cursorKeysApp(): boolean;
      bracketedPaste(): boolean;
      usingAltScreen(): boolean;
@@ -11,11 +36,79 @@ index f93b700..e1bbaa9 100644
      mouseSgr(): boolean;
      focusEvents(): boolean;
      synchronizedOutput(): boolean;
+@@ -78,6 +93,10 @@ export declare class GhosttyCore implements TerminalCore {
+     getGraphicsState(): TerminalGraphicsState | null;
+     getGraphicsImage(imageId: number, version: number): TerminalImageData | null;
+     getResourceState(): TerminalResourceState;
++    drainResourceRequests(): HostResourceRequest[];
++    completeResourceRequest(id: number, bytes: Uint8Array): boolean;
++    rejectResourceRequest(id: number): boolean;
++    cancelResourceRequest(id: number): boolean;
+     dispose(): void;
+     private _deinitTerminal;
+     getTitle(): string | null;
 diff --git a/node_modules/@wterm/ghostty/dist/ghostty-core.js b/node_modules/@wterm/ghostty/dist/ghostty-core.js
-index 79f3dfa..48a3cf8 100644
+index 79f3dfa..5b80045 100644
 --- a/node_modules/@wterm/ghostty/dist/ghostty-core.js
 +++ b/node_modules/@wterm/ghostty/dist/ghostty-core.js
-@@ -248,7 +248,7 @@ export class GhosttyCore {
+@@ -2,6 +2,8 @@ import { loadGhosttyWasm, parseCell, writeString as wasmWriteString, writeBytes
+ const DEFAULT_COLOR = 256;
+ const GRAPHEME_BUFFER_BYTES = 256;
+ const HYPERLINK_BUFFER_BYTES = 1024;
++const RESOURCE_REQUEST_HEADER_BYTES = 28;
++const RESOURCE_REQUEST_MAX_SOURCE_BYTES = 4096;
+ const DEFAULT_FOREGROUND = "#d4d4d4";
+ const DEFAULT_BACKGROUND = "#1e1e1e";
+ /** Maximum decoded bytes accepted for one direct Kitty image. */
+@@ -228,6 +230,47 @@ export class GhosttyCore {
+             visible: this.wasm.exports.get_cursor_visible(this.termPtr) !== 0,
+         };
+     }
++    getCursorStyle() {
++        if (this._disposed || this.termPtr === 0)
++            return "block";
++        switch (this.wasm.exports.get_cursor_style?.(this.termPtr) ?? 1) {
++            case 2: return "underline";
++            case 3: return "bar";
++            case 4: return "block-hollow";
++            default: return "block";
++        }
++    }
++    cursorBlinking() {
++        return !this._disposed && this.termPtr !== 0 &&
++            (this.wasm.exports.get_cursor_blinking?.(this.termPtr) ?? 0) !== 0;
++    }
++    getCursorColor() {
++        if (this._disposed || this.termPtr === 0)
++            return null;
++        const value = this.wasm.exports.get_cursor_color?.(this.termPtr);
++        return value === undefined || value === 0xffffffff || value === -1 ? null : value;
++    }
++    getTerminalColors() {
++        if (this._disposed || this.termPtr === 0) {
++            return { foreground: this._foregroundRgb, background: this._backgroundRgb };
++        }
++        const foreground = this.wasm.exports.get_terminal_foreground?.(this.termPtr);
++        const background = this.wasm.exports.get_terminal_background?.(this.termPtr);
++        return {
++            foreground: foreground === undefined || foreground === 0xffffffff || foreground === -1 ? this._foregroundRgb : foreground,
++            background: background === undefined || background === 0xffffffff || background === -1 ? this._backgroundRgb : background,
++        };
++    }
++    setDefaultColors(foreground, background) {
++        if (this._disposed || this.termPtr === 0 ||
++            !Number.isSafeInteger(foreground) || foreground < 0 || foreground > 0xffffff ||
++            !Number.isSafeInteger(background) || background < 0 || background > 0xffffff)
++            return;
++        this._foregroundRgb = foreground;
++        this._backgroundRgb = background;
++        this.wasm.exports.set_default_colors?.(this.termPtr, foreground, background);
++        this._invalidate();
++    }
+     // -- Modes --
+     cursorKeysApp() {
+         if (this._disposed || this.termPtr === 0)
+@@ -248,7 +291,7 @@ export class GhosttyCore {
          if (this._disposed || this.termPtr === 0)
              return 0;
          const mode = this.wasm.exports.mouse_tracking(this.termPtr);
@@ -24,3 +117,159 @@ index 79f3dfa..48a3cf8 100644
      }
      mouseSgr() {
          if (this._disposed || this.termPtr === 0)
+@@ -403,9 +446,90 @@ export class GhosttyCore {
+                 rejected: Number.isSafeInteger(rejected) ? rejected : 0,
+                 evicted: Number.isSafeInteger(evicted) ? evicted : 0,
+                 saturated: limit > 0 && used >= limit,
+-            },
++        },
+         };
+     }
++    drainResourceRequests() {
++        if (this._disposed || this.termPtr === 0 ||
++            !this.wasm.exports.read_resource_request)
++            return [];
++        const bufSize = RESOURCE_REQUEST_HEADER_BYTES + RESOURCE_REQUEST_MAX_SOURCE_BYTES;
++        const bufPtr = allocBuffer(this.wasm, bufSize);
++        if (bufPtr === 0)
++            return [];
++        const requests = [];
++        try {
++            for (let index = 0; index < 4; index++) {
++                const len = this.wasm.exports.read_resource_request(this.termPtr, bufPtr, bufSize);
++                if (len === 0)
++                    break;
++                if (len < RESOURCE_REQUEST_HEADER_BYTES || len > bufSize)
++                    break;
++                const view = new DataView(this.wasm.exports.memory.buffer, bufPtr, len);
++                const id = view.getUint32(0, true);
++                const transportCode = view.getUint8(4);
++                const format = view.getUint8(5);
++                const offset = view.getUint32(8, true);
++                const length = view.getUint32(12, true);
++                const width = view.getUint32(16, true);
++                const height = view.getUint32(20, true);
++                const sourceLength = view.getUint32(24, true);
++                const transports = { 1: "file", 2: "temporary-file", 3: "url" };
++                const transport = transports[transportCode];
++                if (!id || !transport || ![24, 32, 100].includes(format) ||
++                    sourceLength > RESOURCE_REQUEST_MAX_SOURCE_BYTES ||
++                    RESOURCE_REQUEST_HEADER_BYTES + sourceLength !== len) {
++                    this.wasm.exports.cancel_resource?.(this.termPtr, id);
++                    continue;
++                }
++                const sourceBytes = new Uint8Array(this.wasm.exports.memory.buffer, bufPtr + RESOURCE_REQUEST_HEADER_BYTES, sourceLength);
++                let source;
++                try {
++                    source = new TextDecoder("utf-8", { fatal: true }).decode(sourceBytes);
++                }
++                catch {
++                    this.wasm.exports.cancel_resource?.(this.termPtr, id);
++                    continue;
++                }
++                requests.push({ id, transport, source, offset, length, width, height, format });
++            }
++        }
++        finally {
++            freeBuffer(this.wasm, bufPtr, bufSize);
++        }
++        return requests;
++    }
++    completeResourceRequest(id, bytes) {
++        if (this._disposed || this.termPtr === 0 || !this.wasm.exports.complete_resource ||
++            !Number.isSafeInteger(id) || id <= 0 || bytes.byteLength === 0 ||
++            bytes.byteLength > MAX_IMAGE_BYTES)
++            return false;
++        const bufPtr = allocBuffer(this.wasm, bytes.byteLength);
++        if (bufPtr === 0)
++            return false;
++        try {
++            new Uint8Array(this.wasm.exports.memory.buffer, bufPtr, bytes.byteLength).set(bytes);
++            const completed = this.wasm.exports.complete_resource(this.termPtr, id, bufPtr, bytes.byteLength) !== 0;
++            if (completed)
++                this._invalidate();
++            return completed;
++        }
++        finally {
++            freeBuffer(this.wasm, bufPtr, bytes.byteLength);
++        }
++    }
++    rejectResourceRequest(id) {
++        if (this._disposed || this.termPtr === 0 || !this.wasm.exports.reject_resource ||
++            !Number.isSafeInteger(id) || id <= 0)
++            return false;
++        return this.wasm.exports.reject_resource(this.termPtr, id) !== 0;
++    }
++    cancelResourceRequest(id) {
++        if (this._disposed || this.termPtr === 0 || !this.wasm.exports.cancel_resource ||
++            !Number.isSafeInteger(id) || id <= 0)
++            return false;
++        return this.wasm.exports.cancel_resource(this.termPtr, id) !== 0;
++    }
+     dispose() {
+         if (this._disposed)
+             return;
+@@ -449,10 +573,21 @@ export class GhosttyCore {
+     }
+     // -- Side outputs --
+     getTitle() {
+-        // Title changes are delivered through OSC sequences which the
+-        // ReadonlyStream handler doesn't capture. A full stream handler
+-        // would be needed for title support.
+-        return null;
++        if (this._disposed || this.termPtr === 0 || !this.wasm.exports.read_title)
++            return null;
++        const bufSize = 1024;
++        const bufPtr = allocBuffer(this.wasm, bufSize);
++        if (bufPtr === 0)
++            return null;
++        try {
++            const len = this.wasm.exports.read_title(this.termPtr, bufPtr, bufSize);
++            if (len === 0 || len > bufSize)
++                return null;
++            return new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(this.wasm.exports.memory.buffer, bufPtr, len));
++        }
++        finally {
++            freeBuffer(this.wasm, bufPtr, bufSize);
++        }
+     }
+     getResponse() {
+         if (this._disposed || this.termPtr === 0)
+diff --git a/node_modules/@wterm/ghostty/dist/index.d.ts b/node_modules/@wterm/ghostty/dist/index.d.ts
+index fddb207..ccb1187 100644
+--- a/node_modules/@wterm/ghostty/dist/index.d.ts
++++ b/node_modules/@wterm/ghostty/dist/index.d.ts
+@@ -1,3 +1,3 @@
+ export { GhosttyCore, MAX_IMAGE_BYTES } from "./ghostty-core.js";
+-export type { GhosttyOptions } from "./ghostty-core.js";
++export type { GhosttyOptions, HostResourceRequest } from "./ghostty-core.js";
+ //# sourceMappingURL=index.d.ts.map
+diff --git a/node_modules/@wterm/ghostty/dist/wasm-bindings.d.ts b/node_modules/@wterm/ghostty/dist/wasm-bindings.d.ts
+index aef390b..ffbc6ba 100644
+--- a/node_modules/@wterm/ghostty/dist/wasm-bindings.d.ts
++++ b/node_modules/@wterm/ghostty/dist/wasm-bindings.d.ts
+@@ -21,6 +21,12 @@ export interface GhosttyExports {
+     get_cursor_row(ptr: number): number;
+     get_cursor_col(ptr: number): number;
+     get_cursor_visible(ptr: number): number;
++    get_cursor_blinking?(ptr: number): number;
++    get_cursor_style?(ptr: number): number;
++    get_cursor_color?(ptr: number): number;
++    get_terminal_foreground?(ptr: number): number;
++    get_terminal_background?(ptr: number): number;
++    set_default_colors?(ptr: number, foreground_rgb: number, background_rgb: number): void;
+     cursor_keys_app(ptr: number): number;
+     bracketed_paste(ptr: number): number;
+     using_alt_screen(ptr: number): number;
+@@ -49,6 +55,11 @@ export interface GhosttyExports {
+     get_scrollback_grapheme(ptr: number, offset: number, col: number, buf_ptr: number, buf_len: number): number;
+     get_scrollback_hyperlink(ptr: number, offset: number, col: number, buf_ptr: number, buf_len: number): number;
+     read_response(ptr: number, buf_ptr: number, buf_len: number): number;
++    read_resource_request?(ptr: number, buf_ptr: number, buf_len: number): number;
++    complete_resource?(ptr: number, request_id: number, data_ptr: number, data_len: number): number;
++    reject_resource?(ptr: number, request_id: number): number;
++    cancel_resource?(ptr: number, request_id: number): number;
++    read_title?(ptr: number, buf_ptr: number, buf_len: number): number;
+     alloc_buffer(len: number): number;
+     free_buffer(ptr: number, len: number): void;
+ }

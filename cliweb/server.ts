@@ -6,12 +6,32 @@ import next from "next";
 import { WebSocketServer, WebSocket } from "ws";
 import * as pty from "node-pty";
 import { buildCliwebEnvironment } from "./lib/runtime-environment";
-import { consumeTerminalCapability } from "./lib/terminal-capabilities";
+import {
+  consumeTerminalCapability,
+  releaseTerminalCapability,
+  type TerminalCapability,
+} from "./lib/terminal-capabilities";
 import { isAllowedOrigin } from "./lib/route-guards";
 import { isValidTerminalGrid } from "./lib/terminal-grid";
+import {
+  decodeTerminalResourceFrame,
+  encodeTerminalResourceFrame,
+  TERMINAL_RESOURCE_MAX_FRAME_BYTES,
+  TERMINAL_RESOURCE_PROTOCOL_VERSION,
+} from "./lib/terminal-resource-protocol";
+import {
+  parseTerminalResourceRequest,
+  transferTerminalResource,
+} from "./lib/terminal-resource-server";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "0.0.0.0";
+const MAX_RESOURCE_JOBS_PER_PTY = 4;
+const MAX_RESOURCE_JOBS_SERVER_WIDE = 8;
+const MAX_QUEUED_RESOURCE_BYTES = 64 * 1024 * 1024;
+const MAX_SOCKET_RESOURCE_BUFFER_BYTES = 8 * 1024 * 1024;
+let activeResourceJobs = 0;
+let queuedResourceBytes = 0;
 
 // Support: npm run dev -- -p 3012
 const pFlagIndex = process.argv.indexOf("-p");
@@ -77,12 +97,10 @@ app.prepare().then(() => {
 
   terminalWss.on("connection", (ws: WebSocket) => {
     let ptyProcess: pty.IPty | null = null;
+    let attachedCapability: TerminalCapability | null = null;
     let helloReceived = false;
-    let helloTimer: NodeJS.Timeout | null = setTimeout(() => {
-      if (ptyProcess) return;
-      ws.send(JSON.stringify({ type: "error", message: "Terminal hello timed out" }));
-      ws.close(1008, "Hello timed out");
-    }, 5_000);
+    const resourceJobs = new Map<number, AbortController>();
+    let helloTimer: NodeJS.Timeout | null = null;
 
     const releasePendingHello = () => {
       if (pendingHello.delete(ws) && helloTimer) {
@@ -91,12 +109,166 @@ app.prepare().then(() => {
       }
     };
 
+    helloTimer = setTimeout(() => {
+      if (ptyProcess) return;
+      releasePendingHello();
+      ws.send(
+        JSON.stringify({ type: "error", message: "Terminal hello timed out" })
+      );
+      ws.close(1008, "Hello timed out");
+    }, 5_000);
+
     const rejectHello = (message: string) => {
       releasePendingHello();
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "error", message }));
         ws.close(1008, "Invalid terminal hello");
       }
+    };
+
+    const releaseCapability = () => {
+      const capability = attachedCapability;
+      attachedCapability = null;
+      if (capability) void releaseTerminalCapability(capability);
+    };
+
+    const sendResourceFrame = async (
+      header: Record<string, unknown>,
+      bytes: Uint8Array<ArrayBufferLike> = new Uint8Array(),
+      signal?: AbortSignal
+    ): Promise<void> => {
+      if (ws.readyState !== WebSocket.OPEN || signal?.aborted) {
+        throw new Error("Terminal resource connection is closed");
+      }
+      const frame = encodeTerminalResourceFrame(header, bytes);
+      if (frame.byteLength > 4 * 1024 + 4 + TERMINAL_RESOURCE_MAX_FRAME_BYTES) {
+        throw new Error("Terminal resource frame is oversized");
+      }
+
+      const backpressureDeadline = Date.now() + 5_000;
+      while (ws.bufferedAmount > MAX_SOCKET_RESOURCE_BUFFER_BYTES) {
+        if (Date.now() > backpressureDeadline) {
+          throw new Error("Terminal resource socket remained backpressured");
+        }
+        if (ws.readyState !== WebSocket.OPEN || signal?.aborted) {
+          throw new Error("Terminal resource connection is closed");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      if (queuedResourceBytes + frame.byteLength > MAX_QUEUED_RESOURCE_BYTES) {
+        throw new Error("Terminal resource server is overloaded");
+      }
+
+      queuedResourceBytes += frame.byteLength;
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const finish = (error?: Error) => {
+          if (settled) return;
+          settled = true;
+          queuedResourceBytes -= frame.byteLength;
+          if (error) reject(error);
+          else resolve();
+        };
+        try {
+          ws.send(frame, { binary: true }, (error) => finish(error));
+        } catch (error) {
+          finish(
+            error instanceof Error ? error : new Error("WebSocket send failed")
+          );
+        }
+      });
+    };
+
+    const handleResourceFrame = (data: Buffer | ArrayBuffer | Buffer[]) => {
+      let frame: ReturnType<typeof decodeTerminalResourceFrame>;
+      try {
+        const bytes = Array.isArray(data)
+          ? Buffer.concat(data)
+          : data instanceof ArrayBuffer
+            ? data
+            : data;
+        frame = decodeTerminalResourceFrame(bytes);
+      } catch {
+        ws.close(1002, "Invalid terminal resource frame");
+        ptyProcess?.kill();
+        return;
+      }
+
+      const { header, bytes } = frame;
+      if (
+        header.version !== TERMINAL_RESOURCE_PROTOCOL_VERSION ||
+        bytes.byteLength !== 0
+      ) {
+        ws.close(1002, "Invalid terminal resource frame");
+        ptyProcess?.kill();
+        return;
+      }
+
+      if (header.type === "cancel") {
+        if (
+          typeof header.id !== "number" ||
+          !Number.isSafeInteger(header.id) ||
+          header.id <= 0
+        ) {
+          ws.close(1002, "Invalid terminal resource cancellation");
+          ptyProcess?.kill();
+          return;
+        }
+        resourceJobs.get(header.id)?.abort();
+        void sendResourceFrame({
+          version: TERMINAL_RESOURCE_PROTOCOL_VERSION,
+          type: "cancelled",
+          id: header.id,
+        }).catch(() => {});
+        return;
+      }
+
+      if (header.type !== "request" || !attachedCapability) {
+        ws.close(1002, "Unexpected terminal resource frame");
+        ptyProcess?.kill();
+        return;
+      }
+
+      let request;
+      try {
+        request = parseTerminalResourceRequest(header);
+      } catch {
+        ws.close(1002, "Invalid terminal resource request");
+        ptyProcess?.kill();
+        return;
+      }
+      if (resourceJobs.has(request.id)) {
+        ws.close(1002, "Duplicate terminal resource request");
+        ptyProcess?.kill();
+        return;
+      }
+      if (
+        resourceJobs.size >= MAX_RESOURCE_JOBS_PER_PTY ||
+        activeResourceJobs >= MAX_RESOURCE_JOBS_SERVER_WIDE
+      ) {
+        void sendResourceFrame({
+          version: TERMINAL_RESOURCE_PROTOCOL_VERSION,
+          type: "rejected",
+          id: request.id,
+          reason: "Terminal resource service is busy",
+        }).catch(() => {});
+        return;
+      }
+
+      const controller = new AbortController();
+      resourceJobs.set(request.id, controller);
+      activeResourceJobs++;
+      void transferTerminalResource(
+        request,
+        attachedCapability,
+        controller.signal,
+        (reply, payload) => sendResourceFrame(reply, payload, controller.signal)
+      ).finally(() => {
+        if (resourceJobs.get(request.id) === controller) {
+          resourceJobs.delete(request.id);
+          activeResourceJobs--;
+        }
+      });
     };
 
     ws.on("message", async (message, isBinary) => {
@@ -111,10 +283,19 @@ app.prepare().then(() => {
           return;
         }
 
-        let hello: { type?: unknown; token?: unknown; cols?: unknown; rows?: unknown };
+        let hello: {
+          type?: unknown;
+          token?: unknown;
+          cols?: unknown;
+          rows?: unknown;
+        };
         try {
           hello = JSON.parse(message.toString());
         } catch {
+          rejectHello("Malformed terminal hello");
+          return;
+        }
+        if (!hello || typeof hello !== "object" || Array.isArray(hello)) {
           rejectHello("Malformed terminal hello");
           return;
         }
@@ -125,7 +306,10 @@ app.prepare().then(() => {
         }
 
         const capability = await consumeTerminalCapability(hello.token, grid);
-        if (ws.readyState !== WebSocket.OPEN) return;
+        if (ws.readyState !== WebSocket.OPEN) {
+          if (capability) await releaseTerminalCapability(capability);
+          return;
+        }
         if (!capability) {
           rejectHello("Terminal capability expired or is no longer valid");
           return;
@@ -152,8 +336,10 @@ app.prepare().then(() => {
               env: terminalEnv,
             }
           );
+          attachedCapability = capability;
         } catch (err) {
           console.error("Failed to spawn tmux client PTY:", err);
+          await releaseTerminalCapability(capability);
           rejectHello("Failed to attach terminal session");
           return;
         }
@@ -181,8 +367,7 @@ app.prepare().then(() => {
       }
 
       if (isBinary) {
-        ws.close(1003, "Unsupported binary terminal frame");
-        ptyProcess.kill();
+        handleResourceFrame(message as Buffer | ArrayBuffer | Buffer[]);
         return;
       }
 
@@ -212,13 +397,23 @@ app.prepare().then(() => {
     ws.on("close", () => {
       releasePendingHello();
       if (helloTimer) clearTimeout(helloTimer);
+      for (const controller of resourceJobs.values()) controller.abort();
+      const jobCount = resourceJobs.size;
+      resourceJobs.clear();
+      activeResourceJobs = Math.max(0, activeResourceJobs - jobCount);
       ptyProcess?.kill();
+      releaseCapability();
     });
 
     ws.on("error", (err) => {
       console.error("WebSocket error:", err);
       releasePendingHello();
+      for (const controller of resourceJobs.values()) controller.abort();
+      const jobCount = resourceJobs.size;
+      resourceJobs.clear();
+      activeResourceJobs = Math.max(0, activeResourceJobs - jobCount);
       ptyProcess?.kill();
+      releaseCapability();
     });
   });
 

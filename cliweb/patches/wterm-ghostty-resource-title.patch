@@ -1,0 +1,652 @@
+diff --git a/packages/@wterm/ghostty/scripts/build-wasm.sh b/packages/@wterm/ghostty/scripts/build-wasm.sh
+index 7b385f4..a15d7df 100755
+--- a/packages/@wterm/ghostty/scripts/build-wasm.sh
++++ b/packages/@wterm/ghostty/scripts/build-wasm.sh
+@@ -14,7 +14,13 @@ GHOSTTY_HASH="ghostty-${GHOSTTY_VERSION}-5UdBCwYm-gQeBa4bu1-sMooCQS4KVriv5wWSIJ_
+ # ---------------------------------------------------------------------------
+ ZIG=""
+ ZIGUP_PATH="$HOME/.local/share/zigup/0.15.2/files/zig"
+-if [[ -x "$ZIGUP_PATH" ]]; then
++if [[ -n "${WTERM_GHOSTTY_ZIG_BIN:-}" ]]; then
++  if [[ ! -x "$WTERM_GHOSTTY_ZIG_BIN" || ! "$("$WTERM_GHOSTTY_ZIG_BIN" version 2>/dev/null)" =~ ^0\.15\. ]]; then
++    echo "Error: WTERM_GHOSTTY_ZIG_BIN must point to Zig 0.15.x." >&2
++    exit 1
++  fi
++  ZIG="$WTERM_GHOSTTY_ZIG_BIN"
++elif [[ -x "$ZIGUP_PATH" ]]; then
+   ZIG="$ZIGUP_PATH"
+ elif command -v zig &>/dev/null && [[ "$(zig version 2>/dev/null)" =~ ^0\.15\. ]]; then
+   ZIG="zig"
+diff --git a/packages/@wterm/ghostty/scripts/patch-ghostty-wasm.sh b/packages/@wterm/ghostty/scripts/patch-ghostty-wasm.sh
+index 1b11dad..a3a7567 100755
+--- a/packages/@wterm/ghostty/scripts/patch-ghostty-wasm.sh
++++ b/packages/@wterm/ghostty/scripts/patch-ghostty-wasm.sh
+@@ -24,6 +24,7 @@ PAGELIST_ZIG="$GHOSTTY_SRC/src/terminal/PageList.zig"
+ TERMINAL_ZIG="$GHOSTTY_SRC/src/terminal/Terminal.zig"
+ SCREEN_ZIG="$GHOSTTY_SRC/src/terminal/Screen.zig"
+ IMAGE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_image.zig"
++COMMAND_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_command.zig"
+ STORAGE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_storage.zig"
+ EXEC_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_exec.zig"
+ UNICODE_ZIG="$GHOSTTY_SRC/src/terminal/kitty/graphics_unicode.zig"
+@@ -45,6 +46,7 @@ for source in \
+   "$TERMINAL_ZIG" \
+   "$SCREEN_ZIG" \
+   "$IMAGE_ZIG" \
++  "$COMMAND_ZIG" \
+   "$STORAGE_ZIG" \
+   "$EXEC_ZIG" \
+   "$UNICODE_ZIG"; do
+@@ -604,6 +606,49 @@ if '.order(' in src or 'time: std.time.Instant,' in src:
+ with open('$STORAGE_ZIG', 'w') as f: f.write(src)
+ "
+ 
++# WTerm extends Kitty media with t=u for an HTTPS image URL. The adapter
++# intercepts it after the complete APC has been parsed, so Ghostty must accept
++# the enum value but never access the URL itself from WASM.
++python3 -c "
++with open('$COMMAND_ZIG') as f: src = f.read()
++old_medium = '''        temporary_file, // t
++        shared_memory, // s
++    };'''
++new_medium = '''        temporary_file, // t
++        shared_memory, // s
++        url, // WTerm extension: bounded HTTPS PNG fetch
++    };'''
++if new_medium not in src:
++    if old_medium not in src: raise SystemExit('Kitty medium enum shape changed')
++    src = src.replace(old_medium, new_medium, 1)
++old_parse = '''                's' => .shared_memory,
++                else => return error.InvalidFormat,'''
++new_parse = '''                's' => .shared_memory,
++                'u' => .url,
++                else => return error.InvalidFormat,'''
++if new_parse not in src:
++    if old_parse not in src: raise SystemExit('Kitty medium parser shape changed')
++    src = src.replace(old_parse, new_parse, 1)
++with open('$COMMAND_ZIG', 'w') as f: f.write(src)
++
++with open('$IMAGE_ZIG') as f: src = f.read()
++old_path = '            .shared_memory => cmd.data,\n        };'
++new_path = '            .shared_memory => cmd.data,\n            .url => return error.UnsupportedMedium,\n        };'
++if new_path not in src:
++    if old_path not in src: raise SystemExit('Kitty image path medium switch shape changed')
++    src = src.replace(old_path, new_path, 1)
++old_read = '            .shared_memory => try result.readSharedMemory(alloc, t, path),\n        }'
++new_read = '            .shared_memory => try result.readSharedMemory(alloc, t, path),\n            .url => return error.UnsupportedMedium,\n        }'
++if new_read not in src:
++    if old_read not in src: raise SystemExit('Kitty image read medium switch shape changed')
++    src = src.replace(old_read, new_read, 1)
++with open('$IMAGE_ZIG', 'w') as f: f.write(src)
++
++with open('$COMMAND_ZIG') as f: command_src = f.read()
++if chr(39) + 'u' + chr(39) + ' => .url' not in command_src or '.url => return error.UnsupportedMedium' not in src:
++    raise SystemExit('WTerm URL media extension patch failed')
++"
++
+ echo "Applying pinned Ghostty WASM compatibility patches"
+ 
+ # ---------------------------------------------------------------
+diff --git a/packages/@wterm/ghostty/zig/src/wasm_api.zig b/packages/@wterm/ghostty/zig/src/wasm_api.zig
+index 9bea4d2..8deebc8 100644
+--- a/packages/@wterm/ghostty/zig/src/wasm_api.zig
++++ b/packages/@wterm/ghostty/zig/src/wasm_api.zig
+@@ -11,8 +11,11 @@ const ReadonlyHandler = vt.ReadonlyHandler;
+ const StreamAction = vt.StreamAction;
+ const KittyHandler = vt.apc.Handler;
+ const KittyCommand = vt.kitty.graphics.Command;
++const KittyResponse = vt.kitty.graphics.Response;
+ const KittyImage = vt.kitty.graphics.Image;
+ const KittyStorage = vt.kitty.graphics.ImageStorage;
++const DcsHandler = vt.dcs.Handler;
++const DcsCommand = vt.dcs.Command;
+ 
+ const Allocator = std.mem.Allocator;
+ const allocator = std.heap.wasm_allocator;
+@@ -23,6 +26,10 @@ const GRAPHICS_MAX_RECORDS = 16 * 1024;
+ // Kitty payloads are base64 encoded before the upstream parser sees them.
+ // Keep the encoded command bounded as well as the decoded image storage.
+ const GRAPHICS_MAX_APC_BYTES = 48 * 1024 * 1024;
++const RESOURCE_MAX_REQUESTS = 4;
++const RESOURCE_MAX_PATH_BYTES = 4096;
++const RESOURCE_MAX_IMAGE_BYTES = 32 * 1024 * 1024;
++const RESOURCE_REQUEST_HEADER_BYTES = 28;
+ 
+ pub const std_options: std.Options = .{
+     .logFn = wasmLog,
+@@ -107,6 +114,87 @@ const ResponseQueue = struct {
+     }
+ };
+ 
++/// Deferred host resources retain the already-parsed Kitty command. The
++/// browser returns file/URL bytes to this slot; the original command is then
++/// completed in Ghostty with a direct byte payload and its normal Kitty
++/// response goes through ResponseQueue.
++const ResourceSlot = struct {
++    id: u32 = 0,
++    transport: u8 = 0,
++    request_taken: bool = false,
++    command: ?KittyCommand = null,
++};
++
++const ResourceQueue = struct {
++    slots: [RESOURCE_MAX_REQUESTS]ResourceSlot = [_]ResourceSlot{.{}} ** RESOURCE_MAX_REQUESTS,
++    next_id: u32 = 1,
++
++    fn deinit(self: *ResourceQueue, alloc: Allocator) void {
++        for (&self.slots) |*slot| {
++            if (slot.command) |*cmd| cmd.deinit(alloc);
++            slot.* = .{};
++        }
++    }
++};
++
++const TitleState = struct {
++    bytes: [1024]u8 = undefined,
++    len: u16 = 0,
++    generation: u32 = 0,
++    read_generation: u32 = 0,
++
++    fn set(self: *TitleState, value: []const u8) void {
++        var len = @min(value.len, self.bytes.len);
++        while (len > 0 and !std.unicode.utf8ValidateSlice(value[0..len])) : (len -= 1) {}
++        @memcpy(self.bytes[0..len], value[0..len]);
++        self.len = @intCast(len);
++        self.generation +%= 1;
++    }
++};
++
++fn kittyTransmission(cmd: *const KittyCommand) ?@TypeOf(cmd.control.transmit) {
++    return switch (cmd.control) {
++        .query => |value| value,
++        .transmit => |value| value,
++        .transmit_and_display => |value| value.transmission,
++        else => null,
++    };
++}
++
++fn kittyResponseShouldEmit(cmd: *const KittyCommand, response: KittyResponse) bool {
++    return switch (cmd.quiet) {
++        .no => true,
++        .ok => response.ok(),
++        .failures => !response.ok(),
++    };
++}
++
++fn queueKittyResponse(
++    queue: *ResponseQueue,
++    rejected_images: *u32,
++    cmd: *const KittyCommand,
++    response: KittyResponse,
++) void {
++    if (!response.ok()) rejected_images.* +%= 1;
++    if (!kittyResponseShouldEmit(cmd, response) or response.empty()) return;
++
++    var buf: [1024]u8 = undefined;
++    var writer: std.Io.Writer = .fixed(&buf);
++    response.encode(&writer) catch return;
++    const final = writer.buffered();
++    if (final.len > 2) queue.push(final);
++}
++
++fn setKittyTransmissionDirect(cmd: *KittyCommand) bool {
++    switch (cmd.control) {
++        .query => |*value| value.medium = .direct,
++        .transmit => |*value| value.medium = .direct,
++        .transmit_and_display => |*value| value.transmission.medium = .direct,
++        else => return false,
++    }
++    return true;
++}
++
+ /// Wraps ghostty's own readonly handler instead of reimplementing it. Every
+ /// action that mutates terminal state is delegated untouched; only the query
+ /// actions, which the readonly handler documents as having "no terminal
+@@ -115,6 +203,9 @@ const ResponseHandler = struct {
+     alloc: Allocator,
+     inner: ReadonlyHandler,
+     queue: *ResponseQueue,
++    resources: *ResourceQueue,
++    title: *TitleState,
++    dcs: DcsHandler = .{},
+     synchronized_output_generation: *u32,
+     rejected_images: *u32,
+     apc: KittyHandler = .{},
+@@ -125,6 +216,8 @@ const ResponseHandler = struct {
+         alloc: Allocator,
+         terminal: *Terminal,
+         queue: *ResponseQueue,
++        resources: *ResourceQueue,
++        title: *TitleState,
+         generation: *u32,
+         rejected_images: *u32,
+     ) ResponseHandler {
+@@ -132,6 +225,8 @@ const ResponseHandler = struct {
+             .alloc = alloc,
+             .inner = .init(terminal),
+             .queue = queue,
++            .resources = resources,
++            .title = title,
+             .synchronized_output_generation = generation,
+             .rejected_images = rejected_images,
+         };
+@@ -139,9 +234,50 @@ const ResponseHandler = struct {
+ 
+     pub fn deinit(self: *ResponseHandler) void {
+         self.apc.deinit();
++        self.dcs.deinit();
+         self.inner.deinit();
+     }
+ 
++    fn handleDcsCommand(self: *ResponseHandler, command: *DcsCommand) void {
++        defer command.deinit();
++        switch (command.*) {
++            .xtgettcap => |*request| {
++                while (request.next()) |name| {
++                    if (name.len == 0 or name.len > 64 or name.len % 2 != 0) continue;
++                    for (name) |byte| {
++                        if (!std.ascii.isHex(byte)) continue;
++                    }
++                    var is_url_capability = std.ascii.eqlIgnoreCase(
++                        name,
++                        "5745524D5F55524C5F494D414745",
++                    );
++                    if (!is_url_capability) {
++                        var decoded: [32]u8 = undefined;
++                        const decoded_len = name.len / 2;
++                        var valid_hex = true;
++                        for (0..decoded_len) |index| {
++                            const pair = name[index * 2 ..][0..2];
++                            decoded[index] = std.fmt.parseInt(u8, pair, 16) catch {
++                                valid_hex = false;
++                                break;
++                            };
++                        }
++                        if (valid_hex and std.mem.eql(u8, decoded[0..decoded_len], "WTERM_URL_IMAGE")) {
++                            is_url_capability = true;
++                        }
++                    }
++                    var buf: [RESPONSE_MAX_BYTES]u8 = undefined;
++                    const response = if (is_url_capability)
++                        std.fmt.bufPrint(&buf, "\x1bP1+r{s}=31\x1b\\", .{name}) catch continue
++                    else
++                        std.fmt.bufPrint(&buf, "\x1bP0+r{s}\x1b\\", .{name}) catch continue;
++                    self.queue.push(response);
++                }
++            },
++            .decrqss, .tmux => {},
++        }
++    }
++
+     fn transmission(cmd: *const KittyCommand) ?@TypeOf(cmd.control.transmit) {
+         return switch (cmd.control) {
+             .query => |value| value,
+@@ -151,27 +287,88 @@ const ResponseHandler = struct {
+         };
+     }
+ 
+-    fn rejectNonDirect(self: *ResponseHandler, cmd: *const KittyCommand) bool {
+-        const tx = transmission(cmd) orelse return false;
+-        if (tx.medium == .direct) return false;
+-        // Do not call the upstream executor for non-direct media. In
+-        // particular, this keeps file and shared-memory paths out of WASM.
+-        self.rejected_images.* +%= 1;
+-        return true;
++    fn queueResource(self: *ResponseHandler, cmd: *const KittyCommand, transport: u8) void {
++        const tx = kittyTransmission(cmd) orelse return;
++        if (cmd.data.len == 0 or cmd.data.len > RESOURCE_MAX_PATH_BYTES or
++            !std.unicode.utf8ValidateSlice(cmd.data) or
++            std.mem.indexOfScalar(u8, cmd.data, 0) != null)
++        {
++            queueKittyResponse(self.queue, self.rejected_images, cmd, .{
++                .id = tx.image_id,
++                .image_number = tx.image_number,
++                .placement_id = tx.placement_id,
++                .message = "EINVAL: invalid resource source",
++            });
++            return;
++        }
++
++        var slot: ?*ResourceSlot = null;
++        for (&self.resources.slots) |*candidate| {
++            if (candidate.command == null) {
++                slot = candidate;
++                break;
++            }
++        }
++        const available = slot orelse {
++            queueKittyResponse(self.queue, self.rejected_images, cmd, .{
++                .id = tx.image_id,
++                .image_number = tx.image_number,
++                .placement_id = tx.placement_id,
++                .message = "ENOMEM: resource request limit reached",
++            });
++            return;
++        };
++
++        const data = self.alloc.dupe(u8, cmd.data) catch {
++            queueKittyResponse(self.queue, self.rejected_images, cmd, .{
++                .id = tx.image_id,
++                .image_number = tx.image_number,
++                .placement_id = tx.placement_id,
++                .message = "ENOMEM: resource request allocation failed",
++            });
++            return;
++        };
++        var saved = cmd.*;
++        saved.data = data;
++        var id = self.resources.next_id;
++        if (id == 0) id = 1;
++        self.resources.next_id = id +% 1;
++        if (self.resources.next_id == 0) self.resources.next_id = 1;
++        available.* = .{ .id = id, .transport = transport, .command = saved };
+     }
+ 
+     fn handleKittyCommand(self: *ResponseHandler, cmd: *KittyCommand) void {
+-        if (self.rejectNonDirect(cmd)) return;
++        if (kittyTransmission(cmd)) |tx| switch (tx.medium) {
++            .direct => {},
++            .shared_memory => {
++                // Shared memory cannot be addressed safely from browser panes:
++                // tmux gives those panes a shared process identity.
++                queueKittyResponse(self.queue, self.rejected_images, cmd, .{
++                    .id = tx.image_id,
++                    .image_number = tx.image_number,
++                    .placement_id = tx.placement_id,
++                    .message = "EINVAL: shared memory transport unsupported",
++                });
++                return;
++            },
++            .file => {
++                self.queueResource(cmd, 1);
++                return;
++            },
++            .temporary_file => {
++                self.queueResource(cmd, 2);
++                return;
++            },
++            .url => {
++                self.queueResource(cmd, 3);
++                return;
++            },
++        };
+ 
+         const response = self.inner.terminal.kittyGraphics(self.alloc, cmd);
+ 
+         if (response) |resp| {
+-            if (!resp.ok()) self.rejected_images.* +%= 1;
+-            var buf: [1024]u8 = undefined;
+-            var writer: std.Io.Writer = .fixed(&buf);
+-            resp.encode(&writer) catch return;
+-            const final = writer.buffered();
+-            if (final.len > 2) self.queue.push(final);
++            queueKittyResponse(self.queue, self.rejected_images, cmd, resp);
+         }
+     }
+ 
+@@ -181,6 +378,24 @@ const ResponseHandler = struct {
+         value: StreamAction.Value(action),
+     ) !void {
+         switch (action) {
++            .dcs_hook => {
++                if (self.dcs.hook(self.alloc, value)) |command| {
++                    var owned_command = command;
++                    self.handleDcsCommand(&owned_command);
++                }
++            },
++            .dcs_put => {
++                if (self.dcs.put(value)) |command| {
++                    var owned_command = command;
++                    self.handleDcsCommand(&owned_command);
++                }
++            },
++            .dcs_unhook => {
++                if (self.dcs.unhook()) |command| {
++                    var owned_command = command;
++                    self.handleDcsCommand(&owned_command);
++                }
++            },
+             .set_mode => {
+                 const was_synchronized = self.inner.terminal.modes.get(.synchronized_output);
+                 try self.inner.vt(action, value);
+@@ -261,6 +476,10 @@ const ResponseHandler = struct {
+                 ) catch return;
+                 self.queue.push(out);
+             },
++            .window_title => {
++                self.title.set(value.title);
++                try self.inner.vt(action, value);
++            },
+             .color_operation => {
+                 try self.inner.vt(action, value);
+                 var it = value.requests.constIterator(0);
+@@ -337,6 +556,8 @@ const State = struct {
+     stream: ResponseStream,
+     render: RenderState,
+     responses: ResponseQueue,
++    resources: ResourceQueue,
++    title: TitleState,
+     synchronized_output_generation: u32,
+     graphics_generation: u32,
+     graphics_fingerprint: u64,
+@@ -559,6 +780,8 @@ export fn init(
+         return 0;
+     };
+     state.responses = .{};
++    state.resources = .{};
++    state.title = .{};
+     state.synchronized_output_generation = 0;
+     state.graphics_generation = 0;
+     state.rejected_images = 0;
+@@ -567,6 +790,8 @@ export fn init(
+         allocator,
+         &state.terminal,
+         &state.responses,
++        &state.resources,
++        &state.title,
+         &state.synchronized_output_generation,
+         &state.rejected_images,
+     ));
+@@ -581,6 +806,7 @@ export fn deinit(ptr: usize) void {
+     const state = stateFromPtr(ptr);
+     state.render.deinit(allocator);
+     state.stream.deinit();
++    state.resources.deinit(allocator);
+     state.terminal.deinit(allocator);
+     allocator.destroy(state);
+ }
+@@ -599,6 +825,138 @@ export fn write(ptr: usize, data_ptr: [*]const u8, data_len: u32) void {
+     refreshGraphicsGeneration(state);
+ }
+ 
++fn kittyFormatCode(format: anytype) u8 {
++    return switch (format) {
++        .rgb => 24,
++        .rgba => 32,
++        .png => 100,
++        .gray_alpha, .gray => 0,
++    };
++}
++
++/// Pop one parsed host-resource request. The record is little-endian:
++/// id, transport, format, two reserved bytes, offset, length, width, height,
++/// source length, then UTF-8 source bytes. `transport` is 1=file, 2=temp,
++/// 3=the WTerm URL extension.
++export fn read_resource_request(ptr: usize, buf_ptr: [*]u8, buf_len: u32) u32 {
++    const state = stateFromPtr(ptr);
++    const buf = buf_ptr[0..buf_len];
++    for (&state.resources.slots) |*slot| {
++        if (slot.id == 0 or slot.request_taken) continue;
++        const cmd = if (slot.command) |*value| value else continue;
++        const tx = kittyTransmission(cmd) orelse continue;
++        const source = cmd.data;
++        if (source.len > RESOURCE_MAX_PATH_BYTES or
++            buf.len < RESOURCE_REQUEST_HEADER_BYTES + source.len)
++        {
++            return 0;
++        }
++        writeU32(buf.ptr, 0, slot.id);
++        buf[4] = slot.transport;
++        buf[5] = kittyFormatCode(tx.format);
++        buf[6] = 0;
++        buf[7] = 0;
++        writeU32(buf.ptr, 8, tx.offset);
++        writeU32(buf.ptr, 12, tx.size);
++        writeU32(buf.ptr, 16, tx.width);
++        writeU32(buf.ptr, 20, tx.height);
++        writeU32(buf.ptr, 24, @intCast(source.len));
++        @memcpy(buf[RESOURCE_REQUEST_HEADER_BYTES .. RESOURCE_REQUEST_HEADER_BYTES + source.len], source);
++        slot.request_taken = true;
++        return @intCast(RESOURCE_REQUEST_HEADER_BYTES + source.len);
++    }
++    return 0;
++}
++
++fn resourceResult(
++    state: *State,
++    slot: *ResourceSlot,
++    bytes: ?[]const u8,
++) bool {
++    var cmd = slot.command orelse return false;
++    slot.* = .{};
++    defer cmd.deinit(allocator);
++    const tx = kittyTransmission(&cmd) orelse return false;
++
++    if (bytes) |resource_bytes| {
++        if (resource_bytes.len == 0 or resource_bytes.len > RESOURCE_MAX_IMAGE_BYTES) {
++            queueKittyResponse(&state.responses, &state.rejected_images, &cmd, .{
++                .id = tx.image_id,
++                .image_number = tx.image_number,
++                .placement_id = tx.placement_id,
++                .message = "EINVAL: resource size is invalid",
++            });
++            return false;
++        }
++        const owned = allocator.dupe(u8, resource_bytes) catch {
++            queueKittyResponse(&state.responses, &state.rejected_images, &cmd, .{
++                .id = tx.image_id,
++                .image_number = tx.image_number,
++                .placement_id = tx.placement_id,
++                .message = "ENOMEM: resource allocation failed",
++            });
++            return false;
++        };
++        if (cmd.data.len > 0) allocator.free(cmd.data);
++        cmd.data = owned;
++        if (!setKittyTransmissionDirect(&cmd)) return false;
++        if (state.terminal.kittyGraphics(allocator, &cmd)) |response| {
++            queueKittyResponse(&state.responses, &state.rejected_images, &cmd, response);
++        }
++        refreshGraphicsGeneration(state);
++        return true;
++    }
++
++    queueKittyResponse(&state.responses, &state.rejected_images, &cmd, .{
++        .id = tx.image_id,
++        .image_number = tx.image_number,
++        .placement_id = tx.placement_id,
++        .message = "EINVAL: host resource request failed",
++    });
++    return false;
++}
++
++export fn complete_resource(ptr: usize, request_id: u32, data_ptr: [*]const u8, data_len: u32) u32 {
++    if (data_len == 0 or data_len > RESOURCE_MAX_IMAGE_BYTES) {
++        return reject_resource(ptr, request_id);
++    }
++    const state = stateFromPtr(ptr);
++    for (&state.resources.slots) |*slot| {
++        if (slot.id != request_id) continue;
++        return @intFromBool(resourceResult(state, slot, data_ptr[0..data_len]));
++    }
++    return 0;
++}
++
++export fn reject_resource(ptr: usize, request_id: u32) u32 {
++    const state = stateFromPtr(ptr);
++    for (&state.resources.slots) |*slot| {
++        if (slot.id != request_id) continue;
++        _ = resourceResult(state, slot, null);
++        return 1;
++    }
++    return 0;
++}
++
++export fn cancel_resource(ptr: usize, request_id: u32) u32 {
++    const state = stateFromPtr(ptr);
++    for (&state.resources.slots) |*slot| {
++        if (slot.id != request_id) continue;
++        if (slot.command) |*cmd| cmd.deinit(allocator);
++        slot.* = .{};
++        return 1;
++    }
++    return 0;
++}
++
++export fn read_title(ptr: usize, buf_ptr: [*]u8, buf_len: u32) u32 {
++    const title = &stateFromPtr(ptr).title;
++    if (title.generation == title.read_generation or buf_len < title.len) return 0;
++    @memcpy(buf_ptr[0..title.len], title.bytes[0..title.len]);
++    title.read_generation = title.generation;
++    return title.len;
++}
++
+ // -- Render state -----------------------------------------------
+ 
+ export fn update(ptr: usize) void {
+@@ -914,6 +1272,55 @@ export fn get_cursor_visible(ptr: usize) u32 {
+     return if (state.render.cursor.visible) 1 else 0;
+ }
+ 
++export fn get_cursor_blinking(ptr: usize) u32 {
++    const state = stateFromPtr(ptr);
++    return if (state.terminal.modes.get(.cursor_blinking)) 1 else 0;
++}
++
++export fn get_cursor_style(ptr: usize) u32 {
++    const state = stateFromPtr(ptr);
++    return switch (state.terminal.screens.active.cursor.cursor_style) {
++        .block => 1,
++        .underline => 2,
++        .bar => 3,
++        .block_hollow => 4,
++    };
++}
++
++fn packColor(rgb: color.RGB) u32 {
++    return (@as(u32, rgb.r) << 16) | (@as(u32, rgb.g) << 8) | rgb.b;
++}
++
++export fn get_cursor_color(ptr: usize) u32 {
++    const state = stateFromPtr(ptr);
++    return if (state.terminal.colors.cursor.get()) |rgb| packColor(rgb) else 0xffffffff;
++}
++
++export fn get_terminal_foreground(ptr: usize) u32 {
++    const state = stateFromPtr(ptr);
++    return if (state.terminal.colors.foreground.get()) |rgb| packColor(rgb) else 0xffffffff;
++}
++
++export fn get_terminal_background(ptr: usize) u32 {
++    const state = stateFromPtr(ptr);
++    return if (state.terminal.colors.background.get()) |rgb| packColor(rgb) else 0xffffffff;
++}
++
++export fn set_default_colors(ptr: usize, foreground_rgb: u32, background_rgb: u32) void {
++    const state = stateFromPtr(ptr);
++    state.terminal.colors.foreground.default = .{
++        .r = @truncate(foreground_rgb >> 16),
++        .g = @truncate(foreground_rgb >> 8),
++        .b = @truncate(foreground_rgb),
++    };
++    state.terminal.colors.background.default = .{
++        .r = @truncate(background_rgb >> 16),
++        .g = @truncate(background_rgb >> 8),
++        .b = @truncate(background_rgb),
++    };
++    state.render.update(allocator, &state.terminal) catch {};
++}
++
+ // -- Modes ------------------------------------------------------
+ 
+ export fn cursor_keys_app(ptr: usize) u32 {

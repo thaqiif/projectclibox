@@ -356,6 +356,43 @@ body {
   background: var(--term-selection, rgba(59, 130, 246, 0.35));
 }
 
+.terminal-container.wterm.wterm-cliweb.cursor-shape-underline .term-cursor {
+  background: transparent !important;
+  box-shadow: inset 0 -2px var(--term-cursor);
+  outline: none !important;
+}
+
+.terminal-container.wterm.wterm-cliweb.cursor-shape-bar .term-cursor {
+  background: transparent !important;
+  box-shadow: inset 2px 0 var(--term-cursor);
+  outline: none !important;
+}
+
+.terminal-container.wterm.wterm-cliweb.cursor-shape-hollow .term-cursor {
+  background: transparent !important;
+  box-shadow: inset 0 0 0 1px var(--term-cursor);
+  outline: none !important;
+}
+
+.terminal-container.wterm.wterm-cliweb.focused.cursor-blink.cursor-shape-underline
+  .term-cursor,
+.terminal-container.wterm.wterm-cliweb.focused.cursor-blink.cursor-shape-bar
+  .term-cursor,
+.terminal-container.wterm.wterm-cliweb.focused.cursor-blink.cursor-shape-hollow
+  .term-cursor {
+  animation: cliweb-cursor-shape-blink 1s step-end infinite;
+}
+
+@keyframes cliweb-cursor-shape-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
 /* Radix data-state transitions, on the token curves. Used by menus,
    popovers, selects and dialogs so every overlay shares one temperament. */
 [data-state="open"].overlay-in {

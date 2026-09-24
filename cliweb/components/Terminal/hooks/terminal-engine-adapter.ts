@@ -15,8 +15,18 @@ export interface TerminalEngineAdapter {
   readonly core: GhosttyCore;
   readonly terminal: WTerm;
   applyAppearance(isMobile: boolean, theme: string, fontScale: number): void;
+  syncHostState(): void;
   fit(): void;
   dispose(): void;
+}
+
+function packedColor(color: string): number {
+  const match = /^#?([\da-f]{6})$/iu.exec(color.trim());
+  return match ? Number.parseInt(match[1]!, 16) : 0;
+}
+
+function cssColor(color: number): string {
+  return `#${(color & 0xffffff).toString(16).padStart(6, "0")}`;
 }
 
 function linkifyTextNode(node: Text, document: Document): boolean {
@@ -76,9 +86,10 @@ function linkifyTextNode(node: Text, document: Document): boolean {
 function setupBareUrlLinks(element: HTMLElement): () => void {
   const document = element.ownerDocument;
   const linkifyRows = (root: ParentNode) => {
-    const rows = root instanceof HTMLElement && root.matches(".term-row")
-      ? [root]
-      : Array.from(root.querySelectorAll<HTMLElement>(".term-row"));
+    const rows =
+      root instanceof HTMLElement && root.matches(".term-row")
+        ? [root]
+        : Array.from(root.querySelectorAll<HTMLElement>(".term-row"));
     for (const row of rows) {
       const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
       const textNodes: Text[] = [];
@@ -132,6 +143,7 @@ function setAppearance(
 
   element.style.setProperty("--term-bg", colors.background);
   element.style.setProperty("--term-fg", colors.foreground);
+  element.style.setProperty("--term-cursor-theme", colors.cursor);
   element.style.setProperty("--term-cursor", colors.cursor);
   element.style.setProperty("--term-selection", colors.selectionBackground);
   element.style.setProperty(
@@ -181,7 +193,7 @@ export async function createTerminalEngineAdapter(
     rows: 24,
     core,
     autoResize: true,
-    cursorBlink: true,
+    cursorBlink: false,
     onData: options.onData,
     onResize: options.onResize,
     onTitle: options.onTitle,
@@ -198,15 +210,46 @@ export async function createTerminalEngineAdapter(
 
   const cleanupLinks = setupBareUrlLinks(element);
 
+  const syncHostState = () => {
+    const terminalColors = core.getTerminalColors();
+    element.style.setProperty("--term-fg", cssColor(terminalColors.foreground));
+    element.style.setProperty("--term-bg", cssColor(terminalColors.background));
+
+    const cursorColor = core.getCursorColor();
+    element.style.setProperty(
+      "--term-cursor",
+      cursorColor === null ? "var(--term-cursor-theme)" : cssColor(cursorColor)
+    );
+    element.classList.toggle("cursor-blink", core.cursorBlinking());
+    const cursorStyle = core.getCursorStyle();
+    element.classList.toggle(
+      "cursor-shape-underline",
+      cursorStyle === "underline"
+    );
+    element.classList.toggle("cursor-shape-bar", cursorStyle === "bar");
+    element.classList.toggle(
+      "cursor-shape-hollow",
+      cursorStyle === "block-hollow"
+    );
+  };
+
   const adapter: TerminalEngineAdapter = {
     core,
     terminal,
     applyAppearance(isMobile, theme, fontScale) {
       setAppearance(element, isMobile, theme, fontScale);
+      const colors = getTerminalThemeForApp(theme || "dark");
+      core.setDefaultColors(
+        packedColor(colors.foreground),
+        packedColor(colors.background)
+      );
+      syncHostState();
+      terminal.write("");
       // WTerm owns font metrics and grid fitting; the app only asks it to
       // recalculate after changing the CSS font properties.
       terminal.fit();
     },
+    syncHostState,
     fit() {
       terminal.fit();
     },
@@ -221,6 +264,7 @@ export async function createTerminalEngineAdapter(
   // The initial WebSocket hello uses this fitted grid rather than a guessed
   // terminal size. ResizeObserver remains WTerm's only ongoing fit owner.
   terminal.fit();
+  syncHostState();
   return adapter;
 }
 

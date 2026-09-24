@@ -1,7 +1,13 @@
 "use client";
 
 import type { WTerm } from "@wterm/dom";
+import type { HostResourceRequest } from "@wterm/ghostty";
 import { isValidTerminalGrid } from "../../../lib/terminal-grid";
+import {
+  decodeTerminalResourceFrame,
+  encodeTerminalResourceFrame,
+  TERMINAL_RESOURCE_PROTOCOL_VERSION,
+} from "../../../lib/terminal-resource-protocol";
 import { WS_RECONNECT_BASE_DELAY, WS_RECONNECT_MAX_DELAY } from "../constants";
 
 type ConnectionState =
@@ -17,12 +23,15 @@ interface WebSocketCallbacks {
   onConnectionStateChange: (state: ConnectionState) => void;
   onFatalError: (message: string) => void;
   onOutput: (data: string) => void;
+  onResourceFrame: (header: Record<string, unknown>, bytes: Uint8Array) => void;
 }
 
 interface WebSocketManager {
   sendInput: (data: string) => void;
   sendCommand: (command: string) => void;
   sendResize: (cols: number, rows: number) => void;
+  requestResource: (request: HostResourceRequest) => boolean;
+  cancelResource: (id: number) => boolean;
   reconnect: () => void;
   cleanup: () => void;
 }
@@ -39,7 +48,9 @@ export function createWebSocketConnection(
   sessionName: string,
   callbacks: WebSocketCallbacks,
   wsRef: React.MutableRefObject<WebSocket | null>,
-  reconnectTimeoutRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>,
+  reconnectTimeoutRef: React.MutableRefObject<ReturnType<
+    typeof setTimeout
+  > | null>,
   reconnectDelayRef: React.MutableRefObject<number>,
   intentionalCloseRef: React.MutableRefObject<boolean>
 ): WebSocketManager {
@@ -68,6 +79,20 @@ export function createWebSocketConnection(
     }
   };
 
+  const sendResourceFrame = (
+    header: Record<string, unknown>,
+    bytes?: Uint8Array
+  ): boolean => {
+    const ws = wsRef.current;
+    if (ws?.readyState !== WebSocket.OPEN) return false;
+    try {
+      ws.send(encodeTerminalResourceFrame(header, bytes));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const closeCurrent = () => {
     capabilityRequest?.abort();
     capabilityRequest = null;
@@ -78,7 +103,10 @@ export function createWebSocketConnection(
     old.onmessage = null;
     old.onclose = null;
     old.onerror = null;
-    if (old.readyState === WebSocket.OPEN || old.readyState === WebSocket.CONNECTING) {
+    if (
+      old.readyState === WebSocket.OPEN ||
+      old.readyState === WebSocket.CONNECTING
+    ) {
       try {
         old.close(1000, "Replacing terminal connection");
       } catch {
@@ -88,7 +116,8 @@ export function createWebSocketConnection(
   };
 
   const scheduleReconnect = () => {
-    if (disposed || intentionalCloseRef.current || reconnectTimeoutRef.current) return;
+    if (disposed || intentionalCloseRef.current || reconnectTimeoutRef.current)
+      return;
     const delay = reconnectDelayRef.current;
     reconnectDelayRef.current = Math.min(delay * 2, WS_RECONNECT_MAX_DELAY);
     reconnectTimeoutRef.current = setTimeout(() => {
@@ -101,7 +130,9 @@ export function createWebSocketConnection(
     if (disposed || intentionalCloseRef.current) return;
     const thisGeneration = ++generation;
     closeCurrent();
-    callbacks.onConnectionStateChange(reconnecting ? "reconnecting" : "connecting");
+    callbacks.onConnectionStateChange(
+      reconnecting ? "reconnecting" : "connecting"
+    );
     const controller = new AbortController();
     capabilityRequest = controller;
 
@@ -144,14 +175,27 @@ export function createWebSocketConnection(
       if (capabilityRequest === controller) capabilityRequest = null;
     }
 
-    if (disposed || thisGeneration !== generation || intentionalCloseRef.current) return;
+    if (
+      disposed ||
+      thisGeneration !== generation ||
+      intentionalCloseRef.current
+    )
+      return;
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/terminal`);
+    const ws = new WebSocket(
+      `${protocol}//${window.location.host}/ws/terminal`
+    );
+    ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
     ws.onopen = () => {
       if (thisGeneration !== generation || wsRef.current !== ws) return;
-      const hello = { type: "hello", token, cols: terminal.cols, rows: terminal.rows };
+      const hello = {
+        type: "hello",
+        token,
+        cols: terminal.cols,
+        rows: terminal.rows,
+      };
       if (!isValidTerminalGrid(hello)) {
         callbacks.onConnectionStateChange("error");
         fatalError = true;
@@ -164,6 +208,15 @@ export function createWebSocketConnection(
 
     ws.onmessage = (event) => {
       if (thisGeneration !== generation || wsRef.current !== ws) return;
+      if (typeof event.data !== "string") {
+        try {
+          const frame = decodeTerminalResourceFrame(event.data as ArrayBuffer);
+          callbacks.onResourceFrame(frame.header, frame.bytes);
+        } catch {
+          ws.close(1002, "Invalid terminal resource frame");
+        }
+        return;
+      }
       let message: ServerMessage;
       try {
         message = JSON.parse(event.data) as ServerMessage;
@@ -177,7 +230,10 @@ export function createWebSocketConnection(
         reconnectDelayRef.current = WS_RECONNECT_BASE_DELAY;
         callbacks.onConnected?.();
         sendResize(terminal.cols, terminal.rows);
-      } else if (message.type === "output" && typeof message.data === "string") {
+      } else if (
+        message.type === "output" &&
+        typeof message.data === "string"
+      ) {
         callbacks.onOutput(message.data);
       } else if (message.type === "exit") {
         terminal.write("\r\n\x1b[33m[Terminal ended]\x1b[0m\r\n");
@@ -195,7 +251,11 @@ export function createWebSocketConnection(
     ws.onclose = () => {
       if (wsRef.current === ws) wsRef.current = null;
       callbacks.onDisconnected?.();
-      if (disposed || intentionalCloseRef.current || thisGeneration !== generation) {
+      if (
+        disposed ||
+        intentionalCloseRef.current ||
+        thisGeneration !== generation
+      ) {
         callbacks.onConnectionStateChange("disconnected");
         return;
       }
@@ -254,6 +314,25 @@ export function createWebSocketConnection(
     sendInput,
     sendCommand,
     sendResize,
+    requestResource: (request) =>
+      sendResourceFrame({
+        version: TERMINAL_RESOURCE_PROTOCOL_VERSION,
+        type: "request",
+        id: request.id,
+        transport: request.transport,
+        source: request.source,
+        offset: request.offset,
+        length: request.length,
+        width: request.width,
+        height: request.height,
+        format: request.format,
+      }),
+    cancelResource: (id) =>
+      sendResourceFrame({
+        version: TERMINAL_RESOURCE_PROTOCOL_VERSION,
+        type: "cancel",
+        id,
+      }),
     reconnect: forceReconnect,
     cleanup: () => {
       disposed = true;

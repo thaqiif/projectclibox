@@ -30,6 +30,7 @@ TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 git clone --quiet --filter=blob:none --no-checkout https://github.com/vercel-labs/wterm.git "$TEMP_DIR/wterm"
 git -C "$TEMP_DIR/wterm" checkout --quiet "$WTERM_COMMIT"
+git -C "$TEMP_DIR/wterm" apply "$CLIWEB_DIR/patches/wterm-ghostty-resource-title.patch"
 
 ZIG_DIR="zig-${ZIG_ARCH}-linux-${ZIG_VERSION}"
 ZIG_ARCHIVE="$TEMP_DIR/zig.tar.xz"
