@@ -12,11 +12,14 @@ import {
   EyeOff,
   File,
   Folder,
+  FolderPlus,
   Loader2,
+  MoreHorizontal,
   RefreshCw,
   Check,
   Save,
   Trash2,
+  Upload,
   Undo2,
   X,
 } from "lucide-react";
@@ -31,13 +34,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { FileNode } from "@/lib/file-utils";
 import { matchesFilter } from "@/lib/file-utils";
 import type { OpenFile } from "@/hooks/useFileEditor";
 import { FileOpsMenu } from "./TreeNodeActions";
 import { BulkActionBar } from "./BulkActionBar";
 import { clearSelection, toggleSelection, applySelectAllToggle } from "@/lib/file-bulk";
-import { fileRename, fileDelete, fileRestore } from "@/lib/file-ops";
+import { fileMkdir, fileRename, fileDelete, fileRestore } from "@/lib/file-ops";
 import { onUploadComplete, uploadFileToTemp } from "@/lib/file-upload";
 import { useFileDrop } from "@/hooks/useFileDrop";
 import { useFileUploadProgress } from "@/hooks/useFileUploadProgress";
@@ -730,6 +740,68 @@ function MobileFileExplorer({
   filter,
   onFilterChange,
 }: MobileFileExplorerProps) {
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [folderName, setFolderName] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderError, setFolderError] = useState<string | null>(null);
+
+  const handleUploadSelection = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const input = event.currentTarget;
+    const selectedFiles = Array.from(input.files ?? []);
+    input.value = "";
+    if (selectedFiles.length === 0) return;
+
+    setUploadingFiles(true);
+    try {
+      // Keep uploads sequential because the progress banner reports one active
+      // upload at a time. Every file lands in the folder currently displayed.
+      for (const file of selectedFiles) {
+        await uploadFileToTemp(file, {
+          targetDir: workingDirectory,
+          createTargetDir: false,
+        });
+      }
+    } finally {
+      setUploadingFiles(false);
+    }
+  };
+
+  const openFolderDialog = () => {
+    setFolderName("");
+    setFolderError(null);
+    setFolderDialogOpen(true);
+  };
+
+  const handleCreateFolder = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = folderName.trim();
+    if (!name || name === "." || name === ".." || name.includes("/")) {
+      setFolderError("Enter a folder name without slashes.");
+      return;
+    }
+
+    const parent = workingDirectory.replace(/\/+$/, "");
+    const path = `${parent}/${name}`;
+    setCreatingFolder(true);
+    setFolderError(null);
+    try {
+      await fileMkdir(path);
+      setFolderDialogOpen(false);
+      setFolderName("");
+      onRefresh();
+    } catch (error) {
+      setFolderError(
+        error instanceof Error ? error.message : "Could not create folder."
+      );
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
   // Show editor when a file is active
   if (activeFile) {
     const isCurrentDirty = activeFilePath ? isDirty(activeFilePath) : false;
@@ -822,27 +894,89 @@ function MobileFileExplorer({
   // Show file tree
   return (
     <div className="bg-background relative flex h-full w-full flex-col">
-      <div className="glass glass-edge-bottom relative z-10 flex h-12 shrink-0 flex-col justify-center gap-0.5 px-3">
-        <span className="ui-label">Files</span>
-        <ExplorerBreadcrumb breadcrumbs={breadcrumbs} onNavigateTo={onNavigateTo} />
-        <div className="absolute top-0 right-0 flex items-center pr-1">
-          {canGoUp && (
+      <div className="glass glass-edge-bottom relative z-10 flex h-14 shrink-0 items-center gap-1 px-2">
+        <div className="min-w-0 flex-1">
+          <span className="ui-label">Files</span>
+          <ExplorerBreadcrumb breadcrumbs={breadcrumbs} onNavigateTo={onNavigateTo} />
+        </div>
+        {canGoUp && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onGoUp}
+            className="h-10 w-10 shrink-0 rounded-full"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        )}
+        <input
+          ref={uploadInputRef}
+          type="file"
+          multiple
+          tabIndex={-1}
+          aria-label="Choose files to upload"
+          className="sr-only"
+          onChange={handleUploadSelection}
+        />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => uploadInputRef.current?.click()}
+          disabled={uploadingFiles}
+          className="h-10 w-10 shrink-0 rounded-full"
+          aria-label="Upload files"
+          title="Upload files"
+        >
+          {uploadingFiles ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Upload className="h-4 w-4" />
+          )}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={openFolderDialog}
+          disabled={creatingFolder}
+          className="h-10 w-10 shrink-0 rounded-full"
+          aria-label="Create folder"
+          title="Create folder"
+        >
+          <FolderPlus className="h-4 w-4" />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              size="icon-sm"
-              onClick={onGoUp}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Go back"
+              size="icon"
+              className="h-10 w-10 shrink-0 rounded-full"
+              aria-label="File manager actions"
+              title="File manager actions"
             >
-              <ArrowLeft className="h-4 w-4" />
+              <MoreHorizontal className="h-4 w-4" />
             </Button>
-          )}
-          <ExplorerListButtons
-            showHidden={showHidden}
-            onToggleHidden={onToggleHidden}
-            onRefresh={onRefresh}
-          />
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side="bottom">
+            <DropdownMenuCheckboxItem
+              checked={showHidden}
+              onCheckedChange={(checked) => {
+                if (checked !== showHidden) onToggleHidden();
+              }}
+            >
+              {showHidden ? (
+                <Eye className="h-4 w-4" />
+              ) : (
+                <EyeOff className="h-4 w-4" />
+              )}
+              Show hidden files
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuItem onSelect={onRefresh}>
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* FILTER_INTEGRATION: filter input above listing */}
@@ -874,6 +1008,75 @@ function MobileFileExplorer({
       <div className="shrink-0 px-2 pb-2">
         <UploadProgressBanner />
       </div>
+      <Dialog
+        open={folderDialogOpen}
+        onOpenChange={(open) => {
+          setFolderDialogOpen(open);
+          if (!open) {
+            setFolderName("");
+            setFolderError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <form onSubmit={handleCreateFolder} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>New folder</DialogTitle>
+              <DialogDescription>
+                Create a folder in the current directory.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <label
+                htmlFor="mobile-new-folder-name"
+                className="text-sm font-medium"
+              >
+                Folder name
+              </label>
+              <input
+                id="mobile-new-folder-name"
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+                value={folderName}
+                onChange={(event) => {
+                  setFolderName(event.target.value);
+                  setFolderError(null);
+                }}
+                className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                aria-invalid={folderError !== null}
+                aria-describedby={folderError ? "mobile-new-folder-error" : undefined}
+              />
+              {folderError && (
+                <p
+                  id="mobile-new-folder-error"
+                  role="alert"
+                  className="text-destructive text-sm"
+                >
+                  {folderError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={creatingFolder}
+                onClick={() => setFolderDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={creatingFolder || !folderName.trim()}
+              >
+                {creatingFolder && <Loader2 className="h-4 w-4 animate-spin" />}
+                Create folder
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

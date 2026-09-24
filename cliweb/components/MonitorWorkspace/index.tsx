@@ -36,9 +36,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -491,30 +488,26 @@ export function MonitorWorkspace({
                     : "Replace with new terminal"
                   : "Create terminal in selected tab"}
               </DropdownMenuItem>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger
-                  disabled={!selectedPaneId || terminals.length === 0}
-                >
-                  <ListPlus />
-                  Use existing terminal
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="max-h-[60vh] overflow-y-auto">
-                  {terminals.map((terminal) => (
-                    <DropdownMenuItem
-                      key={terminal.id}
-                      disabled={terminal.id === selectedPane?.terminalId}
-                      onSelect={() => {
-                        if (selectedPaneId) {
-                          onAssignTerminal(selectedPaneId, terminal.id);
-                        }
-                      }}
-                    >
-                      <TerminalSquare />
-                      <span className="min-w-0 truncate">{terminal.name}</span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Use existing terminal</DropdownMenuLabel>
+              {terminals.length > 0 ? (
+                terminals.map((terminal) => (
+                  <DropdownMenuItem
+                    key={terminal.id}
+                    disabled={!selectedPaneId || terminal.id === selectedPane?.terminalId}
+                    onSelect={() => {
+                      if (selectedPaneId) {
+                        onAssignTerminal(selectedPaneId, terminal.id);
+                      }
+                    }}
+                  >
+                    <TerminalSquare />
+                    <span className="min-w-0 truncate">{terminal.name}</span>
+                  </DropdownMenuItem>
+                ))
+              ) : (
+                <DropdownMenuItem disabled>No terminals available</DropdownMenuItem>
+              )}
               {canInsert && onAddPane && (
                 <>
                   <DropdownMenuSeparator />
