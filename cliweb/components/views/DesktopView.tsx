@@ -20,7 +20,6 @@ import { useSidebarPinned } from "@/hooks/useSidebarPinned";
 import { useTerminalRename } from "@/hooks/useTerminalRename";
 import { WorkbenchTitle } from "./WorkbenchTitle";
 import { MonitorWorkspace } from "@/components/MonitorWorkspace";
-import { useMonitorWorkspace } from "@/hooks/useMonitorWorkspace";
 
 export function DesktopView({
   terminals,
@@ -32,11 +31,10 @@ export function DesktopView({
   fetchTerminals,
   handleDetachTerminal,
   renderPane,
+  monitor,
 }: ViewProps) {
   const { isPinned, togglePin } = useSidebarPinned();
   const renameTerminal = useTerminalRename();
-  const monitor = useMonitorWorkspace();
-
   return (
     <div className="ambient-canvas flex h-screen overflow-hidden">
       <DesktopSidebar

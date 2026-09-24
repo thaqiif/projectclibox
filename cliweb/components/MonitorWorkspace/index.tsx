@@ -19,7 +19,15 @@ import {
   type MonitorWorkspaceState,
 } from "@/lib/monitor-workspace";
 import { PANE_DRAG_TYPE, TERMINAL_DRAG_TYPE } from "@/lib/drag-types";
-import { RotateCcw, TerminalSquare, X, FolderOpen } from "lucide-react";
+import {
+  Columns3,
+  FolderOpen,
+  Menu,
+  Plus,
+  RotateCcw,
+  TerminalSquare,
+  X,
+} from "lucide-react";
 import { useFileEditor } from "@/hooks/useFileEditor";
 
 const Terminal = dynamic(
@@ -48,6 +56,12 @@ interface MonitorWorkspaceProps {
   ) => void;
   onRemovePane: (paneId: string) => void;
   onTerminalsChanged: () => Promise<void>;
+  mobile?: boolean;
+  activePaneId?: string | null;
+  onSelectPane?: (paneId: string) => void;
+  onAddPane?: () => string | undefined;
+  onToggleMonitor?: () => void;
+  onMenuClick?: () => void;
 }
 
 function projectNameFor(
@@ -102,6 +116,7 @@ function MonitorPane({
   projectName,
   canRemove,
   canInsert,
+  mobile,
   onAssign,
   onMove,
   onRemove,
@@ -113,6 +128,7 @@ function MonitorPane({
   projectName: string | null;
   canRemove: boolean;
   canInsert: boolean;
+  mobile: boolean;
   onAssign: (paneId: string, terminalId: string, side: MonitorDropSide) => void;
   onMove: (sourcePaneId: string, anchorPaneId: string, side: MonitorDropSide) => void;
   onRemove: (paneId: string) => void;
@@ -193,7 +209,12 @@ function MonitorPane({
       }}
       onDrop={onDrop}
     >
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--fill-2)] px-2">
+      <div
+        className={cn(
+          "flex shrink-0 items-center gap-2 border-b border-[var(--fill-2)] px-2",
+          mobile ? "h-11" : "h-8"
+        )}
+      >
         <p
           draggable
           onDragStart={(event) => {
@@ -222,9 +243,13 @@ function MonitorPane({
         {terminal && terminal.working_directory && (
           <Button
             variant="ghost"
-            size="icon-sm"
+            size={mobile ? "icon" : "icon-sm"}
             aria-label="Toggle file manager"
-            className={cn("h-6 w-6 shrink-0", showFiles && "bg-[var(--fill-1)]")}
+            className={cn(
+              "shrink-0",
+              mobile ? "h-11 w-11" : "h-6 w-6",
+              showFiles && "bg-[var(--fill-1)]"
+            )}
             onClick={() => setShowFiles((value) => !value)}
           >
             <FolderOpen className="h-3.5 w-3.5" />
@@ -233,20 +258,21 @@ function MonitorPane({
         {canRemove && (
           <Button
             variant="ghost"
-            size="icon-sm"
+            size={mobile ? "icon" : "icon-sm"}
             aria-label="Remove monitor pane"
-            className="h-6 w-6 shrink-0"
+            className={cn("shrink-0", mobile ? "h-11 w-11" : "h-6 w-6")}
             onClick={() => onRemove(paneId)}
           >
             <X className="h-3.5 w-3.5" />
           </Button>
         )}
       </div>
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1">
         {showFiles && terminal?.working_directory ? (
           <FileExplorer
             workingDirectory={terminal.working_directory}
             fileEditor={fileEditor}
+            responsiveToContainer
           />
         ) : (
           <>
@@ -329,37 +355,157 @@ export function MonitorWorkspace({
   onMovePane,
   onRemovePane,
   onTerminalsChanged,
+  mobile = false,
+  activePaneId,
+  onSelectPane,
+  onAddPane,
+  onToggleMonitor,
+  onMenuClick,
 }: MonitorWorkspaceProps) {
   const canRemove = workspace.panes.length > 1;
   const canInsert = workspace.panes.length < MAX_MONITOR_PANES;
+  const selectedPaneId = workspace.panes.some(
+    (pane) => pane.id === activePaneId
+  )
+    ? activePaneId
+    : workspace.panes[0]?.id;
+
+  const handleTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    index: number
+  ) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const delta = event.key === "ArrowRight" ? 1 : -1;
+    const nextIndex =
+      (index + delta + workspace.panes.length) % workspace.panes.length;
+    const nextPane = workspace.panes[nextIndex];
+    if (!nextPane) return;
+    onSelectPane?.(nextPane.id);
+    document.getElementById(`monitor-tab-${nextIndex}`)?.focus();
+  };
+
   return (
-    <div className="flex h-full min-w-0">
-      {workspace.panes.map((pane, index) => {
-        const terminal = terminals.find(
-          (candidate) => candidate.id === pane.terminalId
-        );
-        return (
-          <Fragment key={pane.id}>
-            {index > 0 && (
-              <div className="w-px shrink-0 bg-[var(--fill-2)]" />
-            )}
-            <div className="min-w-0 flex-1">
-              <MonitorPane
-                paneId={pane.id}
-                terminalId={pane.terminalId}
-                terminal={terminal}
-                projectName={projectNameFor(terminal, projects)}
-                canRemove={canRemove}
-                canInsert={canInsert}
-                onAssign={onAssignTerminal}
-                onMove={onMovePane}
-                onRemove={onRemovePane}
-                onTerminalsChanged={onTerminalsChanged}
-              />
-            </div>
-          </Fragment>
-        );
-      })}
+    <div className={cn("h-full min-w-0", mobile ? "flex flex-col" : "flex")}>
+      {mobile && (
+        <div className="bg-background glass-edge-bottom relative z-10 flex shrink-0 items-center gap-1 px-2 pb-2 pt-[calc(0.5rem+env(safe-area-inset-top))]">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Open sidebar"
+            className="h-11 w-11 shrink-0 rounded-full"
+            onClick={onMenuClick}
+          >
+            <Menu className="h-[1.125rem] w-[1.125rem]" />
+          </Button>
+          <div
+            role="tablist"
+            aria-label="Monitor terminals"
+            className="flex min-w-0 flex-1 items-center gap-0.5 rounded-full bg-[var(--fill-4)] p-0.5"
+          >
+            {workspace.panes.map((pane, index) => {
+              const terminal = terminals.find(
+                (candidate) => candidate.id === pane.terminalId
+              );
+              const label = terminal?.name ?? `Empty ${index + 1}`;
+              const selected = pane.id === selectedPaneId;
+
+              return (
+                <button
+                  key={pane.id}
+                  id={`monitor-tab-${index}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  aria-controls={`monitor-panel-${index}`}
+                  tabIndex={selected ? 0 : -1}
+                  title={label}
+                  onClick={() => onSelectPane?.(pane.id)}
+                  onKeyDown={(event) => handleTabKeyDown(event, index)}
+                  className={cn(
+                    "press-sm focus-ring flex h-11 min-w-0 flex-1 items-center justify-center rounded-full px-1.5 text-[0.6875rem] font-medium transition-colors",
+                    selected
+                      ? "bg-[var(--fill-1)] text-foreground shadow-[var(--elev-1)]"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <span className="truncate">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+          {canInsert && onAddPane && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Add monitor tab"
+              title="Add monitor tab"
+              className="h-11 w-11 shrink-0 rounded-full"
+              onClick={() => {
+                const paneId = onAddPane();
+                if (paneId) onSelectPane?.(paneId);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Exit monitor view"
+            title="Exit monitor view"
+            className="h-11 w-11 shrink-0 rounded-full"
+            onClick={onToggleMonitor}
+          >
+            <Columns3 className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+      <div
+        className={cn(
+          "min-w-0",
+          mobile ? "min-h-0 flex-1" : "flex h-full"
+        )}
+      >
+        {workspace.panes.map((pane, index) => {
+          const terminal = terminals.find(
+            (candidate) => candidate.id === pane.terminalId
+          );
+          const selected = pane.id === selectedPaneId;
+
+          return (
+            <Fragment key={pane.id}>
+              {!mobile && index > 0 && (
+                <div className="w-px shrink-0 bg-[var(--fill-2)]" />
+              )}
+              <div
+                id={`monitor-panel-${index}`}
+                role={mobile ? "tabpanel" : undefined}
+                aria-labelledby={mobile ? `monitor-tab-${index}` : undefined}
+                hidden={mobile && !selected}
+                className={cn(
+                  "min-w-0",
+                  mobile ? "h-full w-full" : "flex-1"
+                )}
+              >
+                <MonitorPane
+                  paneId={pane.id}
+                  terminalId={pane.terminalId}
+                  terminal={terminal}
+                  projectName={projectNameFor(terminal, projects)}
+                  canRemove={canRemove}
+                  canInsert={canInsert}
+                  mobile={mobile}
+                  onAssign={onAssignTerminal}
+                  onMove={onMovePane}
+                  onRemove={onRemovePane}
+                  onTerminalsChanged={onTerminalsChanged}
+                />
+              </div>
+            </Fragment>
+          );
+        })}
+      </div>
     </div>
   );
 }

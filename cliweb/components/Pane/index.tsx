@@ -37,6 +37,8 @@ interface PaneProps {
   onSelectTerminal?: (name: string) => void;
   /** Welcome-screen actions, used only while nothing is attached. */
   onNewTerminal?: () => void;
+  onMonitorToggle?: () => void;
+  monitorAvailable?: boolean;
 }
 
 /**
@@ -54,6 +56,8 @@ export const Pane = memo(function Pane({
   onMenuClick,
   onSelectTerminal,
   onNewTerminal,
+  onMonitorToggle,
+  monitorAvailable = false,
 }: PaneProps) {
   const { isMobile } = useViewport();
   const { paneId, attachedTmux, viewMode, setViewMode } = usePanes();
@@ -165,6 +169,8 @@ export const Pane = memo(function Pane({
           viewMode={viewMode}
           onMenuClick={onMenuClick}
           onViewModeChange={setViewMode}
+          onMonitorToggle={onMonitorToggle}
+          monitorAvailable={monitorAvailable}
         />
       )}
 

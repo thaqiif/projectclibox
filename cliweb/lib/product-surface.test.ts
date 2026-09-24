@@ -460,7 +460,7 @@ test("the mounted workspaces are writable by cliweb", () => {
   );
 });
 
-test("desktop monitor workspace stays isolated from mobile", () => {
+test("monitor workspace adapts between desktop panes and mobile tabs", () => {
   const page = source("app/page.tsx");
   const desktop = source("components/views/DesktopView.tsx");
   const mobile = source("components/views/MobileView.tsx");
@@ -470,7 +470,10 @@ test("desktop monitor workspace stays isolated from mobile", () => {
   const route = source("app/api/monitor-workspace/route.ts");
 
   assert.match(page, /if \(isMobile\)[\s\S]*?<MobileView[\s\S]*?<DesktopView/);
-  assert.match(desktop, /useMonitorWorkspace\(\)/);
+  assert.match(page, /const monitor = useMonitorWorkspace\(\)/);
+  assert.match(desktop, /monitor\.workspace\?\.enabled/);
+  assert.match(monitor, /role="tablist"/);
+  assert.match(monitor, /aria-label="Monitor terminals"/);
   assert.match(desktop, /Toggle monitor workspace/);
   assert.match(desktop, /handleCloseTerminal\(activeTerminal\.name\)/);
   assert.doesNotMatch(desktop, /aria-label="Remove monitor pane"/);
@@ -499,10 +502,9 @@ test("desktop monitor workspace stays isolated from mobile", () => {
     /forgetTerminal\(terminal\.name\)/
   );
   assert.match(page, /if \(attachedTmux === name\) detach\(\)/);
-  assert.doesNotMatch(
-    mobile,
-    /MonitorWorkspace|useMonitorWorkspace|monitor pane/i
-  );
+  assert.match(mobile, /<MonitorWorkspace/);
+  assert.match(mobile, /onSelectPane=\{setSelectedPaneId\}/);
+  assert.match(mobile, /monitor\.assignTerminal\(selectedPane\.id, id\)/);
 });
 
 test("terminal cards expose desktop drag identities", () => {

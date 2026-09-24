@@ -12,6 +12,7 @@ import { tmuxAttachCommand } from "@/lib/tmux-attach";
 import type { TerminalHandle } from "@/components/Terminal";
 import { DesktopView } from "@/components/views/DesktopView";
 import { MobileView } from "@/components/views/MobileView";
+import { useMonitorWorkspace } from "@/hooks/useMonitorWorkspace";
 
 // Debug log buffer - persists even if console is closed
 const debugLogs: string[] = [];
@@ -44,6 +45,9 @@ function HomeContent() {
   // Pane context
   const { attachedTmux, attach, detach } = usePanes();
   const { isMobile, isHydrated } = useViewport();
+  const monitor = useMonitorWorkspace();
+  const { assignTerminal } = monitor;
+  const monitorAvailable = monitor.workspace !== null;
 
   // Set CSS variable for viewport height (handles mobile keyboard)
   useViewportHeight();
@@ -160,7 +164,7 @@ function HomeContent() {
    * layout alive.
    */
   const handleNewTerminal = useCallback(
-    async (projectId?: string) => {
+    async (projectId?: string, monitorPaneId?: string) => {
       const project = projectId
         ? projects.find((p) => p.id === projectId)
         : undefined;
@@ -171,9 +175,19 @@ function HomeContent() {
       });
 
       await fetchTerminals();
+      if (monitorPaneId) {
+        assignTerminal(monitorPaneId, terminal.name);
+        return;
+      }
       setTimeout(() => attachToTerminal(terminal.name), 100);
     },
-    [projects, createTerminal, fetchTerminals, attachToTerminal]
+    [
+      projects,
+      createTerminal,
+      fetchTerminals,
+      attachToTerminal,
+      assignTerminal,
+    ]
   );
 
   const handleCloseTerminal = useCallback(
@@ -196,6 +210,8 @@ function HomeContent() {
         onMenuClick={isMobile ? () => setSidebarOpenState(true) : undefined}
         onSelectTerminal={handleSelectTerminal}
         onNewTerminal={() => void handleNewTerminal()}
+        onMonitorToggle={monitor.toggle}
+        monitorAvailable={monitorAvailable}
       />
     ),
     [
@@ -205,6 +221,8 @@ function HomeContent() {
       isMobile,
       handleSelectTerminal,
       handleNewTerminal,
+      monitor.toggle,
+      monitorAvailable,
     ]
   );
 
@@ -215,6 +233,7 @@ function HomeContent() {
     sidebarOpen,
     setSidebarOpen: setSidebarOpenState,
     activeTerminal: activeTerminal as TerminalRecord | undefined,
+    monitor,
     attachToTerminal,
     handleNewTerminal,
     handleCloseTerminal,

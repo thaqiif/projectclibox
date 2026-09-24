@@ -62,8 +62,8 @@ export function MediaViewer({ path, kind, fileName }: MediaViewerProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Image viewer: wheel zoom (toward cursor), drag pan, double-click reset,
-// zoom buttons. Transform-based so the img itself stays object-fit sized.
+// Image viewer: wheel and pinch zoom, drag pan, double-click reset, zoom
+// buttons. Transform-based so the img itself stays object-fit sized.
 // ---------------------------------------------------------------------------
 
 function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
@@ -88,6 +88,14 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
     startY: number;
     baseX: number;
     baseY: number;
+  } | null>(null);
+  const touchPointsRef = useRef(new Map<number, Point>());
+  const pinchRef = useRef<{
+    pointerIds: [number, number];
+    startDistance: number;
+    startZoom: number;
+    startOffset: Point;
+    startCenter: Point;
   } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState(false);
@@ -155,6 +163,36 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
     [clamp, measure]
   );
 
+  const pointInContainer = useCallback((clientX: number, clientY: number) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return {
+      x: clientX - rect.left - rect.width / 2,
+      y: clientY - rect.top - rect.height / 2,
+    };
+  }, []);
+
+  const startPinch = useCallback(() => {
+    const points = Array.from(touchPointsRef.current.entries());
+    if (points.length !== 2) return;
+    const [[firstId, first], [secondId, second]] = points;
+    measure();
+    const dx = second.x - first.x;
+    const dy = second.y - first.y;
+    pinchRef.current = {
+      pointerIds: [firstId, secondId],
+      startDistance: Math.hypot(dx, dy),
+      startZoom: view.zoom,
+      startOffset: view.offset,
+      startCenter: pointInContainer(
+        (first.x + second.x) / 2,
+        (first.y + second.y) / 2
+      ),
+    };
+    dragRef.current = null;
+    setDragging(true);
+  }, [measure, pointInContainer, view.offset, view.zoom]);
+
   // React attaches wheel listeners passively, so preventDefault inside onWheel
   // is ignored (the page scrolls). A native non-passive listener is required.
   useEffect(() => {
@@ -175,9 +213,22 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+
+      if (e.pointerType === "touch") {
+        touchPointsRef.current.set(e.pointerId, {
+          x: e.clientX,
+          y: e.clientY,
+        });
+        if (touchPointsRef.current.size >= 2) {
+          startPinch();
+          return;
+        }
+      }
+
       if (zoom <= 1) return;
       measure();
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       dragRef.current = {
         pointerId: e.pointerId,
         startX: e.clientX,
@@ -187,11 +238,45 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
       };
       setDragging(true);
     },
-    [measure, zoom, offset]
+    [measure, startPinch, zoom, offset]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      if (e.pointerType === "touch" && touchPointsRef.current.has(e.pointerId)) {
+        touchPointsRef.current.set(e.pointerId, {
+          x: e.clientX,
+          y: e.clientY,
+        });
+      }
+
+      const pinch = pinchRef.current;
+      if (pinch && pinch.pointerIds.includes(e.pointerId)) {
+        const first = touchPointsRef.current.get(pinch.pointerIds[0]);
+        const second = touchPointsRef.current.get(pinch.pointerIds[1]);
+        if (!first || !second) return;
+        const currentDistance = Math.hypot(second.x - first.x, second.y - first.y);
+        const currentCenter = pointInContainer(
+          (first.x + second.x) / 2,
+          (first.y + second.y) / 2
+        );
+        const nextZoom = clampMediaZoom(
+          pinch.startZoom * (currentDistance / Math.max(1, pinch.startDistance))
+        );
+        const zoomedOffset = offsetAfterZoom(
+          pinch.startOffset,
+          pinch.startCenter,
+          pinch.startZoom,
+          nextZoom
+        );
+        const nextOffset = {
+          x: zoomedOffset.x + currentCenter.x - pinch.startCenter.x,
+          y: zoomedOffset.y + currentCenter.y - pinch.startCenter.y,
+        };
+        setView({ zoom: nextZoom, offset: clamp(nextOffset, nextZoom) });
+        return;
+      }
+
       const d = dragRef.current;
       if (!d || d.pointerId !== e.pointerId) return;
       const next = {
@@ -200,13 +285,44 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
       };
       setView((prev) => ({ ...prev, offset: clamp(next, prev.zoom) }));
     },
-    [clamp]
+    [clamp, pointInContainer]
   );
 
-  const endDrag = useCallback(() => {
-    dragRef.current = null;
-    setDragging(false);
-  }, []);
+  const endDrag = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.pointerType === "touch") {
+        touchPointsRef.current.delete(e.pointerId);
+      }
+
+      const pinch = pinchRef.current;
+      if (pinch?.pointerIds.includes(e.pointerId)) {
+        pinchRef.current = null;
+        const remaining = Array.from(touchPointsRef.current.entries());
+        if (remaining.length === 2) {
+          startPinch();
+          return;
+        }
+        if (remaining.length === 1 && zoom > 1) {
+          const [pointerId, point] = remaining[0];
+          dragRef.current = {
+            pointerId,
+            startX: point.x,
+            startY: point.y,
+            baseX: view.offset.x,
+            baseY: view.offset.y,
+          };
+          setDragging(true);
+          return;
+        }
+      }
+
+      if (!dragRef.current || dragRef.current.pointerId === e.pointerId) {
+        dragRef.current = null;
+        setDragging(false);
+      }
+    },
+    [startPinch, view.offset, zoom]
+  );
 
   // Keyboard alternative to the mouse gestures: arrows pan, +/- zoom, 0 resets.
   const handleKeyDown = useCallback(
@@ -293,7 +409,7 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
         ref={containerRef}
         tabIndex={0}
         role="group"
-        aria-label={`${fileName} image preview. Arrow keys pan, plus and minus zoom, zero resets.`}
+        aria-label={`${fileName} image preview. Pinch or use plus and minus to zoom, drag or use arrow keys to pan, zero resets.`}
         className="focus-visible:ring-primary relative flex min-h-0 flex-1 items-center justify-center overflow-hidden focus-visible:ring-2 focus-visible:outline-none"
         onKeyDown={handleKeyDown}
         onPointerDown={handlePointerDown}
@@ -301,7 +417,7 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onDoubleClick={reset}
-        style={{ touchAction: zoom > 1 ? "none" : "auto", cursor: dragging ? "grabbing" : zoom > 1 ? "grab" : "default" }}
+        style={{ touchAction: "none", cursor: dragging ? "grabbing" : zoom > 1 ? "grab" : "default" }}
       >
         {error ? (
           <div role="alert" className="flex flex-col items-center gap-2 p-8">

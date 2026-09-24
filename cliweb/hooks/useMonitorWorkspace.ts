@@ -123,15 +123,17 @@ export function useMonitorWorkspace() {
 
   const addPane = useCallback(() => {
     const current = latest.current;
-    if (!current || current.panes.length >= 3) return;
+    if (!current || current.panes.length >= 3) return undefined;
     const count = current.panes.length + 1;
+    const paneId = `monitor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     commit({
       ...current,
       panes: [
         ...current.panes.map((pane) => ({ ...pane, width: 1 / count })),
-        { id: `monitor-${Date.now()}`, terminalId: null, width: 1 / count },
+        { id: paneId, terminalId: null, width: 1 / count },
       ],
     });
+    return paneId;
   }, [commit]);
 
   const removePane = useCallback(

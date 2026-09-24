@@ -64,13 +64,20 @@ const FileEditor = dynamic(
 interface FileExplorerProps {
   workingDirectory: string;
   fileEditor: UseFileEditorReturn;
+  /** Choose the compact tree/editor flow from this explorer's own width. */
+  responsiveToContainer?: boolean;
 }
 
 export function FileExplorer({
   workingDirectory,
   fileEditor,
+  responsiveToContainer = false,
 }: FileExplorerProps) {
-  const { isMobile, isHydrated } = useViewport();
+  const { isMobile: isViewportMobile, isHydrated } = useViewport();
+  const explorerRef = useRef<HTMLDivElement>(null);
+  const [containerIsMobile, setContainerIsMobile] = useState<boolean | null>(
+    null
+  );
   const [files, setFiles] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +87,30 @@ export function FileExplorer({
   // Show dotfiles; persisted in localStorage
   const [showHidden, setShowHidden] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    if (!responsiveToContainer) return;
+    const element = explorerRef.current;
+    if (!element) return;
+
+    const updateLayout = () => {
+      const nextIsMobile = element.clientWidth < 768;
+      setContainerIsMobile((current) =>
+        current === nextIsMobile ? current : nextIsMobile
+      );
+    };
+
+    updateLayout();
+    const observer = new ResizeObserver(updateLayout);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [responsiveToContainer]);
+
+  const isMobile = responsiveToContainer
+    ? containerIsMobile === true
+    : isViewportMobile;
+  const isLayoutReady =
+    isHydrated && (!responsiveToContainer || containerIsMobile !== null);
 
   // Load persisted hidden-files preference once hydrated on the client
   useEffect(() => {
@@ -301,9 +332,12 @@ export function FileExplorer({
       : null;
 
   // Loading state before hydration
-  if (!isHydrated) {
+  if (!isLayoutReady) {
     return (
-      <div className="bg-background flex h-full w-full items-center justify-center">
+      <div
+        ref={explorerRef}
+        className="bg-background flex h-full w-full items-center justify-center"
+      >
         <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
       </div>
     );
@@ -312,8 +346,63 @@ export function FileExplorer({
   // Mobile layout: full-screen tree OR full-screen editor
   if (isMobile) {
     return (
-      <>
-      <MobileFileExplorer
+      <div
+        ref={explorerRef}
+        className="relative h-full min-h-0 min-w-0 w-full overflow-hidden"
+      >
+        <MobileFileExplorer
+          files={filteredFiles}
+          loading={loading}
+          error={error}
+          fileLoading={fileLoading}
+          workingDirectory={effectiveDir}
+          openFiles={openFiles}
+          activeFilePath={activeFilePath}
+          activeFile={activeFile}
+          saving={saving}
+          onFileClick={handleFileClick}
+          onOpenDir={handleOpenDir}
+          canGoUp={currentDir !== null}
+          onGoUp={handleNavigateUp}
+          breadcrumbs={breadcrumbs}
+          onNavigateTo={handleNavigateTo}
+          showHidden={showHidden}
+          onToggleHidden={handleToggleHidden}
+          onRefresh={handleRefresh}
+          onSelectTab={setActiveFile}
+          onCloseTab={handleCloseFile}
+          onSave={handleSave}
+          onBack={() => setActiveFile(null as unknown as string)}
+          isDirty={isDirty}
+          updateContent={updateContent}
+          pendingClose={pendingClose}
+          onCancelClose={() => setPendingClose(null)}
+          onConfirmClose={handleConfirmClose}
+          onSaveAndClose={handleSaveAndClose}
+          saveError={visibleSaveError}
+          onDismissSaveError={() => setDismissedSaveErrorFor(activeFilePath)}
+          conflictFilePath={conflictFilePath}
+          onCloseAll={handleCloseAll}
+          filter={filter}
+          onFilterChange={setFilter}
+        />
+        <CloseAllDialog
+          open={pendingCloseAll}
+          count={dirtyCount}
+          onCancel={() => setPendingCloseAll(false)}
+          onConfirm={handleConfirmCloseAll}
+        />
+      </div>
+    );
+  }
+
+  // Desktop layout: side-by-side tree + editor
+  return (
+    <div
+      ref={explorerRef}
+      className="h-full min-h-0 min-w-0 w-full overflow-hidden"
+    >
+      <DesktopFileExplorer
         files={filteredFiles}
         loading={loading}
         error={error}
@@ -335,7 +424,6 @@ export function FileExplorer({
         onSelectTab={setActiveFile}
         onCloseTab={handleCloseFile}
         onSave={handleSave}
-        onBack={() => setActiveFile(null as unknown as string)}
         isDirty={isDirty}
         updateContent={updateContent}
         pendingClose={pendingClose}
@@ -345,6 +433,9 @@ export function FileExplorer({
         saveError={visibleSaveError}
         onDismissSaveError={() => setDismissedSaveErrorFor(activeFilePath)}
         conflictFilePath={conflictFilePath}
+        onConflictOverwrite={handleConflictOverwrite}
+        onConflictReload={handleConflictReload}
+        onDismissConflict={dismissConflict}
         onCloseAll={handleCloseAll}
         filter={filter}
         onFilterChange={setFilter}
@@ -355,58 +446,7 @@ export function FileExplorer({
         onCancel={() => setPendingCloseAll(false)}
         onConfirm={handleConfirmCloseAll}
       />
-      </>
-    );
-  }
-
-  // Desktop layout: side-by-side tree + editor
-  return (
-    <>
-    <DesktopFileExplorer
-      files={filteredFiles}
-      loading={loading}
-      error={error}
-      fileLoading={fileLoading}
-      workingDirectory={effectiveDir}
-      openFiles={openFiles}
-      activeFilePath={activeFilePath}
-      activeFile={activeFile}
-      saving={saving}
-      onFileClick={handleFileClick}
-      onOpenDir={handleOpenDir}
-      canGoUp={currentDir !== null}
-      onGoUp={handleNavigateUp}
-      breadcrumbs={breadcrumbs}
-      onNavigateTo={handleNavigateTo}
-      showHidden={showHidden}
-      onToggleHidden={handleToggleHidden}
-      onRefresh={handleRefresh}
-      onSelectTab={setActiveFile}
-      onCloseTab={handleCloseFile}
-      onSave={handleSave}
-      isDirty={isDirty}
-      updateContent={updateContent}
-      pendingClose={pendingClose}
-      onCancelClose={() => setPendingClose(null)}
-      onConfirmClose={handleConfirmClose}
-      onSaveAndClose={handleSaveAndClose}
-      saveError={visibleSaveError}
-      onDismissSaveError={() => setDismissedSaveErrorFor(activeFilePath)}
-      conflictFilePath={conflictFilePath}
-      onConflictOverwrite={handleConflictOverwrite}
-      onConflictReload={handleConflictReload}
-      onDismissConflict={dismissConflict}
-      onCloseAll={handleCloseAll}
-      filter={filter}
-      onFilterChange={setFilter}
-    />
-    <CloseAllDialog
-      open={pendingCloseAll}
-      count={dirtyCount}
-      onCancel={() => setPendingCloseAll(false)}
-      onConfirm={handleConfirmCloseAll}
-    />
-    </>
+    </div>
   );
 }
 
@@ -781,7 +821,7 @@ function MobileFileExplorer({
 
   // Show file tree
   return (
-    <div className="bg-background flex h-full w-full flex-col">
+    <div className="bg-background relative flex h-full w-full flex-col">
       <div className="glass glass-edge-bottom relative z-10 flex h-12 shrink-0 flex-col justify-center gap-0.5 px-3">
         <span className="ui-label">Files</span>
         <ExplorerBreadcrumb breadcrumbs={breadcrumbs} onNavigateTo={onNavigateTo} />
@@ -824,7 +864,7 @@ function MobileFileExplorer({
       />
 
       {fileLoading && (
-        <div className="bg-background/80 fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
+        <div className="bg-background/80 absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
           <Loader2 className="text-primary h-6 w-6 animate-spin" />
         </div>
       )}
