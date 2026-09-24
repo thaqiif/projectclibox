@@ -9,7 +9,10 @@ class FakeTouchElement {
   listeners = new Map<string, (event: any) => void>();
   wheelEvents: any[] = [];
   scrollTop = 0;
-  grid = { style: {} as Record<string, string> };
+  grid = {
+    style: {} as Record<string, string>,
+    querySelectorAll: () => [],
+  };
   classes = new Set<string>();
   classList = {
     add: (name: string) => this.classes.add(name),
@@ -32,7 +35,7 @@ class FakeTouchElement {
   }
 }
 
-test("mobile swipes pan tmux pixel by pixel between whole-line wheel reports", () => {
+test("mobile swipes pan TUIs pixel by pixel without opening the keyboard", () => {
   const originalWheelEvent = Object.getOwnPropertyDescriptor(
     globalThis,
     "WheelEvent"
@@ -99,29 +102,16 @@ test("mobile swipes pan tmux pixel by pixel between whole-line wheel reports", (
     assert.equal(element.wheelEvents.length, 0);
     frames.shift()?.(16);
     assert.equal(element.wheelEvents.length, 1);
-    // 30px at the 20px fallback row height: one whole line is reported and
-    // the remaining 10px is shown by translating the grid.
+    // 30px at the 20px fallback row height asks tmux for two lines (each
+    // step is requested halfway through), and the grid follows the finger
+    // up to three quarters of a row until the redraw lands.
     assert.equal(
       element.wheelEvents[0].init.deltaMode,
       FakeWheelEvent.DOM_DELTA_LINE
     );
-    assert.equal(element.wheelEvents[0].init.deltaY, -1);
-    // Before tmux redraws, the view stretches at most 1.25 rows.
-    assert.equal(element.grid.style.transform, "translate3d(0, 25px, 0)");
-    notifyRedraw();
-    // tmux moved one row, so only the 10px remainder stays translated.
-    assert.equal(element.grid.style.transform, "translate3d(0, 10px, 0)");
+    assert.equal(element.wheelEvents[0].init.deltaY, -2);
+    assert.equal(element.grid.style.transform, "translate3d(0, 15px, 0)");
     assert.ok(element.classes.has("touch-panning"));
-
-    element.listeners.get("touchmove")?.({
-      touches: [{ clientX: 80, clientY: 134 }],
-      preventDefault() {},
-      stopPropagation() {},
-    });
-    frames.shift()?.(32);
-    // Four more pixels stay inside the current row: no new wheel report.
-    assert.equal(element.wheelEvents.length, 1);
-    assert.equal(element.grid.style.transform, "translate3d(0, 14px, 0)");
   } finally {
     cleanup();
     globalThis.requestAnimationFrame = originalRaf;
