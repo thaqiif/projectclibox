@@ -32,6 +32,10 @@ export interface BulkActionBarProps {
   selectedPaths: readonly string[];
   /** Directory the listing is showing; Move/Copy start browsing here. */
   workingDirectory: string;
+  /** True when every currently listed row is selected; upgrades the count
+   * copy to "All N items selected" without changing which paths are acted on
+   * (ops always run over the concrete selectedPaths list). */
+  allSelected?: boolean;
   /** Called after any successful bulk op so the listing refetches. */
   onRefresh?: () => void;
   /** Called to empty the selection (after Clear and after successful ops). */
@@ -43,6 +47,7 @@ type PendingDialog = "move" | "copy" | "delete" | null;
 export function BulkActionBar({
   selectedPaths,
   workingDirectory,
+  allSelected = false,
   onRefresh,
   onClear,
 }: BulkActionBarProps) {
@@ -95,6 +100,12 @@ export function BulkActionBar({
 
   if (count === 0) return null;
   const noun = count === 1 ? "item" : "items";
+  // "All" wording when the header checkbox is fully checked; falls back to
+  // the plain count when the selection is partial or stale.
+  const countLabel =
+    allSelected && count > 1
+      ? `All ${count} ${noun} selected`
+      : `${count} ${noun} selected`;
 
   return (
     <>
@@ -111,7 +122,7 @@ export function BulkActionBar({
           </span>
         ) : (
           <>
-            <span className="ui-meta whitespace-nowrap">{count} {noun} selected</span>
+            <span className="ui-meta whitespace-nowrap">{countLabel}</span>
             <Button
               type="button"
               size="sm"

@@ -56,6 +56,42 @@ export function clearSelection(): Set<string> {
   return new Set();
 }
 
+/** Tri-state of the select-all header checkbox over the currently listed rows. */
+export type SelectAllState = "all" | "some" | "none";
+
+/**
+ * Derive the select-all checkbox state from the rows currently listed
+ * (already filter-applied upstream) and the live selection. Stale selected
+ * paths that vanished on a refresh only count while still listed, so the
+ * header downgrades "all" to "some"/"none" instead of lying about "all".
+ */
+export function deriveSelectAllState(
+  listedPaths: readonly string[],
+  selected: ReadonlySet<string>
+): SelectAllState {
+  if (listedPaths.length === 0) return "none";
+  let listedSelected = 0;
+  for (const path of listedPaths) {
+    if (selected.has(path)) listedSelected += 1;
+  }
+  if (listedSelected === 0) return "none";
+  return listedSelected === listedPaths.length ? "all" : "some";
+}
+
+/**
+ * Header checkbox click, per product rule: unchecked selects every listed
+ * row; mixed or fully selected clears everything (clicking a mixed box
+ * clears, it does not complete the selection).
+ */
+export function applySelectAllToggle(
+  listedPaths: readonly string[],
+  selected: ReadonlySet<string>
+): Set<string> {
+  return deriveSelectAllState(listedPaths, selected) === "none"
+    ? selectAll(listedPaths)
+    : clearSelection();
+}
+
 /**
  * Run one op per path, collecting per-item failures instead of throwing on
  * the first error, so a single bad path does not abort the whole batch.

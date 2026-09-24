@@ -36,7 +36,7 @@ import { matchesFilter } from "@/lib/file-utils";
 import type { OpenFile } from "@/hooks/useFileEditor";
 import { FileOpsMenu } from "./TreeNodeActions";
 import { BulkActionBar } from "./BulkActionBar";
-import { clearSelection, toggleSelection } from "@/lib/file-bulk";
+import { clearSelection, toggleSelection, applySelectAllToggle } from "@/lib/file-bulk";
 import { fileRename, fileDelete, fileRestore } from "@/lib/file-ops";
 import { onUploadComplete, uploadFileToTemp } from "@/lib/file-upload";
 import { useFileDrop } from "@/hooks/useFileDrop";
@@ -1127,6 +1127,18 @@ function ListingBody({
     );
   }
 
+  // Select-all header: state derived from the rows CURRENTLY LISTED (they
+  // arrive pre-filtered from the parent), so the checkbox only reflects what
+  // select-all can actually affect. "some" renders as the indeterminate
+  // (mixed) state; clicking mixed or fully-selected clears everything.
+  const listedPaths = files.map((node) => node.path);
+  const selectedListedCount = listedPaths.reduce(
+    (acc, path) => acc + (selectedPaths.has(path) ? 1 : 0),
+    0
+  );
+  const allListedSelected = selectedListedCount === listedPaths.length;
+  const someListedSelected = selectedListedCount > 0 && !allListedSelected;
+
   return (
     <div
       ref={listingRef}
@@ -1140,6 +1152,57 @@ function ListingBody({
           </span>
         </div>
       )}
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={someListedSelected ? "mixed" : allListedSelected}
+        aria-label={
+          allListedSelected || someListedSelected
+            ? "Clear selection"
+            : "Select all listed items"
+        }
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setSelectedPaths((prev) => applySelectAllToggle(listedPaths, prev));
+          }
+        }}
+        onClick={() =>
+          setSelectedPaths((prev) => applySelectAllToggle(listedPaths, prev))
+        }
+        className={cn(
+          // Whole row is the control: the 14px square alone is too small a
+          // tap target on mobile. Matches the row height/indent of the
+          // listing below and sits above the scroll area, so it never
+          // scrolls away (sticky-ish).
+          "flex h-10 w-full shrink-0 items-center gap-1.5 border-b border-border/60 pr-3 pl-2 text-left transition-colors hover:bg-[var(--fill-4)] md:h-7",
+          (allListedSelected || someListedSelected) && "bg-[var(--fill-4)]"
+        )}
+      >
+        <span
+          className={cn(
+            "flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border transition-opacity",
+            (allListedSelected || someListedSelected)
+              ? "border-primary bg-primary text-primary-foreground opacity-100"
+              : "border-input opacity-70"
+          )}
+        >
+          {someListedSelected ? (
+            // Indeterminate dash, mirroring the partChecked styling pattern.
+            <span className="h-0.5 w-2 rounded-full bg-current" />
+          ) : (
+            allListedSelected && <Check className="h-2.5 w-2.5" />
+          )}
+        </span>
+        <span className="ui-meta truncate text-muted-foreground">
+          {someListedSelected
+            ? `${selectedListedCount} of ${listedPaths.length} selected`
+            : allListedSelected
+              ? `${listedPaths.length} selected`
+              : "Select all"}
+        </span>
+      </button>
       <div className="scrollbar-thin flex-1 overflow-y-auto">
         <div className="py-1">
         {files.map((node) => {
@@ -1261,6 +1324,7 @@ function ListingBody({
       <BulkActionBar
         selectedPaths={Array.from(selectedPaths)}
         workingDirectory={workingDirectory}
+        allSelected={allListedSelected}
         onRefresh={onRefresh}
         onClear={() => setSelectedPaths(clearSelection())}
       />
