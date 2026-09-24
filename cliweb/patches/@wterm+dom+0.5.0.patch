@@ -1,5 +1,5 @@
 diff --git a/node_modules/@wterm/dom/dist/input.js b/node_modules/@wterm/dom/dist/input.js
-index be2e64d..3cb3f09 100644
+index be2e64d..23fef2e 100644
 --- a/node_modules/@wterm/dom/dist/input.js
 +++ b/node_modules/@wterm/dom/dist/input.js
 @@ -41,7 +41,16 @@ const FIXED_KEYS = {
@@ -70,7 +70,7 @@ index be2e64d..3cb3f09 100644
          const tracking = bridge?.mouseTracking?.() ?? 0;
 -        if (!bridge || tracking === 0 || !bridge.mouseSgr?.())
 +        if (!bridge)
-+            return;
+             return;
 +        const sgr = bridge.mouseSgr?.() ?? false;
 +        const altScreen = bridge.usingAltScreen?.() ?? false;
 +        if (tracking !== this.lastMouseTracking || sgr !== this.lastMouseSgr || altScreen !== this.lastAltScreen) {
@@ -79,21 +79,21 @@ index be2e64d..3cb3f09 100644
 +            this.lastMouseSgr = sgr;
 +            this.lastAltScreen = altScreen;
 +        }
-+        if (kind === "wheel" && tracking === 0) {
++        // The browser is the outer terminal in this app, and its PTY is a
++        // tmux client with mouse capture enabled. Forward mouse events from
++        // alternate-screen applications even when Ghostty cannot observe the
++        // app's DECSET through tmux; tmux can route them to the active pane.
++        // Never turn a wheel gesture into Up/Down keys: TUIs commonly use
++        // those keys to edit prompt history.
++        const tmuxMouseFallback = tracking === 0 && altScreen;
++        if (kind === "wheel" && tracking === 0 && !tmuxMouseFallback) {
 +            const hasScrollback = (bridge.getScrollbackCount?.() ?? 0) > 0;
-+            if (altScreen || !hasScrollback) {
-+                event.preventDefault();
-+                const lines = this.consumeWheelEvent(event, bridge);
-+                if (lines !== 0) {
-+                    this.onData(event.deltaY < 0 ? "\x1b[A" : "\x1b[B");
-+                }
-+                return;
-+            }
-+            this.handleScrollbackWheel(event);
++            if (hasScrollback)
++                this.handleScrollbackWheel(event);
 +            return;
 +        }
-+        if (tracking === 0)
-             return;
++        if (tracking === 0 && !tmuxMouseFallback)
++            return;
 +        if (kind === "wheel") {
 +            // Once the application has enabled mouse tracking, wheel input
 +            // belongs to it even when a high-resolution delta has not yet
@@ -142,7 +142,7 @@ index be2e64d..3cb3f09 100644
 -        this.onData(`\x1b[<${code};${col};${row}${final}`);
 +        if (kind !== "wheel")
 +            event.preventDefault();
-+        if (sgr) {
++        if (sgr || tmuxMouseFallback) {
 +            this.onData(`\x1b[<${code};${col};${row}${final}`);
 +            return;
 +        }

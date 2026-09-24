@@ -10,6 +10,7 @@ class FakeTextarea {
   listeners = new Map<string, () => void>();
 
   setAttribute() {}
+  focus() {}
   addEventListener(name: string, listener: () => void) {
     this.listeners.set(name, listener);
   }
@@ -106,7 +107,7 @@ function wheel(deltaY: number) {
   };
 }
 
-test("alternate screen without mouse mode maps wheel to Up and Down", () => {
+test("alternate screen without an observable mouse mode forwards a wheel report through tmux", () => {
   const originalDocument = Object.getOwnPropertyDescriptor(
     globalThis,
     "document"
@@ -128,7 +129,7 @@ test("alternate screen without mouse mode maps wheel to Up and Down", () => {
     const { handler, sent } = createHarness({ altScreen: true });
     const event = wheel(-100);
     handler.handleMouse(event, "wheel");
-    assert.deepEqual(sent, ["\x1b[A"]);
+    assert.deepEqual(sent, ["\x1b[<64;7;3M"]);
     assert.equal(event.defaultPrevented, true);
     handler.destroy();
   } finally {
@@ -138,6 +139,55 @@ test("alternate screen without mouse mode maps wheel to Up and Down", () => {
     if (originalWheelEvent)
       Object.defineProperty(globalThis, "WheelEvent", originalWheelEvent);
     else Reflect.deleteProperty(globalThis, "WheelEvent");
+  }
+});
+
+test("alternate screen without an observable mouse mode forwards clicks through tmux", () => {
+  const originalDocument = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "document"
+  );
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: { createElement: () => new FakeTextarea() },
+  });
+
+  try {
+    const { handler, sent } = createHarness({ altScreen: true });
+    handler.handleMouse(
+      {
+        button: 0,
+        buttons: 1,
+        clientX: 60,
+        clientY: 50,
+        shiftKey: false,
+        altKey: false,
+        ctrlKey: false,
+        preventDefault() {},
+        target: {},
+      },
+      "press"
+    );
+    handler.handleMouse(
+      {
+        button: 0,
+        buttons: 0,
+        clientX: 60,
+        clientY: 50,
+        shiftKey: false,
+        altKey: false,
+        ctrlKey: false,
+        preventDefault() {},
+        target: {},
+      },
+      "release"
+    );
+    assert.deepEqual(sent, ["\x1b[<0;7;3M", "\x1b[<0;7;3m"]);
+    handler.destroy();
+  } finally {
+    if (originalDocument)
+      Object.defineProperty(globalThis, "document", originalDocument);
+    else Reflect.deleteProperty(globalThis, "document");
   }
 });
 

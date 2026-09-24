@@ -179,6 +179,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       connectionState,
       isAtBottom,
       coreRef,
+      terminalInstanceRef,
       scrollToBottom,
       copySelection,
       sendInput,
@@ -456,6 +457,24 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       []
     );
 
+    const handleSelectModeChange = useCallback(
+      (enabled: boolean) => {
+        setSelectMode(enabled);
+        if (enabled) return;
+
+        // The selectable overlay takes focus away from WTerm. Ask it to paint
+        // its existing Ghostty state after the overlay closes, then restore
+        // keyboard focus on desktop. Do not focus the hidden textarea on
+        // mobile because that opens the on-screen keyboard again.
+        requestAnimationFrame(() => {
+          const terminal = terminalInstanceRef.current;
+          terminal?.write("");
+          if (!isMobile) terminal?.focus();
+        });
+      },
+      [isMobile, terminalInstanceRef]
+    );
+
     // Expose imperative methods
     useImperativeHandle(ref, () => ({
       sendCommand,
@@ -504,7 +523,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
             <div className="bg-primary text-primary-foreground flex items-center justify-between px-3 py-2 text-xs font-medium">
               <span>Select text below, then tap Copy</span>
               <button
-                onClick={() => setSelectMode(false)}
+                type="button"
+                onClick={() => handleSelectModeChange(false)}
                 className="bg-primary-foreground/20 rounded px-2 py-0.5 font-mono text-xs"
               >
                 Done
@@ -596,7 +616,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
             onPasteText={handleMobilePasteText}
             onCopy={copySelection}
             selectMode={selectMode}
-            onSelectModeChange={setSelectMode}
+            onSelectModeChange={handleSelectModeChange}
           />
         )}
 

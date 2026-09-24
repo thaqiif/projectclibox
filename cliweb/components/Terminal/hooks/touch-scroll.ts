@@ -67,9 +67,9 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     clientX: number,
     clientY: number
   ) => {
-    // Mouse-aware TUIs receive the same wheel path as desktop input. In an
-    // alternate screen without mouse mode, WTerm maps that wheel to Up/Down,
-    // matching xterm's app-scrolling fallback.
+    // Mouse-aware TUIs receive the same wheel path as desktop input. Managed
+    // sessions are attached through tmux, so WTerm sends mouse reports there
+    // even if the Ghostty core cannot observe the app's mouse mode through it.
     if (core.usingAltScreen()) {
       dispatchTuiWheel(deltaY, clientX, clientY);
     } else {
