@@ -288,10 +288,10 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
   );
   assert.ok(
     !compose.includes("cliweb-volume-init:") &&
-      compose.includes("create_host_path: true") &&
       !compose.match(/source:.*\$\{/) &&
+      !compose.includes("tailscale:") &&
       !envExample.includes("CLIWEB_HOME_DIR"),
-    "Coolify-safe host paths should be literal and created without an init service"
+    "deployment should use literal host paths without a volume init service or Tailscale sidecar"
   );
   assert.doesNotMatch(
     `${dockerfile}\n${compose}\n${entrypoint}\n${bootstrap}`,
