@@ -106,17 +106,18 @@ export function DesktopView({
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {monitor.workspace?.enabled && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Add monitor pane"
-                disabled={monitor.workspace.panes.length >= 3}
-                onClick={monitor.addPane}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            )}
+            {monitor.workspace?.enabled &&
+              !monitor.workspace.panes.some((pane) => pane.terminalId) && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Add monitor pane"
+                  disabled={monitor.workspace.panes.length >= 3}
+                  onClick={monitor.addPane}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              )}
             <Button
               variant={monitor.workspace?.enabled ? "secondary" : "ghost"}
               size="sm"

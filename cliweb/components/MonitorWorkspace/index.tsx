@@ -4,6 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   TerminalSkeleton,
   FileExplorerSkeleton,
 } from "@/components/Pane/PaneSkeletons";
@@ -379,7 +387,10 @@ export function MonitorWorkspace({
   onMenuClick,
 }: MonitorWorkspaceProps) {
   const canRemove = workspace.panes.length > 1;
-  const canInsert = workspace.panes.length < MAX_MONITOR_PANES;
+  const occupiedPaneCount = workspace.panes.filter(
+    (pane) => pane.terminalId !== null
+  ).length;
+  const canInsert = occupiedPaneCount < MAX_MONITOR_PANES;
   const selectedPaneId = workspace.panes.some(
     (pane) => pane.id === activePaneId
   )
@@ -388,6 +399,39 @@ export function MonitorWorkspace({
   const selectedPane = workspace.panes.find(
     (pane) => pane.id === selectedPaneId
   );
+  const [terminalToAssign, setTerminalToAssign] = useState<TerminalRecord | null>(
+    null
+  );
+  const hasAdditionalPaneCapacity =
+    workspace.panes.some(
+      (pane) => pane.id !== selectedPaneId && pane.terminalId === null
+    ) ||
+    (!!onAddPane && workspace.panes.length < MAX_MONITOR_PANES);
+
+  const createOrSelectAdditionalPane = (): string | undefined => {
+    const emptyPane = workspace.panes.find(
+      (pane) => pane.id !== selectedPaneId && pane.terminalId === null
+    );
+    const paneId =
+      emptyPane?.id ??
+      (workspace.panes.length < MAX_MONITOR_PANES ? onAddPane?.() : undefined);
+    if (paneId) onSelectPane?.(paneId);
+    return paneId;
+  };
+
+  const assignToNewPane = () => {
+    if (!terminalToAssign || !hasAdditionalPaneCapacity) return;
+    const paneId = createOrSelectAdditionalPane();
+    if (!paneId) return;
+    onAssignTerminal(paneId, terminalToAssign.id);
+    setTerminalToAssign(null);
+  };
+
+  const assignToSelectedPane = () => {
+    if (!selectedPaneId || !terminalToAssign) return;
+    onAssignTerminal(selectedPaneId, terminalToAssign.id);
+    setTerminalToAssign(null);
+  };
 
   const handleTabKeyDown = (
     event: React.KeyboardEvent<HTMLButtonElement>,
@@ -407,12 +451,18 @@ export function MonitorWorkspace({
   const createTerminalInMonitor = () => {
     if (!selectedPaneId) return;
     let targetPaneId = selectedPaneId;
-    if (selectedPane?.terminalId && canInsert && onAddPane) {
-      targetPaneId = onAddPane() ?? selectedPaneId;
-      onSelectPane?.(targetPaneId);
+    if (selectedPane?.terminalId && hasAdditionalPaneCapacity) {
+      const paneId = createOrSelectAdditionalPane();
+      if (!paneId) return;
+      targetPaneId = paneId;
     }
     void onCreateTerminal?.(targetPaneId);
   };
+
+  const desktopPanes = workspace.panes.some((pane) => pane.terminalId)
+    ? workspace.panes.filter((pane) => pane.terminalId)
+    : workspace.panes;
+  const visiblePanes = mobile ? workspace.panes : desktopPanes;
 
   return (
     <div className={cn("h-full min-w-0", mobile ? "flex flex-col" : "flex")}>
@@ -483,7 +533,7 @@ export function MonitorWorkspace({
               >
                 <TerminalSquare />
                 {selectedPane?.terminalId
-                  ? canInsert
+                  ? hasAdditionalPaneCapacity
                     ? "Create terminal in new tab"
                     : "Replace with new terminal"
                   : "Create terminal in selected tab"}
@@ -494,11 +544,14 @@ export function MonitorWorkspace({
                 terminals.map((terminal) => (
                   <DropdownMenuItem
                     key={terminal.id}
-                    disabled={!selectedPaneId || terminal.id === selectedPane?.terminalId}
+                    disabled={
+                      !selectedPaneId ||
+                      workspace.panes.some(
+                        (pane) => pane.terminalId === terminal.id
+                      )
+                    }
                     onSelect={() => {
-                      if (selectedPaneId) {
-                        onAssignTerminal(selectedPaneId, terminal.id);
-                      }
+                      setTerminalToAssign(terminal);
                     }}
                   >
                     <TerminalSquare />
@@ -508,7 +561,7 @@ export function MonitorWorkspace({
               ) : (
                 <DropdownMenuItem disabled>No terminals available</DropdownMenuItem>
               )}
-              {canInsert && onAddPane && (
+              {workspace.panes.length < MAX_MONITOR_PANES && onAddPane && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -534,6 +587,47 @@ export function MonitorWorkspace({
           >
             <Columns3 className="h-4 w-4" />
           </Button>
+          <Dialog
+            open={terminalToAssign !== null}
+            onOpenChange={(open) => {
+              if (!open) setTerminalToAssign(null);
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add terminal to monitor</DialogTitle>
+                <DialogDescription>
+                  Choose where to put “{terminalToAssign?.name}”.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setTerminalToAssign(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!selectedPaneId || !terminalToAssign}
+                  onClick={assignToSelectedPane}
+                >
+                  {selectedPane?.terminalId
+                    ? "Replace selected tab"
+                    : "Use selected tab"}
+                </Button>
+                {hasAdditionalPaneCapacity && (
+                  <Button
+                    disabled={!terminalToAssign}
+                    onClick={assignToNewPane}
+                  >
+                    <Plus />
+                    Add as new tab
+                  </Button>
+                )}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
       <div
@@ -547,11 +641,11 @@ export function MonitorWorkspace({
           mobile
             ? undefined
             : {
-                gridTemplateColumns: `repeat(${workspace.panes.length}, minmax(0, 1fr))`,
+                gridTemplateColumns: `repeat(${visiblePanes.length}, minmax(0, 1fr))`,
               }
         }
       >
-        {workspace.panes.map((pane, index) => {
+        {visiblePanes.map((pane, index) => {
           const terminal = terminals.find(
             (candidate) => candidate.id === pane.terminalId
           );

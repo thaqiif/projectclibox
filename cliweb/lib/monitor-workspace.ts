@@ -169,13 +169,29 @@ function insertMonitorPane(
     (pane) => pane.id === anchorPaneId
   );
   if (anchorIndex < 0) return workspace;
-  if (workspace.panes.length >= MAX_MONITOR_PANES) {
-    return placeMonitorTerminal(workspace, anchorPaneId, terminalId);
+  const cleared = clearMonitorTerminal(workspace, terminalId);
+  const panes = [...cleared.panes];
+
+  // Reuse a reserved empty pane before creating another one. Besides keeping
+  // the three-pane cap accurate, this lets desktop layout size only panes
+  // that actually contain terminals while mobile keeps its empty tabs.
+  const emptyIndex = panes.findIndex(
+    (pane) => pane.id !== anchorPaneId && pane.terminalId === null
+  );
+  if (emptyIndex >= 0) {
+    const [emptyPane] = panes.splice(emptyIndex, 1);
+    const nextAnchorIndex = panes.findIndex((pane) => pane.id === anchorPaneId);
+    const insertAt =
+      side === "before" ? nextAnchorIndex : nextAnchorIndex + 1;
+    panes.splice(insertAt, 0, { ...emptyPane, terminalId });
+    return { ...cleared, panes: equalizeWidths(panes) };
   }
 
-  const cleared = clearMonitorTerminal(workspace, terminalId);
+  if (panes.length >= MAX_MONITOR_PANES) {
+    return placeMonitorTerminal(cleared, anchorPaneId, terminalId);
+  }
+
   const insertAt = side === "before" ? anchorIndex : anchorIndex + 1;
-  const panes = [...cleared.panes];
   panes.splice(insertAt, 0, {
     id: newPaneId(),
     terminalId,
@@ -222,4 +238,3 @@ export function moveMonitorPane(
   panes.splice(insertAt, 0, moved);
   return { ...workspace, panes: equalizeWidths(panes) };
 }
-
