@@ -15,14 +15,21 @@ if (packageJson.version !== metadata.wtermVersion) {
   );
 }
 
-const source = resolve(root, "node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm");
-const destination = resolve(root, "public/ghostty-vt.wasm");
+const source = resolve(root, "public/ghostty-vt.wasm");
+const destination = resolve(root, "node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm");
 const bytes = await readFile(source);
 const digest = createHash("sha256").update(bytes).digest("hex");
 if (digest !== metadata.wasmSha256) {
   throw new Error(
-    `Installed Ghostty WASM SHA-256 ${digest} does not match reviewed ${metadata.wasmSha256}`
+    `Committed Ghostty WASM SHA-256 ${digest} does not match reviewed ${metadata.wasmSha256}`
   );
 }
 await copyFile(source, destination);
-console.log(`Copied the reviewed Ghostty WASM artifact to public (${digest})`);
+const installed = await readFile(destination);
+const installedDigest = createHash("sha256").update(installed).digest("hex");
+if (installedDigest !== metadata.wasmSha256) {
+  throw new Error(
+    `Installed Ghostty WASM SHA-256 ${installedDigest} does not match reviewed ${metadata.wasmSha256}`
+  );
+}
+console.log(`Installed the reviewed Ghostty WASM artifact into @wterm/ghostty (${digest})`);
