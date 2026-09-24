@@ -154,10 +154,27 @@ function MonitorPane({
 
   // A different terminal in the pane means a different working directory
   // for Files, and a torn-down tmux attachment for the editor state.
-  useEffect(() => {
+  // Derived-reset pattern (same idiom as the listing's selection reset):
+  // fold state during render instead of an effect, so a terminal swap is
+  // reflected in the same commit rather than one render later.
+  const [prevTerminalId, setPrevTerminalId] = useState(terminalId);
+  if (prevTerminalId !== terminalId) {
+    setPrevTerminalId(terminalId);
     setShowFiles(false);
+  }
+  useEffect(() => {
     fileEditor.reset();
-  }, [terminalId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [terminalId, fileEditor]);
+
+  // Pane teardown: when this pane unmounts (removed, its terminal dragged
+  // out into the sidebar, or the workspace closed), drop its open-file
+  // tabs and dirty state. Without this, an unmounted pane's openFiles
+  // leak for the rest of the session and reappear if another pane opens
+  // the same path.
+  const { reset: resetFileEditor } = fileEditor;
+  useEffect(() => {
+    return () => resetFileEditor();
+  }, [resetFileEditor]);
 
   return (
     <div
@@ -199,7 +216,10 @@ function MonitorPane({
             <span className="text-muted-foreground font-normal">Empty pane</span>
           )}
         </p>
-        {terminal && (
+        {/* Only offer Files when the terminal has a usable working directory;
+            without one the explorer would render nothing and the toggle
+            would look stuck on (active fill, no view). */}
+        {terminal && terminal.working_directory && (
           <Button
             variant="ghost"
             size="icon-sm"

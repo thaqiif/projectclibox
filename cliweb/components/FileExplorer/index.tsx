@@ -520,8 +520,11 @@ function DesktopFileExplorer({
   return (
     <div ref={containerRef} className="bg-background flex h-full w-full">
       {/* File tree panel */}
+      {/* relative anchors the upload banner's absolute positioning to this
+          panel; without it the banner climbs to the nearest positioned
+          ancestor and overflows a monitor pane hosting this explorer. */}
       <div
-        className="flex h-full min-w-0 shrink-0 flex-col"
+        className="bg-background relative flex h-full min-w-0 shrink-0 flex-col"
         style={{ width: treeWidth }}
       >
         <div className="glass glass-edge-bottom relative z-10 flex h-9 shrink-0 items-center gap-1.5 px-2">
