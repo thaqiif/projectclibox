@@ -61,18 +61,66 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     }
   };
 
-  const dispatchTuiWheel = (
-    fingerDeltaY: number,
-    clientX: number,
-    clientY: number
-  ) => {
-    // Model the finger movement as fractional terminal rows. WTerm carries
-    // the fractional part between events and emits one mouse-wheel report per
-    // completed row, instead of turning each small touch movement into a
-    // burst of full-strength wheel events.
+  // Pixel-smooth scrolling over line-based TUIs (tmux). tmux can only move
+  // whole rows, so the finger's sub-row remainder is shown by translating the
+  // grid. Each time a whole row is crossed a one-line wheel report is sent;
+  // once the resulting redraw lands, that row is taken back out of the
+  // translation, so the content keeps tracking the finger pixel for pixel.
+  let grid: HTMLElement | null = null;
+  let panTotal = 0; // finger travel in px since the offset was last zero
+  let linesSent = 0; // positive = scrolled up (towards older output)
+  let linesApplied = 0;
+  let settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const renderPanOffset = () => {
+    if (!grid) return;
+    const raw = panTotal - linesApplied * tuiRowHeight;
+    // Clamp so a slow redraw, or the top/bottom of tmux's history, only ever
+    // stretches the view by about a row instead of drifting away.
+    const limit = tuiRowHeight * 1.25;
+    const offset = Math.max(-limit, Math.min(limit, raw));
+    grid.style.transform =
+      Math.abs(offset) < 0.01 ? "" : `translate3d(0, ${offset}px, 0)`;
+  };
+
+  const observer =
+    typeof MutationObserver === "undefined"
+      ? null
+      : new MutationObserver(() => {
+          if (linesApplied === linesSent) return;
+          linesApplied = linesSent;
+          renderPanOffset();
+        });
+
+  const beginPan = () => {
+    if (settleTimer !== null) {
+      clearTimeout(settleTimer);
+      settleTimer = null;
+    }
+    const nextGrid = element.querySelector<HTMLElement>(".term-grid");
+    if (nextGrid !== grid) {
+      observer?.disconnect();
+      grid = nextGrid;
+      if (grid) {
+        observer?.observe(grid, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        });
+      }
+    }
+    if (!grid) return;
+    grid.style.transition = "";
+    grid.style.willChange = "transform";
+    element.classList.add("touch-panning");
+  };
+
+  const sendWheelLines = (lines: number, clientX: number, clientY: number) => {
+    // Whole-line reports in LINE mode map one-to-one onto WTerm mouse-wheel
+    // reports, so linesSent stays an exact count of what tmux was asked for.
     element.dispatchEvent(
       new WheelEvent("wheel", {
-        deltaY: -fingerDeltaY / tuiRowHeight,
+        deltaY: -lines,
         deltaMode: WheelEvent.DOM_DELTA_LINE,
         bubbles: true,
         cancelable: true,
@@ -80,6 +128,41 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
         clientY,
       })
     );
+    linesSent += lines;
+  };
+
+  const panTui = (fingerDeltaY: number, clientX: number, clientY: number) => {
+    if (!grid) beginPan();
+    panTotal += fingerDeltaY;
+    const pendingRows = (panTotal - linesSent * tuiRowHeight) / tuiRowHeight;
+    const lines = Math.trunc(pendingRows);
+    if (lines !== 0) sendWheelLines(lines, clientX, clientY);
+    renderPanOffset();
+  };
+
+  const settlePan = () => {
+    if (!grid || !element.classList.contains("touch-panning")) return;
+    // Round the leftover sub-row travel to the nearest line, then glide the
+    // translation back to zero.
+    const remainder = panTotal - linesSent * tuiRowHeight;
+    if (Math.abs(remainder) >= tuiRowHeight / 2) {
+      sendWheelLines(Math.sign(remainder), startX, lastY);
+    }
+    panTotal = linesSent * tuiRowHeight;
+    grid.style.transition = "transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1)";
+    renderPanOffset();
+    const settledGrid = grid;
+    settleTimer = setTimeout(() => {
+      settleTimer = null;
+      // The glide gave a late redraw time to land; start the next pan fresh.
+      panTotal = 0;
+      linesSent = 0;
+      linesApplied = 0;
+      settledGrid.style.transition = "";
+      settledGrid.style.transform = "";
+      settledGrid.style.willChange = "";
+      element.classList.remove("touch-panning");
+    }, 220);
   };
 
   const applyFingerDelta = (
@@ -91,7 +174,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     // sessions are attached through tmux, so WTerm sends mouse reports there
     // even if the Ghostty core cannot observe the app's mouse mode through it.
     if (core.usingAltScreen()) {
-      dispatchTuiWheel(deltaY, clientX, clientY);
+      panTui(deltaY, clientX, clientY);
     } else {
       // A finger moving down reveals older output above the current position.
       element.scrollTop -= deltaY;
@@ -102,6 +185,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     if (selectModeRef.current || event.touches.length === 0) return;
     cancelInertia();
     cancelMove();
+    if (element.classList.contains("touch-panning")) beginPan();
     const touch = event.touches[0];
     startX = touch.clientX;
     startY = touch.clientY;
@@ -157,6 +241,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
       scrollDirection !== "vertical" ||
       Math.abs(velocityY) < MIN_INERTIA_VELOCITY
     ) {
+      settlePan();
       return;
     }
 
@@ -164,6 +249,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     const animate = (time: number) => {
       if (selectModeRef.current) {
         inertiaFrame = null;
+        settlePan();
         return;
       }
 
@@ -181,6 +267,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
       } else {
         inertiaFrame = null;
         velocityY = 0;
+        settlePan();
       }
     };
 
@@ -205,6 +292,14 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
   return () => {
     cancelInertia();
     cancelMove();
+    if (settleTimer !== null) clearTimeout(settleTimer);
+    observer?.disconnect();
+    if (grid) {
+      grid.style.transform = "";
+      grid.style.transition = "";
+      grid.style.willChange = "";
+    }
+    element.classList.remove("touch-panning");
     element.removeEventListener("touchstart", handleTouchStart);
     element.removeEventListener("touchmove", handleTouchMove);
     element.removeEventListener("touchend", handleTouchEnd);

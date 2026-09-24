@@ -347,6 +347,12 @@ body {
   color: var(--term-fg);
 }
 
+/* While a touch pan slides the grid between tmux line redraws, the shifted
+   grid must not become scrollable overflow of the host. */
+.terminal-container > .wterm.wterm-cliweb.touch-panning {
+  overflow: hidden;
+}
+
 .terminal-container > .wterm.wterm-cliweb .term-grid {
   width: 100%;
   min-width: 100%;
