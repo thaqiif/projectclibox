@@ -43,6 +43,13 @@ test("mobile swipes use terminal wheel input without opening the keyboard", () =
     value: FakeWheelEvent,
   });
 
+  const frames: Array<(time: number) => void> = [];
+  const originalRaf = globalThis.requestAnimationFrame;
+  const originalCaf = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = ((cb: (time: number) => void) =>
+    frames.push(cb)) as typeof requestAnimationFrame;
+  globalThis.cancelAnimationFrame = () => {};
+
   const element = new FakeTouchElement();
   let focusCount = 0;
   const terminal = {
@@ -71,6 +78,9 @@ test("mobile swipes use terminal wheel input without opening the keyboard", () =
       stopPropagation() {},
     });
     assert.equal(focusCount, 0);
+    // Moves are batched into the next animation frame.
+    assert.equal(element.wheelEvents.length, 0);
+    frames.shift()?.(16);
     assert.equal(element.wheelEvents.length, 1);
     assert.equal(
       element.wheelEvents[0].init.deltaMode,
@@ -79,6 +89,8 @@ test("mobile swipes use terminal wheel input without opening the keyboard", () =
     assert.equal(element.wheelEvents[0].init.deltaY, -1.5);
   } finally {
     cleanup();
+    globalThis.requestAnimationFrame = originalRaf;
+    globalThis.cancelAnimationFrame = originalCaf;
     if (originalWheelEvent)
       Object.defineProperty(globalThis, "WheelEvent", originalWheelEvent);
     else Reflect.deleteProperty(globalThis, "WheelEvent");

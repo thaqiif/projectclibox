@@ -12,7 +12,7 @@ interface TouchScrollConfig {
 }
 
 const FALLBACK_ROW_HEIGHT = 20;
-const TOUCH_INERTIA_DECAY_MS = 260;
+const TOUCH_INERTIA_DECAY_MS = 325;
 const TOUCH_VELOCITY_SAMPLE_WEIGHT = 0.45;
 const MIN_INERTIA_VELOCITY = 0.015;
 
@@ -32,6 +32,27 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
   let scrollDirection: "vertical" | "horizontal" | null = null;
   let tuiRowHeight = FALLBACK_ROW_HEIGHT;
   let inertiaFrame: number | null = null;
+  let pendingDeltaY = 0;
+  let pendingX = 0;
+  let pendingY = 0;
+  let moveFrame: number | null = null;
+
+  // Touch events can arrive faster than the display refreshes. Batch them so
+  // each frame does one scroll/wheel dispatch instead of several reflows.
+  const flushMove = () => {
+    moveFrame = null;
+    const deltaY = pendingDeltaY;
+    pendingDeltaY = 0;
+    if (Math.abs(deltaY) >= 0.1) applyFingerDelta(deltaY, pendingX, pendingY);
+  };
+
+  const cancelMove = () => {
+    if (moveFrame !== null) {
+      cancelAnimationFrame(moveFrame);
+      moveFrame = null;
+    }
+    pendingDeltaY = 0;
+  };
 
   const cancelInertia = () => {
     if (inertiaFrame !== null) {
@@ -80,6 +101,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
   const handleTouchStart = (event: TouchEvent) => {
     if (selectModeRef.current || event.touches.length === 0) return;
     cancelInertia();
+    cancelMove();
     const touch = event.touches[0];
     startX = touch.clientX;
     startY = touch.clientY;
@@ -124,9 +146,10 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     lastTouchTime = now;
     const sampleVelocity = deltaY / elapsed;
     velocityY += (sampleVelocity - velocityY) * TOUCH_VELOCITY_SAMPLE_WEIGHT;
-    if (Math.abs(deltaY) < 0.1) return;
-
-    applyFingerDelta(deltaY, touch.clientX, touch.clientY);
+    pendingDeltaY += deltaY;
+    pendingX = touch.clientX;
+    pendingY = touch.clientY;
+    if (moveFrame === null) moveFrame = requestAnimationFrame(flushMove);
   };
 
   const startInertia = () => {
@@ -167,6 +190,10 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
   const handleTouchEnd = () => {
     if (!gestureActive) return;
     gestureActive = false;
+    if (moveFrame !== null) {
+      cancelAnimationFrame(moveFrame);
+      flushMove();
+    }
     startInertia();
   };
 
@@ -177,6 +204,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
 
   return () => {
     cancelInertia();
+    cancelMove();
     element.removeEventListener("touchstart", handleTouchStart);
     element.removeEventListener("touchmove", handleTouchMove);
     element.removeEventListener("touchend", handleTouchEnd);

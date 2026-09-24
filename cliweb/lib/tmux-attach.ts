@@ -49,11 +49,18 @@ export function tmuxAttachCommand(name: string, cwd?: string | null): string {
   // attach lands on, including a server these commands just started. Mouse
   // mode makes tmux's own splits usable in the browser; the status bar is
   // redundant here, since the workbench already says which terminal this is.
-  // The shell is pinned for the reason on INTERACTIVE_SHELL above. All three
+  // The shell is pinned for the reason on INTERACTIVE_SHELL above. All of them
   // are quiet when there is no server yet — the fallback repeats them.
   const options =
     "tmux set -g mouse on 2>/dev/null; " +
     "tmux set -g status off 2>/dev/null; " +
+    // tmux scrolls copy mode five lines per wheel event by default, which
+    // makes touch and trackpad scrolling jump in blocks. One line per event
+    // lets the browser's fine-grained wheel reports move the view smoothly.
+    "tmux bind -T copy-mode WheelUpPane send -N1 -X scroll-up 2>/dev/null; " +
+    "tmux bind -T copy-mode WheelDownPane send -N1 -X scroll-down 2>/dev/null; " +
+    "tmux bind -T copy-mode-vi WheelUpPane send -N1 -X scroll-up 2>/dev/null; " +
+    "tmux bind -T copy-mode-vi WheelDownPane send -N1 -X scroll-down 2>/dev/null; " +
     `tmux set -g default-command '${INTERACTIVE_SHELL}' 2>/dev/null`;
 
   const attach = `${options}; tmux attach -t ${target}`;
