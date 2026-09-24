@@ -4,7 +4,14 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { POST as uploadPost } from "../app/api/files/upload-temp/route";
@@ -123,6 +130,36 @@ test("terminal upload returns a clean conflict when cwd was deleted", async () =
   const res = await oneChunkUpload(join(deletedCwd, "tmp"), "drop.txt");
   assert.equal(await status(res), 409);
   assert.match((await data(res)).error as string, /destination is unavailable/i);
+});
+
+test("terminal upload creates the missing <cwd>/tmp leaf and nothing above it", async () => {
+  const cwd = join(WS, "fresh-cwd");
+  mkdirSync(cwd, { recursive: true });
+  const tmp = join(cwd, "tmp");
+  assert.equal(existsSync(tmp), false);
+
+  const res = await oneChunkUpload(tmp, "paste-drop.txt");
+  assert.equal(await status(res), 200);
+  const body = await data(res);
+  assert.equal(body.path, join(tmp, "paste-drop.txt"));
+  assert.equal(readFileSync(join(tmp, "paste-drop.txt"), "utf8"), "x");
+  assert.equal(existsSync(cwd), true, "the cwd itself is never recreated");
+});
+
+test("concurrent uploads into a fresh <cwd>/tmp do not trip on the mkdir race", async () => {
+  const cwd = join(WS, "race-cwd");
+  mkdirSync(cwd, { recursive: true });
+  const tmp = join(cwd, "tmp");
+
+  const results = await Promise.all([
+    oneChunkUpload(tmp, "race-a.txt"),
+    oneChunkUpload(tmp, "race-b.txt"),
+  ]);
+  for (const res of results) {
+    assert.equal(await status(res), 200);
+  }
+  assert.equal(readFileSync(join(tmp, "race-a.txt"), "utf8"), "x");
+  assert.equal(readFileSync(join(tmp, "race-b.txt"), "utf8"), "x");
 });
 
 test("terminal upload returns a clean conflict when cwd is a file", async () => {
@@ -346,4 +383,33 @@ test("chunked upload: without targetDir the screenshot temp dir is used", async 
     readFileSync(body.path as string).toString(),
     "12345678"
   );
+});
+
+test("paste upload without a cwd keeps its .txt name instead of appending the mime subtype", async () => {
+  const text = "long paste body";
+  const bytes = Buffer.from(text, "utf8");
+  const init = await uploadPost(
+    jsonReq({
+      op: "init",
+      filename: "paste-2026-09-24T153000-005.txt",
+      totalBytes: bytes.length,
+      totalChunks: 1,
+      mimeType: "text/plain",
+    })
+  );
+  assert.equal(await status(init), 200);
+  const { uploadId } = await data(init);
+  const done = await uploadPost(
+    jsonReq({
+      op: "chunk",
+      uploadId,
+      chunkIndex: 0,
+      chunk: bytes.toString("base64"),
+    })
+  );
+  assert.equal(await status(done), 200);
+  const path = (await data(done)).path as string;
+  assert.match(path, /paste-2026-09-24T153000-005\.txt$/);
+  assert.doesNotMatch(path, /\.plain$/);
+  assert.equal(readFileSync(path, "utf8"), text);
 });

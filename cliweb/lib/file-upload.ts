@@ -6,6 +6,11 @@ export interface UploadOptions {
   targetDir?: string | null;
   /** Replace an existing file of the same name instead of timestamping. */
   overwrite?: boolean;
+  /**
+   * Suppress the uploader's own error toast. Used when the caller renders a
+   * more specific message for the same failure (paste-as-file fallback).
+   */
+  quiet?: boolean;
 }
 
 /**
@@ -35,6 +40,27 @@ export const PASTE_AS_FILE_THRESHOLD = 2000;
 /** Exactly 2000 characters remain inline; conversion starts at 2001. */
 export function shouldUploadPaste(text: string): boolean {
   return text.length > PASTE_AS_FILE_THRESHOLD;
+}
+
+/** What a paste should do, decided from the paste payload alone. */
+export type PasteAction = "ignore" | "files" | "dialog" | "upload-file";
+
+/**
+ * Route a paste event. Only clipboard pastes are classified: physical typing
+ * never produces a paste event, so no amount of typed input can reach the
+ * file-conversion path. `ignore` means the terminal keeps its default inline
+ * paste behavior.
+ */
+export function pasteActionFor(input: {
+  hasFiles: boolean;
+  text: string;
+  isMobile: boolean;
+  preferFile: boolean;
+}): PasteAction {
+  if (input.hasFiles) return "files";
+  if (!shouldUploadPaste(input.text)) return "ignore";
+  if (input.isMobile) return "dialog";
+  return input.preferFile ? "upload-file" : "ignore";
 }
 
 /** localStorage key for the paste-long-as-file user preference. */
@@ -283,11 +309,13 @@ export async function uploadFileToTemp(
     return uploadedPath;
   } catch (error) {
     console.error("Upload failed:", error);
-    toast.error(
-      `Upload failed: ${
-        error instanceof Error ? error.message : "unknown error"
-      }`
-    );
+    if (!options.quiet) {
+      toast.error(
+        `Upload failed: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`
+      );
+    }
     return null;
   } finally {
     // Clear the pub/sub either way so progress UI hides when done.
@@ -313,7 +341,15 @@ type UploadCompleteListener = (path: string) => void;
 const uploadCompleteListeners = new Set<UploadCompleteListener>();
 
 function notifyUploadComplete(path: string): void {
-  for (const listener of uploadCompleteListeners) listener(path);
+  for (const listener of uploadCompleteListeners) {
+    // A subscriber failure must never turn a landed upload into a reported
+    // failure: the file is already on disk and the caller needs its path.
+    try {
+      listener(path);
+    } catch (error) {
+      console.error("Upload completion listener failed:", error);
+    }
+  }
 }
 
 /**
@@ -360,4 +396,12 @@ export function onUploadProgress(listener: ProgressListener): () => void {
 export function onUploadComplete(listener: UploadCompleteListener): () => void {
   uploadCompleteListeners.add(listener);
   return () => uploadCompleteListeners.delete(listener);
+}
+
+/**
+ * Broadcast a successful upload. Exported so the notification contract
+ * (including listener isolation) is testable without a browser upload.
+ */
+export function publishUploadComplete(path: string): void {
+  notifyUploadComplete(path);
 }

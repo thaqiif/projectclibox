@@ -163,7 +163,17 @@ function writeAssembledFile(
           };
         }
       } else {
-        fs.mkdirSync(targetDirectory);
+        try {
+          fs.mkdirSync(targetDirectory);
+        } catch (error) {
+          // Two uploads can race the existsSync check (a drop racing a paste,
+          // or a second tab). Losing that race is a success as long as the
+          // leaf is now a directory; anything else is a real failure.
+          const code = (error as NodeJS.ErrnoException | undefined)?.code;
+          if (code !== "EEXIST" || !fs.statSync(targetDirectory).isDirectory()) {
+            throw error;
+          }
+        }
       }
     } catch (error) {
       return {
@@ -219,7 +229,11 @@ function writeAssembledFile(
   const ext = mimeType.split("/")[1] || "png";
   const safeName = filename.replace(/[^a-zA-Z0-9.-]/g, "_") || "screenshot";
   const uniqueName = `${Date.now()}-${safeName}`;
-  const finalName = uniqueName.endsWith(`.${ext}`)
+  // A name that already carries an extension keeps it: appending the mime
+  // subtype blindly turned a pasted paste-....txt into paste-....txt.plain
+  // (mime text/plain) when the terminal had no working directory.
+  const hasOwnExtension = /\.[A-Za-z0-9]{1,10}$/u.test(safeName);
+  const finalName = hasOwnExtension || uniqueName.endsWith(`.${ext}`)
     ? uniqueName
     : `${uniqueName}.${ext}`;
   const filePath = path.join(tempDir, finalName);

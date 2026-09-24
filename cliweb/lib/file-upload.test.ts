@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import {
   PASTE_AS_FILE_THRESHOLD,
   PASTE_LONG_AS_FILE_PREF,
+  pasteActionFor,
   pasteFileName,
   pasteLongAsFilePref,
+  onUploadComplete,
+  publishUploadComplete,
   setPasteLongAsFilePref,
   shouldUploadPaste,
   uploadPasteWithInlineFallback,
@@ -98,4 +101,85 @@ test("successful paste-as-file inserts only its path", async () => {
   );
   assert.deepEqual(result, { path: "/workspace/tmp/paste.txt" });
   assert.deepEqual(pasted, []);
+});
+
+test("paste routing converts only long clipboard text, never typing", () => {
+  const desktop = { isMobile: false, preferFile: true };
+  const short = "x".repeat(PASTE_AS_FILE_THRESHOLD);
+  const long = "x".repeat(PASTE_AS_FILE_THRESHOLD + 1);
+
+  // Typed input cannot reach this function at all (no paste event), and a
+  // paste of any length below the threshold stays inline.
+  assert.equal(
+    pasteActionFor({ hasFiles: false, text: short, ...desktop }),
+    "ignore"
+  );
+  assert.equal(
+    pasteActionFor({ hasFiles: false, text: long, ...desktop }),
+    "upload-file"
+  );
+  // Preference off restores the old inline behavior on desktop.
+  assert.equal(
+    pasteActionFor({
+      hasFiles: false,
+      text: long,
+      isMobile: false,
+      preferFile: false,
+    }),
+    "ignore"
+  );
+  // Mobile always asks before converting, whatever the stored preference.
+  assert.equal(
+    pasteActionFor({
+      hasFiles: false,
+      text: long,
+      isMobile: true,
+      preferFile: true,
+    }),
+    "dialog"
+  );
+  assert.equal(
+    pasteActionFor({
+      hasFiles: false,
+      text: short,
+      isMobile: true,
+      preferFile: true,
+    }),
+    "ignore"
+  );
+  // Real clipboard files keep uploading regardless of text length.
+  assert.equal(
+    pasteActionFor({
+      hasFiles: true,
+      text: "",
+      isMobile: true,
+      preferFile: false,
+    }),
+    "files"
+  );
+});
+
+test("upload completion notifies subscribers and isolates listener failures", () => {
+  const seen: string[] = [];
+  const unsubscribe = onUploadComplete(() => {
+    throw new Error("subscriber blew up");
+  });
+  const unsubscribeHealthy = onUploadComplete((path) => seen.push(path));
+
+  try {
+    // A throwing subscriber must not stop the healthy one, and the caller
+    // still sees the upload as successful.
+    publishUploadComplete("/home/u/project/tmp/paste-1.txt");
+    assert.deepEqual(seen, ["/home/u/project/tmp/paste-1.txt"]);
+  } finally {
+    unsubscribe();
+    unsubscribeHealthy();
+  }
+
+  publishUploadComplete("/home/u/project/tmp/paste-2.txt");
+  assert.deepEqual(
+    seen,
+    ["/home/u/project/tmp/paste-1.txt"],
+    "unsubscribed listeners stop receiving events"
+  );
 });

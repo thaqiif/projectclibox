@@ -22,6 +22,7 @@ import { useViewport } from "@/hooks/useViewport";
 import { useFileDrop } from "@/hooks/useFileDrop";
 import {
   pasteLongAsFilePref,
+  pasteActionFor,
   setPasteLongAsFilePref,
   shouldUploadPaste,
   uploadFileToTemp,
@@ -218,7 +219,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
         try {
           const result = await uploadPasteWithInlineFallback(
             text,
-            () => uploadTextAsPasteFile(text, { targetDir }),
+            // quiet: the fallback below reports this failure once, with what
+            // actually happened to the text.
+            () => uploadTextAsPasteFile(text, { targetDir, quiet: true }),
             (inlineText) => sendInput(inlineText)
           );
           if (result.path) {
@@ -255,28 +258,31 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
           ? Array.from(event.clipboardData.files)
           : [];
 
-        if (files.length === 0) {
-          // Text-only paste. Typing is never intercepted here: short pastes
-          // keep xterm's default flow, and only long pastes are taken over.
-          const text = event.clipboardData?.getData("text/plain") || "";
-          if (!shouldUploadPaste(text)) return;
+        const text = event.clipboardData?.getData("text/plain") || "";
+        const action = pasteActionFor({
+          hasFiles: files.length > 0,
+          text,
+          isMobile,
+          preferFile: pasteLongAsFilePref(),
+        });
 
-          if (isMobile) {
-            // Mobile: ask the user how to insert the long text. clipboardData
-            // is available here from the paste event, so prefill the dialog.
-            event.preventDefault();
-            event.stopPropagation();
-            setLongPasteText(text);
-            return;
-          }
+        // ignore: short text keeps xterm's default flow, and a desktop user
+        // who turned the preference off keeps the old inline paste.
+        if (action === "ignore") return;
 
-          if (pasteLongAsFilePref()) {
-            event.preventDefault();
-            event.stopPropagation();
-            void pasteTextAsFile(text);
-          }
-          // Preference disabled: old typing behavior applies (do nothing and
-          // let xterm handle the paste).
+        if (action === "dialog") {
+          // Mobile: ask the user how to insert the long text. clipboardData
+          // is available here from the paste event, so prefill the dialog.
+          event.preventDefault();
+          event.stopPropagation();
+          setLongPasteText(text);
+          return;
+        }
+
+        if (action === "upload-file") {
+          event.preventDefault();
+          event.stopPropagation();
+          void pasteTextAsFile(text);
           return;
         }
 
@@ -323,7 +329,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
     const handleLongPasteAsFile = useCallback(
       (text: string) => {
         setLongPasteText(null);
-        if (text.trim().length > 0) void pasteTextAsFile(text);
+        // Any non-empty text is kept: trimming made a whitespace-only paste
+        // vanish without a trace.
+        if (text.length > 0) void pasteTextAsFile(text);
       },
       [pasteTextAsFile]
     );
