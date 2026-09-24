@@ -148,8 +148,8 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <div className="glass glass-edge-bottom relative z-10 flex h-11 shrink-0 items-center justify-between px-1 sm:h-8 sm:px-2">
-        <span className="ui-label min-w-0 truncate">{fileName}</span>
-        <div className="flex items-center gap-0.5">
+        <span className="ui-label hidden min-w-0 truncate sm:block">{fileName}</span>
+        <div className="ml-auto flex items-center gap-0.5">
           <IconOnlyButton
             label="Zoom out"
             onClick={() => zoomAt(1 / 1.25)}
