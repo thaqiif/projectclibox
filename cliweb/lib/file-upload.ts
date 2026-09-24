@@ -18,6 +18,9 @@ export function uploadTargetDir(
   workingDirectory?: string | null
 ): string | undefined {
   if (!workingDirectory) return undefined;
+  // Trimming the root's slash would otherwise turn cwd=/ into the legacy
+  // screenshot fallback instead of the required /tmp terminal destination.
+  if (/^\/+$/u.test(workingDirectory)) return "/tmp";
   const base = workingDirectory.replace(/\/+$/, "");
   if (!base) return undefined;
   return `${base}/tmp`;
@@ -28,6 +31,11 @@ export function uploadTargetDir(
  * typed into the terminal (see Terminal paste handling).
  */
 export const PASTE_AS_FILE_THRESHOLD = 2000;
+
+/** Exactly 2000 characters remain inline; conversion starts at 2001. */
+export function shouldUploadPaste(text: string): boolean {
+  return text.length > PASTE_AS_FILE_THRESHOLD;
+}
 
 /** localStorage key for the paste-long-as-file user preference. */
 export const PASTE_LONG_AS_FILE_PREF = "paste-long-as-file";
@@ -43,6 +51,16 @@ export function pasteLongAsFilePref(): boolean {
     return stored === null ? true : stored === "true";
   } catch {
     return true;
+  }
+}
+
+/** Persist the user's long-paste default when storage is available. */
+export function setPasteLongAsFilePref(value: boolean): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(PASTE_LONG_AS_FILE_PREF, String(value));
+  } catch {
+    // Storage may be disabled or full; keep the in-memory checkbox usable.
   }
 }
 
@@ -69,6 +87,28 @@ export async function uploadTextAsPasteFile(
 ): Promise<string | null> {
   const file = new File([text], pasteFileName(), { type: "text/plain" });
   return uploadFileToTemp(file, options);
+}
+
+/**
+ * Try an upload that will replace clipboard text with a path. If it cannot
+ * produce a path, restore the consumed paste inline so no clipboard content is
+ * lost. The upload callback is injected to keep this policy independently
+ * testable from browser File/fetch APIs.
+ */
+export async function uploadPasteWithInlineFallback(
+  text: string,
+  upload: () => Promise<string | null>,
+  pasteInline: (text: string) => void
+): Promise<{ path: string | null; error?: unknown }> {
+  try {
+    const path = await upload();
+    if (path) return { path };
+  } catch (error) {
+    pasteInline(text);
+    return { path: null, error };
+  }
+  pasteInline(text);
+  return { path: null };
 }
 
 interface UploadWithProgressOptions extends UploadOptions {
@@ -239,6 +279,7 @@ export async function uploadFileToTemp(
       onProgress: (bytesSent, totalBytes) =>
         setUploadProgress(file.name, bytesSent, totalBytes),
     });
+    notifyUploadComplete(uploadedPath);
     return uploadedPath;
   } catch (error) {
     console.error("Upload failed:", error);
@@ -268,6 +309,12 @@ export interface UploadProgress {
 type ProgressListener = (progress: UploadProgress | null) => void;
 
 const progressListeners = new Set<ProgressListener>();
+type UploadCompleteListener = (path: string) => void;
+const uploadCompleteListeners = new Set<UploadCompleteListener>();
+
+function notifyUploadComplete(path: string): void {
+  for (const listener of uploadCompleteListeners) listener(path);
+}
 
 /**
  * Publish an aggregate progress update to all subscribers. Passing null
@@ -307,4 +354,10 @@ export function setUploadProgress(
 export function onUploadProgress(listener: ProgressListener): () => void {
   progressListeners.add(listener);
   return () => progressListeners.delete(listener);
+}
+
+/** Subscribe to successful uploads so open file listings can refresh. */
+export function onUploadComplete(listener: UploadCompleteListener): () => void {
+  uploadCompleteListeners.add(listener);
+  return () => uploadCompleteListeners.delete(listener);
 }

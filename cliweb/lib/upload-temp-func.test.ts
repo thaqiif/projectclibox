@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { POST as uploadPost } from "../app/api/files/upload-temp/route";
@@ -94,6 +94,52 @@ test("chunked upload: happy path assembles in exact index order", async () => {
   assert.deepEqual([...onDisk.subarray(CHUNK, CHUNK + 1)], [2]);
   assert.deepEqual([...onDisk.subarray(total - 1)], [9]);
   assert.equal(onDisk.length, total);
+});
+
+async function oneChunkUpload(targetDir: string, filename: string) {
+  const init = await uploadPost(
+    jsonReq({
+      op: "init",
+      filename,
+      totalBytes: 1,
+      totalChunks: 1,
+      targetDir,
+    })
+  );
+  assert.equal(await status(init), 200);
+  const { uploadId } = await data(init);
+  return uploadPost(
+    jsonReq({
+      op: "chunk",
+      uploadId,
+      chunkIndex: 0,
+      chunk: Buffer.from("x").toString("base64"),
+    })
+  );
+}
+
+test("terminal upload returns a clean conflict when cwd was deleted", async () => {
+  const deletedCwd = join(WS, "deleted-cwd");
+  const res = await oneChunkUpload(join(deletedCwd, "tmp"), "drop.txt");
+  assert.equal(await status(res), 409);
+  assert.match((await data(res)).error as string, /destination is unavailable/i);
+});
+
+test("terminal upload returns a clean conflict when cwd is a file", async () => {
+  const fileCwd = join(WS, "file-cwd");
+  writeFileSync(fileCwd, "not a directory");
+  const res = await oneChunkUpload(join(fileCwd, "tmp"), "drop.txt");
+  assert.equal(await status(res), 409);
+  assert.match((await data(res)).error as string, /not a directory/i);
+});
+
+test("terminal upload returns a clean conflict when cwd/tmp is a file", async () => {
+  const cwd = join(WS, "tmp-is-file");
+  mkdirSync(cwd, { recursive: true });
+  writeFileSync(join(cwd, "tmp"), "not a directory");
+  const res = await oneChunkUpload(join(cwd, "tmp"), "drop.txt");
+  assert.equal(await status(res), 409);
+  assert.match((await data(res)).error as string, /not a directory/i);
 });
 
 test("chunked upload: out-of-order chunk is rejected, session unaffected", async () => {

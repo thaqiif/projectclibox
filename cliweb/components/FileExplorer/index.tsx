@@ -38,7 +38,7 @@ import { FileOpsMenu } from "./TreeNodeActions";
 import { BulkActionBar } from "./BulkActionBar";
 import { clearSelection, toggleSelection } from "@/lib/file-bulk";
 import { fileRename, fileDelete, fileRestore } from "@/lib/file-ops";
-import { uploadFileToTemp } from "@/lib/file-upload";
+import { onUploadComplete, uploadFileToTemp } from "@/lib/file-upload";
 import { useFileDrop } from "@/hooks/useFileDrop";
 import { useFileUploadProgress } from "@/hooks/useFileUploadProgress";
 import { ListFilter } from "./ListFilter";
@@ -105,6 +105,10 @@ export function FileExplorer({
   const handleRefresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
+
+  // Terminal drops and paste-as-file create <cwd>/tmp outside this component.
+  // Refresh successful uploads so the new tmp folder appears without reload.
+  useEffect(() => onUploadComplete(handleRefresh), [handleRefresh]);
 
   // FILTER_INTEGRATION: basename substring filter over the listing
   const [filter, setFilter] = useState("");
@@ -996,9 +1000,8 @@ function ListingBody({
   const handleDroppedFile = useCallback(
     async (file: File) => {
       await uploadFileToTemp(file, { targetDir: workingDirectory });
-      onRefresh?.();
     },
-    [workingDirectory, onRefresh]
+    [workingDirectory]
   );
   const { isDragging: isFileDrag, dragHandlers: fileDragHandlers } =
     useFileDrop(listingRef, handleDroppedFile, {

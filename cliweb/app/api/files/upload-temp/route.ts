@@ -125,6 +125,10 @@ function badRequest(error: string, status = 400): NextResponse {
   return NextResponse.json({ error }, { status });
 }
 
+function fileErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * One-shot write of a fully-decoded buffer, shared by the legacy request
  * shape and chunked assembly. Honors targetDir vs the screenshot temp dir,
@@ -138,9 +142,35 @@ function writeAssembledFile(
   overwrite: boolean
 ): { path?: string; error?: string; status?: number } {
   if (targetDirectory) {
-    // Drop-in upload: land where the user was working. mkdir -p so a
-    // directory that vanished mid-session still gets the file.
-    fs.mkdirSync(targetDirectory, { recursive: true });
+    // Terminal targets are <cwd>/tmp. Create only that leaf. Recreating every
+    // missing ancestor would silently resurrect a deleted cwd, and trying to
+    // mkdir through a cwd that became a file used to escape as a generic 500.
+    try {
+      const parent = path.dirname(targetDirectory);
+      const parentStat = fs.statSync(parent);
+      if (!parentStat.isDirectory()) {
+        return {
+          error: `Upload destination parent is not a directory: ${parent}`,
+          status: 409,
+        };
+      }
+
+      if (fs.existsSync(targetDirectory)) {
+        if (!fs.statSync(targetDirectory).isDirectory()) {
+          return {
+            error: `Upload destination is not a directory: ${targetDirectory}`,
+            status: 409,
+          };
+        }
+      } else {
+        fs.mkdirSync(targetDirectory);
+      }
+    } catch (error) {
+      return {
+        error: `Upload destination is unavailable: ${fileErrorMessage(error)}`,
+        status: 409,
+      };
+    }
 
     let finalName = safeFilename(filename);
     let filePath = path.join(targetDirectory, finalName);
@@ -168,7 +198,14 @@ function writeAssembledFile(
       };
     }
 
-    fs.writeFileSync(filePath, buffer);
+    try {
+      fs.writeFileSync(filePath, buffer);
+    } catch (error) {
+      return {
+        error: `Upload destination is not writable: ${fileErrorMessage(error)}`,
+        status: 409,
+      };
+    }
     return { path: filePath };
   }
 

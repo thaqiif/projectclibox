@@ -48,15 +48,18 @@ function parseRange(
   if (rawStart === "") {
     // Suffix range: last N bytes.
     const suffix = Number(rawEnd);
-    if (suffix === 0) return "unsatisfiable";
+    if (!Number.isSafeInteger(suffix) || suffix === 0) return "unsatisfiable";
     const start = Math.max(size - Math.min(suffix, size), 0);
     if (size === 0) return "unsatisfiable";
     return { start, end: size - 1 };
   }
 
   const start = Number(rawStart);
+  if (!Number.isSafeInteger(start)) return "unsatisfiable";
   if (size === 0 || start >= size) return "unsatisfiable";
-  const end = rawEnd === "" ? size - 1 : Math.min(Number(rawEnd), size - 1);
+  const parsedEnd = rawEnd === "" ? size - 1 : Number(rawEnd);
+  if (!Number.isSafeInteger(parsedEnd)) return "unsatisfiable";
+  const end = Math.min(parsedEnd, size - 1);
   if (end < start) return "unsatisfiable";
   return { start, end };
 }

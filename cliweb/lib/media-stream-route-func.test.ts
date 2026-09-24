@@ -74,6 +74,9 @@ for (const range of [
   "bytes=10-",
   "bytes=8-4",
   "bytes=-0",
+  "bytes=999999999999999999999999-",
+  "bytes=-999999999999999999999999",
+  "bytes=1-999999999999999999999999",
 ]) {
   test(`stream: rejects invalid or unsatisfiable range ${range}`, async () => {
     const response = await streamGet(request("stream", FILE, { range }));

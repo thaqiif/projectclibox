@@ -21,9 +21,11 @@ import type { TerminalScrollState } from "./hooks";
 import { useViewport } from "@/hooks/useViewport";
 import { useFileDrop } from "@/hooks/useFileDrop";
 import {
-  PASTE_AS_FILE_THRESHOLD,
   pasteLongAsFilePref,
+  setPasteLongAsFilePref,
+  shouldUploadPaste,
   uploadFileToTemp,
+  uploadPasteWithInlineFallback,
   uploadTargetDir,
   uploadTextAsPasteFile,
 } from "@/lib/file-upload";
@@ -76,6 +78,7 @@ function LongPasteDialog({
           </button>
         </div>
         <textarea
+          data-terminal-paste-editor
           value={text}
           onChange={(e) => setText(e.target.value)}
           className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 h-40 w-full resize-none rounded-lg border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 font-mono text-[0.75rem] outline-none focus-visible:ring-[3px]"
@@ -84,25 +87,22 @@ function LongPasteDialog({
           <input
             type="checkbox"
             checked={sendAsFile}
-            onChange={(e) => setSendAsFile(e.target.checked)}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setSendAsFile(checked);
+              setPasteLongAsFilePref(checked);
+            }}
             className="accent-primary h-4 w-4"
           />
-          Send as file
+          Use file for future long pastes
         </label>
-        <div className="mt-3 flex gap-2">
-          <button
-            onClick={() => onPasteInline(text)}
-            disabled={!text}
-            className="press focus-ring border border-[var(--fill-2)] text-foreground hover:bg-[var(--fill-4)] flex-1 rounded-lg py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
-          >
-            Paste inline
-          </button>
+        <div className="mt-3">
           <button
             onClick={confirm}
             disabled={!text}
-            className="press focus-ring bg-primary text-primary-foreground hover:bg-primary/90 flex-1 rounded-lg py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
+            className="press focus-ring bg-primary text-primary-foreground hover:bg-primary/90 w-full rounded-lg py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
           >
-            Paste as file
+            {sendAsFile ? "Paste as file" : "Paste inline"}
           </button>
         </div>
       </div>
@@ -216,11 +216,19 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       async (text: string) => {
         setIsUploading(true);
         try {
-          const path = await uploadTextAsPasteFile(text, { targetDir });
-          if (path) {
-            sendInput(path);
+          const result = await uploadPasteWithInlineFallback(
+            text,
+            () => uploadTextAsPasteFile(text, { targetDir }),
+            (inlineText) => sendInput(inlineText)
+          );
+          if (result.path) {
+            sendInput(result.path);
             focus();
+            return;
           }
+          if (result.error) console.error("Paste upload failed:", result.error);
+          focus();
+          toast.warning("Paste upload failed; pasted text inline instead");
         } finally {
           setIsUploading(false);
         }
@@ -234,6 +242,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
     // capture listener fires before xterm's own paste listeners.
     const handlePasteCapture = useCallback(
       (event: ClipboardEvent) => {
+        // Paste dialogs live inside the terminal container. Let their textareas
+        // receive native paste, including the clipboardData-null browser path.
+        if (
+          event.target instanceof Element &&
+          event.target.closest("[data-terminal-paste-editor]")
+        ) {
+          return;
+        }
+
         const files = event.clipboardData?.files
           ? Array.from(event.clipboardData.files)
           : [];
@@ -242,7 +259,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
           // Text-only paste. Typing is never intercepted here: short pastes
           // keep xterm's default flow, and only long pastes are taken over.
           const text = event.clipboardData?.getData("text/plain") || "";
-          if (text.length <= PASTE_AS_FILE_THRESHOLD) return;
+          if (!shouldUploadPaste(text)) return;
 
           if (isMobile) {
             // Mobile: ask the user how to insert the long text. clipboardData
@@ -314,8 +331,20 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       (text: string) => {
         setLongPasteText(null);
         if (text) {
-          // Insert as if typed, matching the toolbar paste flow.
-          for (const char of text) sendInput(char);
+          sendInput(text);
+          focus();
+        }
+      },
+      [sendInput, focus]
+    );
+
+    // The toolbar Clipboard button and its manual dialog are paste actions,
+    // not keyboard input. Apply the same exact threshold as a native paste.
+    const handleMobilePasteText = useCallback(
+      (text: string) => {
+        if (shouldUploadPaste(text)) setLongPasteText(text);
+        else if (text) {
+          sendInput(text);
           focus();
         }
       },
@@ -435,6 +464,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
         {isMobile && (
           <TerminalToolbar
             onKeyPress={sendInput}
+            onPasteText={handleMobilePasteText}
             onCopy={copySelection}
             selectMode={selectMode}
             onSelectModeChange={setSelectMode}

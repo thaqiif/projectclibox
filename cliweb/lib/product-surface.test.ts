@@ -580,6 +580,8 @@ test("unreachable surfaces are removed", () => {
     "lib/rangeSelectionUtils.ts",
     // An arbitrary-command endpoint nothing called.
     "app/api/exec/route.ts",
+    // The terminal paperclip was its only entry point.
+    "components/FilePicker.tsx",
   ];
 
   for (const relativePath of removedPaths) {
