@@ -29,8 +29,8 @@ interface ByteRange {
 
 /**
  * Parse a single-range Range header ("bytes=a-b", "bytes=a-", "bytes=-n").
- * Returns null when absent/unparseable (serve 200 full), and "unsatisfiable"
- * when syntactically valid but outside the file (serve 416). Multi-range
+ * Returns null only when absent (serve 200 full), and "unsatisfiable" for an
+ * invalid or out-of-bounds request (serve 416). Multi-range
  * requests are collapsed to their first range; no browser sends them for
  * media playback.
  */
@@ -41,9 +41,9 @@ function parseRange(
   if (!header) return null;
   const first = header.split(",")[0].trim();
   const match = /^bytes=(\d*)-(\d*)$/.exec(first);
-  if (!match) return null;
+  if (!match) return "unsatisfiable";
   const [, rawStart, rawEnd] = match;
-  if (rawStart === "" && rawEnd === "") return null;
+  if (rawStart === "" && rawEnd === "") return "unsatisfiable";
 
   if (rawStart === "") {
     // Suffix range: last N bytes.
@@ -61,7 +61,7 @@ function parseRange(
   return { start, end };
 }
 
-export async function GET(request: NextRequest) {
+async function streamFile(request: NextRequest, includeBody: boolean) {
   try {
     const requested = request.nextUrl.searchParams.get("path");
 
@@ -123,9 +123,9 @@ export async function GET(request: NextRequest) {
       headers["Content-Range"] = `bytes ${slice.start}-${slice.end}/${size}`;
     }
 
-    // Empty file: no read stream needed, an empty body with Content-Length: 0
-    // is the correct response for both 200 and 206.
-    if (length === 0) {
+    // HEAD and empty files never allocate a read stream. A ranged request for
+    // an empty file was already rejected above, so the empty response is 200.
+    if (!includeBody || length === 0) {
       return new NextResponse(null, { status: range ? 206 : 200, headers });
     }
 
@@ -133,6 +133,11 @@ export async function GET(request: NextRequest) {
       start: slice.start,
       end: slice.end,
     });
+    const abort = () => nodeStream.destroy();
+    request.signal.addEventListener("abort", abort, { once: true });
+    nodeStream.once("close", () =>
+      request.signal.removeEventListener("abort", abort)
+    );
     const body = Readable.toWeb(
       nodeStream
     ) as unknown as ReadableStream<Uint8Array>;
@@ -145,4 +150,17 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+export async function GET(request: NextRequest) {
+  return streamFile(request, true);
+}
+
+/** Browsers probe media metadata with HEAD before deciding how to load it. */
+export async function HEAD(request: NextRequest) {
+  const response = await streamFile(request, false);
+  return new NextResponse(null, {
+    status: response.status,
+    headers: response.headers,
+  });
 }

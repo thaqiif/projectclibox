@@ -8,7 +8,7 @@ import path from "path";
  * app/api/files/download/route.ts because Next.js's generated route types
  * forbid extra exports from route modules.
  */
-const MIME_TYPES: Record<string, string> = {
+export const MIME_TYPES: Readonly<Record<string, string>> = Object.freeze({
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -55,9 +55,21 @@ const MIME_TYPES: Record<string, string> = {
   mov: "video/quicktime",
   avi: "video/x-msvideo",
   ogv: "video/ogg",
-};
+});
+
+export type MediaKind = "image" | "video" | "audio";
 
 export function mimeTypeFor(filePath: string): string {
   const ext = path.extname(filePath).slice(1).toLowerCase();
   return MIME_TYPES[ext] || "application/octet-stream";
+}
+
+/** Return the inline viewer kind for a supported media path. */
+export function mediaKindFor(filePath: string | undefined): MediaKind | null {
+  if (!filePath) return null;
+  const mime = mimeTypeFor(filePath);
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  return null;
 }

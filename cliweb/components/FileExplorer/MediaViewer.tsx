@@ -14,8 +14,10 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { MediaKind } from "@/lib/media-mime";
+import { clampMediaZoom, offsetAfterZoom } from "@/lib/media-viewer";
 
-export type MediaKind = "image" | "video" | "audio";
+export type { MediaKind } from "@/lib/media-mime";
 
 interface MediaViewerProps {
   path: string;
@@ -33,13 +35,6 @@ export function streamUrl(path: string): string {
   return `/api/files/stream?path=${encodeURIComponent(path)}`;
 }
 
-const MIN_ZOOM = 0.2;
-const MAX_ZOOM = 12;
-
-function clampZoom(z: number): number {
-  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
-}
-
 /**
  * In-place media viewing: images get pan/zoom, video/audio stream through
  * the Range-capable /api/files/stream endpoint. Self-contained: the native
@@ -49,12 +44,16 @@ export function MediaViewer({ path, kind, fileName }: MediaViewerProps) {
   const src = streamUrl(path);
 
   if (kind === "image") {
-    return <ImageViewer src={src} fileName={fileName} />;
+    return <ImageViewer key={src} src={src} fileName={fileName} />;
   }
   if (kind === "video") {
-    return <StreamingPlayer src={src} fileName={fileName} kind="video" />;
+    return (
+      <StreamingPlayer key={src} src={src} fileName={fileName} kind="video" />
+    );
   }
-  return <StreamingPlayer src={src} fileName={fileName} kind="audio" />;
+  return (
+    <StreamingPlayer key={src} src={src} fileName={fileName} kind="audio" />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +64,7 @@ export function MediaViewer({ path, kind, fileName }: MediaViewerProps) {
 function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const imageRef = useRef<HTMLImageElement>(null);
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -83,16 +83,12 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
   const zoomAt = useCallback(
     (factor: number, cx?: number, cy?: number) => {
       setZoom((prev) => {
-        const next = clampZoom(prev * factor);
+        const next = clampMediaZoom(prev * factor);
         if (next === prev) return prev;
         // Keep the point under the cursor fixed while zooming.
         setOffset((o) => {
           if (cx === undefined || cy === undefined) return o;
-          const ratio = next / prev;
-          return {
-            x: cx - (cx - o.x) * ratio,
-            y: cy - (cy - o.y) * ratio,
-          };
+          return offsetAfterZoom(o, { x: cx, y: cy }, prev, next);
         });
         return next;
       });
@@ -142,15 +138,16 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
     setDragging(false);
   }, []);
 
-  // Reset when a different image loads.
+  // Removing src aborts an outstanding image fetch when the tab unmounts.
+  // This route never creates object URLs, so there is nothing to revoke.
   useEffect(() => {
-    reset();
-    setError(false);
-  }, [src, reset]);
+    const image = imageRef.current;
+    return () => image?.removeAttribute("src");
+  }, [src]);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
-      <div className="glass glass-edge-bottom relative z-10 flex h-8 shrink-0 items-center justify-between px-2">
+      <div className="glass glass-edge-bottom relative z-10 flex h-11 shrink-0 items-center justify-between px-1 sm:h-8 sm:px-2">
         <span className="ui-label min-w-0 truncate">{fileName}</span>
         <div className="flex items-center gap-0.5">
           <IconOnlyButton
@@ -175,7 +172,8 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
             href={src}
             download={fileName}
             title="Download file"
-            className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground flex h-6 w-6 items-center justify-center rounded transition-colors"
+            aria-label={`Download ${fileName}`}
+            className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground focus-visible:ring-primary flex h-11 w-11 touch-manipulation items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none sm:h-6 sm:w-6"
           >
             <Download className="h-3 w-3" />
           </a>
@@ -192,15 +190,17 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
         style={{ touchAction: zoom > 1 ? "none" : "auto", cursor: dragging ? "grabbing" : zoom > 1 ? "grab" : "default" }}
       >
         {error ? (
-          <div className="flex flex-col items-center gap-2 p-8">
+          <div role="alert" className="flex flex-col items-center gap-2 p-8">
             <span className="ui-label">Cannot display image</span>
             <span className="ui-meta text-muted-foreground/70">
-              the file may be corrupt or an unsupported format
+              the file may have been deleted or uses an unsupported format
             </span>
           </div>
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
+            key={src}
+            ref={imageRef}
             src={src}
             alt={fileName}
             draggable={false}
@@ -208,6 +208,7 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
             className="max-h-full max-w-full select-none rounded-md object-contain will-change-transform"
             style={{
               transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+              transformOrigin: "center",
               transition: dragging ? "none" : "transform 0.12s ease-out",
             }}
           />
@@ -235,53 +236,76 @@ function StreamingPlayer({
   kind: "video" | "audio";
 }) {
   const [error, setError] = useState(false);
-  useEffect(() => setError(false), [src]);
+  const mediaRef = useRef<HTMLMediaElement>(null);
+
+  const releaseMedia = useCallback(() => {
+    const media = mediaRef.current;
+    if (!media) return;
+    media.pause();
+    media.removeAttribute("src");
+    media.load();
+  }, []);
+
+  // Explicitly release the native player's connection and decoder resources.
+  useEffect(() => releaseMedia, [releaseMedia]);
+
+  const handleError = useCallback(() => {
+    releaseMedia();
+    setError(true);
+  }, [releaseMedia]);
 
   const media =
     kind === "video" ? (
       <video
+        key={src}
+        ref={mediaRef as React.RefObject<HTMLVideoElement>}
         src={src}
+        aria-label={`${fileName} video player`}
         controls
         preload="metadata"
         playsInline
         className="max-h-full max-w-full rounded-md bg-black object-contain"
-        onError={() => setError(true)}
+        onError={handleError}
       />
     ) : (
       <audio
+        key={src}
+        ref={mediaRef as React.RefObject<HTMLAudioElement>}
         src={src}
+        aria-label={`${fileName} audio player`}
         controls
         preload="metadata"
         className="w-full max-w-md"
-        onError={() => setError(true)}
+        onError={handleError}
       />
     );
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
-      <div className="glass glass-edge-bottom relative z-10 flex h-8 shrink-0 items-center justify-between px-2">
+      <div className="glass glass-edge-bottom relative z-10 flex h-11 shrink-0 items-center justify-between px-1 sm:h-8 sm:px-2">
         <span className="ui-label min-w-0 truncate">{fileName}</span>
         <a
           href={src}
           download={fileName}
           title="Download file"
-          className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground flex h-6 w-6 items-center justify-center rounded transition-colors"
+          aria-label={`Download ${fileName}`}
+          className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground focus-visible:ring-primary flex h-11 w-11 touch-manipulation items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none sm:h-6 sm:w-6"
         >
           <Download className="h-3 w-3" />
         </a>
       </div>
       <div
         className={cn(
-          "flex min-h-0 flex-1 items-center justify-center p-4",
-          kind === "audio" && "px-6"
+          "flex min-h-0 flex-1 items-center justify-center p-2 sm:p-4",
+          kind === "audio" && "px-2 sm:px-6"
         )}
       >
         {error ? (
-          <div className="flex flex-col items-center gap-2">
+          <div role="alert" className="flex flex-col items-center gap-2">
             <Maximize2 className="text-muted-foreground/50 h-5 w-5" />
             <span className="ui-label">Cannot play media</span>
             <span className="ui-meta text-muted-foreground/70">
-              the browser does not support this format
+              the file may have been deleted or the browser does not support it
             </span>
           </div>
         ) : (
@@ -307,7 +331,7 @@ function IconOnlyButton({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground flex h-6 w-6 items-center justify-center rounded transition-colors"
+      className="text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground focus-visible:ring-primary flex h-11 w-11 touch-manipulation items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none sm:h-6 sm:w-6"
     >
       {icon}
     </button>

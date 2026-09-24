@@ -2,55 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { mimeTypeFor } from "@/lib/media-mime";
 
 /** Response cap: files larger than this are rejected rather than buffered. */
 const MAX_BYTES = 10 * 1024 * 1024;
-
-/**
- * Small extension -> Content-Type map; anything else is
- * application/octet-stream so it behaves as a generic binary download.
- */
-const MIME_TYPES: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  svg: "image/svg+xml",
-  bmp: "image/bmp",
-  ico: "image/x-icon",
-  pdf: "application/pdf",
-  json: "application/json",
-  js: "text/javascript",
-  mjs: "text/javascript",
-  ts: "text/typescript",
-  tsx: "text/typescript",
-  jsx: "text/javascript",
-  css: "text/css",
-  html: "text/html",
-  htm: "text/html",
-  txt: "text/plain",
-  md: "text/markdown",
-  csv: "text/csv",
-  xml: "application/xml",
-  yml: "application/x-yaml",
-  yaml: "application/x-yaml",
-  py: "text/x-python",
-  sh: "application/x-sh",
-  zip: "application/zip",
-  gz: "application/gzip",
-  tgz: "application/gzip",
-  tar: "application/x-tar",
-  wasm: "application/wasm",
-  mp3: "audio/mpeg",
-  mp4: "video/mp4",
-  webm: "video/webm",
-};
-
-function mimeTypeFor(filePath: string): string {
-  const ext = path.extname(filePath).slice(1).toLowerCase();
-  return MIME_TYPES[ext] || "application/octet-stream";
-}
 
 /**
  * GET /api/files/download?path=...

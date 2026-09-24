@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { getLanguageFromExtension } from "@/lib/file-utils";
+import { saveRefusalFor } from "@/lib/file-editor-save";
 
 export interface OpenFile {
   path: string;
@@ -240,13 +241,12 @@ export function useFileEditor(): UseFileEditorReturn {
         setSaveError(message);
         return { ok: false, error: message };
       }
-      if (file.isBinary || file.truncated) {
+      const saveRefusal = saveRefusalFor(file);
+      if (saveRefusal) {
         // A stale BINARY open is never saved, even by the conflict
         // overwrite path: the editor has no real bytes, only a placeholder.
-        const message =
-          "This file is binary or too large to edit and cannot be saved. Use download instead.";
-        setSaveError(message);
-        return { ok: false, error: message };
+        setSaveError(saveRefusal);
+        return { ok: false, error: saveRefusal };
       }
 
       const runSave = async (): Promise<{

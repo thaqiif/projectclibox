@@ -16,7 +16,8 @@ import { FileCode, Download, Eye, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { HtmlRenderer } from "./HtmlRenderer";
-import { MediaViewer, type MediaKind } from "./MediaViewer";
+import { MediaViewer } from "./MediaViewer";
+import { mediaKindFor } from "@/lib/media-mime";
 
 interface FileEditorProps {
   content: string;
@@ -175,48 +176,6 @@ function getLanguageExtension(language: string): Extension | null {
   }
 }
 
-// Streaming-viewer extension sets, kept in step with the MIME_TYPES map
-// in app/api/files/download/route.ts.
-const IMAGE_EXTENSIONS = new Set([
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
-  "webp",
-  "svg",
-  "bmp",
-  "ico",
-]);
-const VIDEO_EXTENSIONS = new Set([
-  "mp4",
-  "m4v",
-  "webm",
-  "mkv",
-  "mov",
-  "avi",
-  "ogv",
-]);
-const AUDIO_EXTENSIONS = new Set([
-  "mp3",
-  "wav",
-  "ogg",
-  "oga",
-  "m4a",
-  "flac",
-  "aac",
-  "opus",
-]);
-
-/** Which viewer applies to this path, if any. */
-function mediaKind(path: string | undefined): MediaKind | null {
-  if (!path) return null;
-  const ext = path.split(".").pop()?.toLowerCase() || "";
-  if (IMAGE_EXTENSIONS.has(ext)) return "image";
-  if (VIDEO_EXTENSIONS.has(ext)) return "video";
-  if (AUDIO_EXTENSIONS.has(ext)) return "audio";
-  return null;
-}
-
 function baseName(path: string): string {
   return path.split("/").pop() || path;
 }
@@ -269,6 +228,7 @@ export function FileEditor({
   const isMarkdown = language === "markdown";
   const isHtml = language === "html";
   const hasPreview = isMarkdown || isHtml;
+  const kind = mediaKindFor(path);
 
   useEffect(() => {
     if (!hasPreview) {
@@ -277,15 +237,18 @@ export function FileEditor({
     }
   }, [hasPreview]);
 
+  // Every recognized media extension streams through the viewer, including
+  // text-based formats such as SVG that binary sniffing would otherwise make
+  // editable. Media paths never expose CodeMirror or a save command.
+  if (path && kind) {
+    return <MediaViewer path={path} kind={kind} fileName={baseName(path)} />;
+  }
+
   // Truncated files (placeholder only) get read-only treatment: the real
   // bytes are not here, so no editing surface and no save path. Media is
   // the exception: the viewer streams from disk directly, so it works at
   // any size.
   if (truncated) {
-    const kind = mediaKind(path);
-    if (path && kind) {
-      return <MediaViewer path={path} kind={kind} fileName={baseName(path)} />;
-    }
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
         <FileCode className="text-muted-foreground/70 h-4 w-4" />
@@ -309,18 +272,6 @@ export function FileEditor({
   // Binary files: media streams inline, everything else gets a download
   // affordance instead of a dead end.
   if (isBinary) {
-    const kind = mediaKind(path);
-    // Media files get the streaming viewer: it reads through its own
-    // endpoint, so it works for any size and never touches edit/save paths.
-    if (path && kind) {
-      return (
-        <MediaViewer
-          path={path}
-          kind={kind}
-          fileName={baseName(path)}
-        />
-      );
-    }
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
         <FileCode className="text-muted-foreground/70 h-4 w-4" />
