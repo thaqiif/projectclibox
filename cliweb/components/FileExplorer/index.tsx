@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useId } from "react";
 import dynamic from "next/dynamic";
 import { FileTabs } from "./FileTabs";
 import type { UseFileEditorReturn } from "@/hooks/useFileEditor";
@@ -76,6 +76,229 @@ interface FileExplorerProps {
   fileEditor: UseFileEditorReturn;
   /** Choose the compact tree/editor flow from this explorer's own width. */
   responsiveToContainer?: boolean;
+}
+
+interface FileManagerActionsProps {
+  workingDirectory: string;
+  showHidden: boolean;
+  onToggleHidden: () => void;
+  onRefresh: () => void;
+  compact?: boolean;
+}
+
+function FileManagerActions({
+  workingDirectory,
+  showHidden,
+  onToggleHidden,
+  onRefresh,
+  compact = false,
+}: FileManagerActionsProps) {
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const folderNameInputId = useId();
+  const folderErrorId = `${folderNameInputId}-error`;
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [folderName, setFolderName] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderError, setFolderError] = useState<string | null>(null);
+  const iconClass = compact
+    ? "h-7 w-7 shrink-0 rounded"
+    : "h-10 w-10 shrink-0 rounded-full";
+
+  const handleUploadSelection = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const input = event.currentTarget;
+    const selectedFiles = Array.from(input.files ?? []);
+    input.value = "";
+    if (selectedFiles.length === 0) return;
+
+    setUploadingFiles(true);
+    try {
+      // The progress banner tracks one file at a time, so keep batches
+      // sequential and land each file in the directory currently displayed.
+      for (const file of selectedFiles) {
+        await uploadFileToTemp(file, {
+          targetDir: workingDirectory,
+          createTargetDir: false,
+        });
+      }
+    } finally {
+      setUploadingFiles(false);
+    }
+  };
+
+  const openFolderDialog = () => {
+    setFolderName("");
+    setFolderError(null);
+    setFolderDialogOpen(true);
+  };
+
+  const handleCreateFolder = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = folderName.trim();
+    if (!name || name === "." || name === ".." || name.includes("/")) {
+      setFolderError("Enter a folder name without slashes.");
+      return;
+    }
+
+    const parent = workingDirectory.replace(/\/+$/, "");
+    setCreatingFolder(true);
+    setFolderError(null);
+    try {
+      await fileMkdir(`${parent}/${name}`);
+      setFolderDialogOpen(false);
+      setFolderName("");
+      onRefresh();
+    } catch (error) {
+      setFolderError(
+        error instanceof Error ? error.message : "Could not create folder."
+      );
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  return (
+    <>
+      <input
+        ref={uploadInputRef}
+        type="file"
+        multiple
+        tabIndex={-1}
+        aria-label="Choose files to upload"
+        className="sr-only"
+        onChange={handleUploadSelection}
+      />
+      <Button
+        variant="ghost"
+        size={compact ? "icon-sm" : "icon"}
+        onClick={() => uploadInputRef.current?.click()}
+        disabled={uploadingFiles}
+        className={iconClass}
+        aria-label="Upload files"
+        title="Upload files"
+      >
+        {uploadingFiles ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Upload className="h-4 w-4" />
+        )}
+      </Button>
+      <Button
+        variant="ghost"
+        size={compact ? "icon-sm" : "icon"}
+        onClick={openFolderDialog}
+        disabled={creatingFolder}
+        className={iconClass}
+        aria-label="Create folder"
+        title="Create folder"
+      >
+        <FolderPlus className="h-4 w-4" />
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size={compact ? "icon-sm" : "icon"}
+            className={iconClass}
+            aria-label="File manager actions"
+            title="File manager actions"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" side="bottom">
+          <DropdownMenuCheckboxItem
+            checked={showHidden}
+            onCheckedChange={(checked) => {
+              if (checked !== showHidden) onToggleHidden();
+            }}
+          >
+            {showHidden ? (
+              <Eye className="h-4 w-4" />
+            ) : (
+              <EyeOff className="h-4 w-4" />
+            )}
+            Show hidden files
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuItem onSelect={onRefresh}>
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Dialog
+        open={folderDialogOpen}
+        onOpenChange={(open) => {
+          setFolderDialogOpen(open);
+          if (!open) {
+            setFolderName("");
+            setFolderError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <form onSubmit={handleCreateFolder} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>New folder</DialogTitle>
+              <DialogDescription>
+                Create a folder in the current directory.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <label
+                htmlFor={folderNameInputId}
+                className="text-sm font-medium"
+              >
+                Folder name
+              </label>
+              <input
+                id={folderNameInputId}
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+                value={folderName}
+                onChange={(event) => {
+                  setFolderName(event.target.value);
+                  setFolderError(null);
+                }}
+                className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                aria-invalid={folderError !== null}
+                aria-describedby={folderError ? folderErrorId : undefined}
+              />
+              {folderError && (
+                <p
+                  id={folderErrorId}
+                  role="alert"
+                  className="text-destructive text-sm"
+                >
+                  {folderError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={creatingFolder}
+                onClick={() => setFolderDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={creatingFolder || !folderName.trim()}
+              >
+                {creatingFolder && <Loader2 className="h-4 w-4 animate-spin" />}
+                Create folder
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 export function FileExplorer({
@@ -591,10 +814,12 @@ function DesktopFileExplorer({
           )}
           <span className="ui-label shrink-0">Files</span>
           <ExplorerBreadcrumb breadcrumbs={breadcrumbs} onNavigateTo={onNavigateTo} />
-          <ExplorerListButtons
+          <FileManagerActions
+            workingDirectory={workingDirectory}
             showHidden={showHidden}
             onToggleHidden={onToggleHidden}
             onRefresh={onRefresh}
+            compact
           />
         </div>
         {/* FILTER_INTEGRATION: filter input above listing */}
@@ -740,68 +965,6 @@ function MobileFileExplorer({
   filter,
   onFilterChange,
 }: MobileFileExplorerProps) {
-  const uploadInputRef = useRef<HTMLInputElement>(null);
-  const [uploadingFiles, setUploadingFiles] = useState(false);
-  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
-  const [folderName, setFolderName] = useState("");
-  const [creatingFolder, setCreatingFolder] = useState(false);
-  const [folderError, setFolderError] = useState<string | null>(null);
-
-  const handleUploadSelection = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const input = event.currentTarget;
-    const selectedFiles = Array.from(input.files ?? []);
-    input.value = "";
-    if (selectedFiles.length === 0) return;
-
-    setUploadingFiles(true);
-    try {
-      // Keep uploads sequential because the progress banner reports one active
-      // upload at a time. Every file lands in the folder currently displayed.
-      for (const file of selectedFiles) {
-        await uploadFileToTemp(file, {
-          targetDir: workingDirectory,
-          createTargetDir: false,
-        });
-      }
-    } finally {
-      setUploadingFiles(false);
-    }
-  };
-
-  const openFolderDialog = () => {
-    setFolderName("");
-    setFolderError(null);
-    setFolderDialogOpen(true);
-  };
-
-  const handleCreateFolder = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const name = folderName.trim();
-    if (!name || name === "." || name === ".." || name.includes("/")) {
-      setFolderError("Enter a folder name without slashes.");
-      return;
-    }
-
-    const parent = workingDirectory.replace(/\/+$/, "");
-    const path = `${parent}/${name}`;
-    setCreatingFolder(true);
-    setFolderError(null);
-    try {
-      await fileMkdir(path);
-      setFolderDialogOpen(false);
-      setFolderName("");
-      onRefresh();
-    } catch (error) {
-      setFolderError(
-        error instanceof Error ? error.message : "Could not create folder."
-      );
-    } finally {
-      setCreatingFolder(false);
-    }
-  };
-
   // Show editor when a file is active
   if (activeFile) {
     const isCurrentDirty = activeFilePath ? isDirty(activeFilePath) : false;
@@ -910,73 +1073,12 @@ function MobileFileExplorer({
             <ArrowLeft className="h-4 w-4" />
           </Button>
         )}
-        <input
-          ref={uploadInputRef}
-          type="file"
-          multiple
-          tabIndex={-1}
-          aria-label="Choose files to upload"
-          className="sr-only"
-          onChange={handleUploadSelection}
+        <FileManagerActions
+          workingDirectory={workingDirectory}
+          showHidden={showHidden}
+          onToggleHidden={onToggleHidden}
+          onRefresh={onRefresh}
         />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => uploadInputRef.current?.click()}
-          disabled={uploadingFiles}
-          className="h-10 w-10 shrink-0 rounded-full"
-          aria-label="Upload files"
-          title="Upload files"
-        >
-          {uploadingFiles ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Upload className="h-4 w-4" />
-          )}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={openFolderDialog}
-          disabled={creatingFolder}
-          className="h-10 w-10 shrink-0 rounded-full"
-          aria-label="Create folder"
-          title="Create folder"
-        >
-          <FolderPlus className="h-4 w-4" />
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10 shrink-0 rounded-full"
-              aria-label="File manager actions"
-              title="File manager actions"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side="bottom">
-            <DropdownMenuCheckboxItem
-              checked={showHidden}
-              onCheckedChange={(checked) => {
-                if (checked !== showHidden) onToggleHidden();
-              }}
-            >
-              {showHidden ? (
-                <Eye className="h-4 w-4" />
-              ) : (
-                <EyeOff className="h-4 w-4" />
-              )}
-              Show hidden files
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuItem onSelect={onRefresh}>
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
       {/* FILTER_INTEGRATION: filter input above listing */}
@@ -1008,114 +1110,7 @@ function MobileFileExplorer({
       <div className="shrink-0 px-2 pb-2">
         <UploadProgressBanner />
       </div>
-      <Dialog
-        open={folderDialogOpen}
-        onOpenChange={(open) => {
-          setFolderDialogOpen(open);
-          if (!open) {
-            setFolderName("");
-            setFolderError(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <form onSubmit={handleCreateFolder} className="space-y-4">
-            <DialogHeader>
-              <DialogTitle>New folder</DialogTitle>
-              <DialogDescription>
-                Create a folder in the current directory.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2">
-              <label
-                htmlFor="mobile-new-folder-name"
-                className="text-sm font-medium"
-              >
-                Folder name
-              </label>
-              <input
-                id="mobile-new-folder-name"
-                autoFocus
-                autoComplete="off"
-                spellCheck={false}
-                value={folderName}
-                onChange={(event) => {
-                  setFolderName(event.target.value);
-                  setFolderError(null);
-                }}
-                className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-                aria-invalid={folderError !== null}
-                aria-describedby={folderError ? "mobile-new-folder-error" : undefined}
-              />
-              {folderError && (
-                <p
-                  id="mobile-new-folder-error"
-                  role="alert"
-                  className="text-destructive text-sm"
-                >
-                  {folderError}
-                </p>
-              )}
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={creatingFolder}
-                onClick={() => setFolderDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={creatingFolder || !folderName.trim()}
-              >
-                {creatingFolder && <Loader2 className="h-4 w-4 animate-spin" />}
-                Create folder
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
-  );
-}
-
-// Eye/eye-off and refresh controls shared by the desktop and mobile headers
-function ExplorerListButtons({
-  showHidden,
-  onToggleHidden,
-  onRefresh,
-}: {
-  showHidden: boolean;
-  onToggleHidden: () => void;
-  onRefresh: () => void;
-}) {
-  return (
-    <>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={onToggleHidden}
-        className="text-muted-foreground hover:text-foreground"
-        aria-label={showHidden ? "Hide hidden files" : "Show hidden files"}
-      >
-        {showHidden ? (
-          <Eye className="h-3.5 w-3.5" />
-        ) : (
-          <EyeOff className="h-3.5 w-3.5" />
-        )}
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={onRefresh}
-        className="text-muted-foreground hover:text-foreground"
-        aria-label="Refresh"
-      >
-        <RefreshCw className="h-3.5 w-3.5" />
-      </Button>
-    </>
   );
 }
 
