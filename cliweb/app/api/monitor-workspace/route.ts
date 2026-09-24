@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, queries } from "@/lib/db";
+import { guardJsonSameOrigin } from "@/lib/route-guards";
 import {
   DEFAULT_MONITOR_WORKSPACE,
   MONITOR_WORKSPACE_SETTING_KEY,
@@ -42,6 +43,12 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
+  // CSRF parity with the other mutating routes: cross-origin JSON POSTs
+  // will not attach application/json (no CORS preflight), and form/array
+  // style cross-origin PUTs fail the same-origin check.
+  const guard = guardJsonSameOrigin(request);
+  if (guard) return guard;
+
   try {
     const workspace = normalizeMonitorWorkspace(await request.json());
     queries

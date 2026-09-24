@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
+  Columns3,
   Menu,
   Terminal as TerminalIcon,
   FolderOpen,
@@ -157,6 +158,8 @@ interface MobileTabBarProps {
   viewMode: ViewMode;
   onMenuClick?: () => void;
   onViewModeChange: (mode: ViewMode) => void;
+  onMonitorToggle?: () => void;
+  monitorAvailable: boolean;
 }
 
 export function MobileTabBar({
@@ -165,6 +168,8 @@ export function MobileTabBar({
   viewMode,
   onMenuClick,
   onViewModeChange,
+  onMonitorToggle,
+  monitorAvailable,
 }: MobileTabBarProps) {
   const renameTerminal = useTerminalRename();
 
@@ -242,6 +247,24 @@ export function MobileTabBar({
             onClick={onViewModeChange}
           />
         </div>
+      )}
+
+      {onMonitorToggle && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Open monitor workspace"
+          title="Monitor"
+          aria-pressed={false}
+          disabled={!monitorAvailable}
+          onClick={(e) => {
+            e.stopPropagation();
+            onMonitorToggle();
+          }}
+          className="h-9 w-9 shrink-0 rounded-full"
+        >
+          <Columns3 className="h-4 w-4" />
+        </Button>
       )}
     </div>
   );

@@ -51,7 +51,64 @@ mkdir -p \
     "${HOME}/.gitstate" \
     "${HOME}/.ssh" \
     "${NANOBREW_ROOT}"
+
+# Pre-create the profile data directory when CLIWEB_PROFILE is set so the
+# app never has to self-bootstrap its DB folder (see lib/db/index.ts).
+PROFILE_SUFFIX=""
+if [ -n "${CLIWEB_PROFILE:-}" ]; then
+    # Match lib/runtime-environment.ts cliwebProfileSuffix(): slugify to
+    # [a-z0-9_-] and collapse runs of other characters to a single dash.
+    slug=$(printf '%s' "${CLIWEB_PROFILE}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^[-._]+//; s/[-._]+$//')
+    if [ -n "${slug}" ] && [ "${slug}" != "default" ]; then
+        PROFILE_SUFFIX="-${slug}"
+        mkdir -p "${HOME}/.cliweb${PROFILE_SUFFIX}"
+    fi
+fi
 chmod 700 "${HOME}/.ssh"
+
+# Guard against two deployments sharing this persisted home mount with
+# different PUID/PGID. Ownership is applied with chown -R on every boot
+# below, so a second deployment with different ids would steal ownership of
+# files the first deployment (still running) needs to access - the other
+# instance then corrupts or crashes with permission errors. Record the
+# current deployment's ownership in a marker and refuse to start mismatched
+# deployments: the fix is to set identical PUID/PGID on both, or give each
+# deployment its own persisted home on the host.
+# Write-or-claim the marker with an exclusive create (noclobber) so two
+# containers rejected to start simultaneously cannot both pass: only the
+# first create wins, the loser re-reads the winner's value and aborts on a
+# mismatch. A plain check-then-echo has a TOCTOU window in which two
+# simultaneously starting deployments (both seeing no marker) would each
+# proceed to chown -R.
+OWNER_MARKER="${HOME}/.cliweb/.deployment-owner"
+WANT_OWNER="${PUID}:${PGID}"
+owner_claimed=0
+tries=0
+while [ "${owner_claimed}" -eq 0 ] && [ "${tries}" -lt 5 ]; do
+    if ( set -o noclobber; printf '%s\n' "${WANT_OWNER}" > "${OWNER_MARKER}" ) 2>/dev/null; then
+        owner_claimed=1
+    else
+        existing_owner=$(cat "${OWNER_MARKER}" 2>/dev/null || echo "")
+        if [ -n "${existing_owner}" ] && [ "${existing_owner}" != "${WANT_OWNER}" ]; then
+            echo "This persisted home is owned by UID owner ${existing_owner} (deployment owner marker ${OWNER_MARKER})." >&2
+            echo "This deployment wants ${WANT_OWNER}. Starting would chown the shared /home and break the other deployment (permission errors)." >&2
+            echo "Fix: set identical PUID and PGID on every deployment that shares this home volume, or mount a separate home path for this deployment." >&2
+            exit 1
+        fi
+        if [ "${existing_owner}" = "${WANT_OWNER}" ]; then
+            owner_claimed=1
+        fi
+    fi
+    tries=$((tries + 1))
+    [ "${owner_claimed}" -eq 1 ] || sleep 1
+done
+if [ "${owner_claimed}" -ne 1 ]; then
+    echo "Could not read the deployment owner marker after 5 attempts (empty or unreadable ${OWNER_MARKER})." >&2
+    exit 1
+fi
+# Root owns the marker so the app-internal cliweb user cannot rewrite it.
+chown root:root "${OWNER_MARKER}" 2>/dev/null || true
+chmod 644 "${OWNER_MARKER}"
 
 # `.bash_profile` is on this list because bash reads only the *first* of
 # ~/.bash_profile, ~/.bash_login and ~/.profile for a login shell. Tool
@@ -75,6 +132,11 @@ export LOGNAME=cliweb
 # Ensure the persisted volumes and the mounted workspace are usable by the
 # remapped user. /opt dependencies remain root-owned and read-only.
 chown -R cliweb:cliweb "${HOME}" "${NANOBREW_ROOT}" /workspaces
+# chown -R above resets the marker's ownership to cliweb; restore root so the
+# runtime app user cannot tamper with the ownership guard (it is re-read as
+# root on every boot, so root ownership is what the guard requires).
+chown root:root "${OWNER_MARKER}" 2>/dev/null || true
+chmod 644 "${OWNER_MARKER}" 2>/dev/null || true
 
 # nanobrew stores its package database, cache, Cellar, and command links below
 # its fixed /opt/nanobrew root. The root is a host bind mount, so nb init is

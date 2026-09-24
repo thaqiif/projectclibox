@@ -20,7 +20,6 @@ import { useSidebarPinned } from "@/hooks/useSidebarPinned";
 import { useTerminalRename } from "@/hooks/useTerminalRename";
 import { WorkbenchTitle } from "./WorkbenchTitle";
 import { MonitorWorkspace } from "@/components/MonitorWorkspace";
-import { useMonitorWorkspace } from "@/hooks/useMonitorWorkspace";
 
 export function DesktopView({
   terminals,
@@ -32,11 +31,10 @@ export function DesktopView({
   fetchTerminals,
   handleDetachTerminal,
   renderPane,
+  monitor,
 }: ViewProps) {
   const { isPinned, togglePin } = useSidebarPinned();
   const renameTerminal = useTerminalRename();
-  const monitor = useMonitorWorkspace();
-
   return (
     <div className="ambient-canvas flex h-screen overflow-hidden">
       <DesktopSidebar
@@ -108,17 +106,18 @@ export function DesktopView({
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {monitor.workspace?.enabled && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Add monitor pane"
-                disabled={monitor.workspace.panes.length >= 3}
-                onClick={monitor.addPane}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            )}
+            {monitor.workspace?.enabled &&
+              !monitor.workspace.panes.some((pane) => pane.terminalId) && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Add monitor pane"
+                  disabled={monitor.workspace.panes.length >= 3}
+                  onClick={monitor.addPane}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              )}
             <Button
               variant={monitor.workspace?.enabled ? "secondary" : "ghost"}
               size="sm"
@@ -135,7 +134,7 @@ export function DesktopView({
 
         {/* The terminal is content, not chrome: it stays opaque, and the
             glass bar above it is what floats. */}
-        <div className="bg-background relative min-h-0 flex-1">
+        <div className="bg-background relative min-h-0 min-w-0 w-full flex-1">
           {monitor.workspace?.enabled ? (
             <MonitorWorkspace
               workspace={monitor.workspace}

@@ -21,6 +21,25 @@ function uniquePath(entries: string[]): string {
  * bind mount. Keeping both package managers' writable roots under that home
  * only works when every process receives the same prefix and PATH.
  */
+/**
+ * Per-deployment data suffix derived from CLIWEB_PROFILE.
+ *
+ * Two deployments (production and test) can share the same persisted home
+ * volume without seeing each other's data: with CLIWEB_PROFILE=test set on
+ * one deployment, its data directories are suffixed, e.g.
+ * ~/.cliweb-test/cliweb.db and ~/.cliweb-test/.trash. The default profile
+ * (no variable, or empty) keeps today's paths unchanged for compatibility.
+ */
+export function cliwebProfileSuffix(
+  input: Record<string, string | undefined> = process.env
+): string {
+  const raw = (input.CLIWEB_PROFILE || "").trim().toLowerCase();
+  if (!raw) return "";
+  const slug = raw.replace(/[^a-z0-9_-]+/g, "-").replace(/^[-._]+|[-._]+$/g, "");
+  if (!slug || slug === "default") return "";
+  return `-${slug}`;
+}
+
 export function buildCliwebEnvironment(
   input: Record<string, string | undefined> = process.env
 ): NodeJS.ProcessEnv {

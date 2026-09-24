@@ -1,0 +1,95 @@
+# Test-deployment compose file.
+#
+# Same stack as docker-compose.yml (production), with test-specific defaults
+# and override names so a second Coolify app can deploy from this branch/app
+# without touching production's state:
+#
+#   - persisted home:   /home/cliweb-test   (container sees /home/cliweb)
+#   - workspaces:       ./workspaces-test   (container sees /workspaces)
+#   - web port:         3012 on the host
+#   - CLIWEB_PROFILE=test, so app state lives in ~/.cliweb-test inside the
+#     home volume (belt and braces; with a separate home this is redundant
+#     but harmless).
+#
+# Production keeps docker-compose.yml unchanged.
+
+services:
+  cliweb:
+    build:
+      context: .
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CLIWEB_PORT: 3011
+      CLIWEB_PROFILE: test
+      CLIWEB_NANOBREW_ROOT: /opt/nanobrew
+      CLIWEB_NANOBREW_BIN: /usr/local/bin/nb
+      CHROMIUM_PATH: /usr/bin/chromium
+      NANOBREW_NO_TELEMETRY: "1"
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      SHELL: /bin/bash
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      # User-local package installs and nanobrew state are written below the
+      # host bind mount and therefore survive container recreation and rebuilds.
+      NPM_CONFIG_PREFIX: /home/cliweb/.local
+      NPM_CONFIG_USERCONFIG: /home/cliweb/.npmrc
+      PIP_USER: "1"
+      PYTHONUSERBASE: /home/cliweb/.local
+    ports:
+      # Test port: 3012 host-side, via TEST_* variables so a shared .env that
+      # already sets HOST_PORT=3011 for production cannot collide. Set
+      # TEST_HOST_BIND=0.0.0.0 only when the test UI should be reachable from
+      # other devices.
+      - "${TEST_HOST_BIND:-127.0.0.1}:${TEST_HOST_PORT:-3012}:3011"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Hardcoded test home on the host; container path stays /home/cliweb.
+      - /home/cliweb-test:/home/cliweb
+      - /home/cliweb-test/nanobrew:/opt/nanobrew
+      # Test workspaces folder beside the repo checkout's default.
+      - ${TEST_WORKSPACE_DIR:-./workspaces-test}:/workspaces
+
+    # Pass host devices through so web terminals can use hardware features.
+    # Mirror of production's mapping; remove lines for devices the host
+    # lacks (see docker-compose.yml comments for what each one is for).
+    devices:
+      - /dev/kvm:/dev/kvm
+      # AMD amdgpu → card0 / renderD128 (primary)
+      - /dev/dri/card1:/dev/dri/card0
+      - /dev/dri/renderD129:/dev/dri/renderD128
+      # virtio-gpu → card1 / renderD129 (secondary)
+      - /dev/dri/card0:/dev/dri/card1
+      - /dev/dri/renderD128:/dev/dri/renderD129
+      - /dev/kfd:/dev/kfd
+
+  tailscale:
+    image: tailscale/tailscale:v1.94.1@sha256:21df0b5a84efa35c0a507f4dd2340e1b1295683634a28968707354d5bd991d9c
+    depends_on:
+      cliweb:
+        condition: service_started
+    network_mode: service:cliweb
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/tailscaled"]
+    command:
+      - "--state=/var/lib/tailscale/tailscaled.state"
+      - "--socket=/tmp/tailscaled.sock"
+      - "--tun=tailscale0"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      # Separate Tailscale state per deployment so prod and test do not share
+      # one tailnet identity.
+      - type: bind
+        source: /var/lib/cliweb-tailscale-test
+        target: /var/lib/tailscale
+        bind:
+          create_host_path: true

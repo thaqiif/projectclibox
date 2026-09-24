@@ -7,7 +7,6 @@ import {
   Send,
   Mic,
   MicOff,
-  Paperclip,
   FileText,
   Plus,
   Trash2,
@@ -32,7 +31,8 @@ const SPECIAL_KEYS = {
 
 interface TerminalToolbarProps {
   onKeyPress: (key: string) => void;
-  onFilePicker?: () => void;
+  /** Clipboard/modal text, kept separate from physical keyboard input. */
+  onPasteText: (text: string) => void;
   onCopy?: () => boolean; // Returns true if selection was copied
   selectMode?: boolean;
   onSelectModeChange?: (enabled: boolean) => void;
@@ -269,6 +269,7 @@ function PasteModal({
           </button>
         </div>
         <textarea
+          data-terminal-paste-editor
           value={text}
           onChange={(e) => setText(e.target.value)}
           onPaste={(e) => {
@@ -297,7 +298,7 @@ function PasteModal({
 
 export function TerminalToolbar({
   onKeyPress,
-  onFilePicker,
+  onPasteText,
   onCopy,
   selectMode = false,
   onSelectModeChange,
@@ -330,14 +331,14 @@ export function TerminalToolbar({
     try {
       const text = await navigator.clipboard?.readText?.();
       if (text) {
-        sendText(text);
+        onPasteText(text);
         return;
       }
     } catch {
       // Clipboard API failed or unavailable
     }
     setShowPasteModal(true);
-  }, [sendText]);
+  }, [onPasteText]);
 
   // Handle copy with visual feedback
   const handleCopy = useCallback(() => {
@@ -496,7 +497,7 @@ export function TerminalToolbar({
       <PasteModal
         open={showPasteModal}
         onClose={() => setShowPasteModal(false)}
-        onPaste={sendText}
+        onPaste={onPasteText}
       />
       <SnippetsModal
         open={showSnippetsModal}
@@ -585,21 +586,6 @@ export function TerminalToolbar({
             )}
           >
             <Copy className="h-4 w-4" />
-          </button>
-        )}
-
-        {/* File picker button */}
-        {onFilePicker && (
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onFilePicker();
-            }}
-            className="press focus-ring text-muted-foreground hover:text-foreground relative flex h-11 min-w-[3.25rem] shrink-0 items-center justify-center rounded-lg px-2 transition-colors duration-200 hover:bg-[var(--fill-3)]"
-          >
-            <Paperclip className="h-4 w-4" />
           </button>
         )}
 

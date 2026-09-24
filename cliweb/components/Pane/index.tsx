@@ -15,12 +15,6 @@ import {
   TerminalSkeleton,
   FileExplorerSkeleton,
 } from "./PaneSkeletons";
-import {
-  Panel as ResizablePanel,
-  Group as ResizablePanelGroup,
-  Separator as ResizablePanelHandle,
-} from "react-resizable-panels";
-import { ShellDrawer } from "@/components/ShellDrawer";
 import { Welcome } from "@/components/Welcome";
 import { tmuxAttachCommand } from "@/lib/tmux-attach";
 
@@ -43,15 +37,17 @@ interface PaneProps {
   onSelectTerminal?: (name: string) => void;
   /** Welcome-screen actions, used only while nothing is attached. */
   onNewTerminal?: () => void;
+  onMonitorToggle?: () => void;
+  monitorAvailable?: boolean;
 }
 
 /**
  * The workbench's single terminal and file view that share its working
  * directory.
  *
- * There is one terminal and one tmux attachment. Splitting is delegated to
- * tmux (see /api/tmux/split), so what used to be a tree of React panes with
- * a tab strip on each is now a single surface showing whatever tmux draws.
+ * There is one terminal and one tmux attachment. What used to be a tree of
+ * React panes with a tab strip on each is now a single surface showing
+ * whatever tmux draws.
  */
 export const Pane = memo(function Pane({
   terminals,
@@ -60,16 +56,11 @@ export const Pane = memo(function Pane({
   onMenuClick,
   onSelectTerminal,
   onNewTerminal,
+  onMonitorToggle,
+  monitorAvailable = false,
 }: PaneProps) {
   const { isMobile } = useViewport();
-  const {
-    paneId,
-    attachedTmux,
-    viewMode,
-    shellDrawerOpen,
-    setViewMode,
-    toggleShellDrawer,
-  } = usePanes();
+  const { paneId, attachedTmux, viewMode, setViewMode } = usePanes();
 
   const terminalRef = useRef<TerminalHandle | null>(null);
 
@@ -128,6 +119,7 @@ export const Pane = memo(function Pane({
     <Terminal
       ref={setTerminalRef}
       onConnected={handleTerminalConnected}
+      workingDirectory={currentTerminal?.working_directory}
       onBeforeUnmount={(scrollState) => {
         terminalStateRegistry.saveTerminalState(paneId, "terminal", {
           scrollTop: scrollState.scrollTop,
@@ -177,6 +169,8 @@ export const Pane = memo(function Pane({
           viewMode={viewMode}
           onMenuClick={onMenuClick}
           onViewModeChange={setViewMode}
+          onMonitorToggle={onMonitorToggle}
+          monitorAvailable={monitorAvailable}
         />
       )}
 
@@ -194,43 +188,22 @@ export const Pane = memo(function Pane({
               />
             </div>
           )}
-
         </div>
       ) : (
-        <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
-          <ResizablePanel
-            defaultSize={shellDrawerOpen ? 70 : 100}
-            minSize={10}
-          >
-            <div className="relative h-full">
-              <div className={viewMode === "terminal" ? "h-full" : "hidden"}>
-                {surface}
-              </div>
+        <div className="relative h-full min-h-0 flex-1">
+          <div className={viewMode === "terminal" ? "h-full" : "hidden"}>
+            {surface}
+          </div>
 
-              {currentTerminal?.working_directory && (
-                <div className={viewMode === "files" ? "h-full" : "hidden"}>
-                  <FileExplorer
-                    workingDirectory={currentTerminal.working_directory}
-                    fileEditor={fileEditor}
-                  />
-                </div>
-              )}
+          {currentTerminal?.working_directory && (
+            <div className={viewMode === "files" ? "h-full" : "hidden"}>
+              <FileExplorer
+                workingDirectory={currentTerminal.working_directory}
+                fileEditor={fileEditor}
+              />
             </div>
-          </ResizablePanel>
-
-          {shellDrawerOpen && currentTerminal?.working_directory && (
-            <>
-              <ResizablePanelHandle className="relative h-px cursor-row-resize bg-[var(--fill-2)] transition-colors duration-200 after:absolute after:inset-x-0 after:-top-1 after:h-3 after:content-[''] hover:bg-primary/40 active:bg-primary/60" />
-              <ResizablePanel defaultSize={30} minSize={10}>
-                <ShellDrawer
-                  open={true}
-                  onOpenChange={toggleShellDrawer}
-                  workingDirectory={currentTerminal.working_directory}
-                />
-              </ResizablePanel>
-            </>
           )}
-        </ResizablePanelGroup>
+        </div>
       )}
     </div>
   );

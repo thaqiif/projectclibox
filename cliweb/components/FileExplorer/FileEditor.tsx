@@ -12,15 +12,26 @@ import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 import { markdown } from "@codemirror/lang-markdown";
 import type { Extension } from "@codemirror/state";
-import { FileCode, Eye, Code2 } from "lucide-react";
+import { FileCode, Download, Eye, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { HtmlRenderer } from "./HtmlRenderer";
+import { MediaViewer } from "./MediaViewer";
+import { mediaKindFor } from "@/lib/media-mime";
 
 interface FileEditorProps {
   content: string;
   language: string;
   isBinary: boolean;
+  /**
+   * The server could only return a placeholder note (file over the read
+   * limit). No editing surface is shown and saves are refused client-side;
+   * rendering the placeholder as editable text just sets users up to lose
+   * their edits to a save that always refuses.
+   */
+  truncated?: boolean;
+  /** Absolute file path; enables download and inline image preview. */
+  path?: string;
   readOnly?: boolean;
   dirty?: boolean;
   saving?: boolean;
@@ -165,10 +176,20 @@ function getLanguageExtension(language: string): Extension | null {
   }
 }
 
+function baseName(path: string): string {
+  return path.split("/").pop() || path;
+}
+
+function downloadUrl(path: string): string {
+  return `/api/files/download?path=${encodeURIComponent(path)}`;
+}
+
 export function FileEditor({
   content,
   language,
   isBinary,
+  truncated = false,
+  path,
   readOnly = false,
   dirty = false,
   saving = false,
@@ -207,6 +228,7 @@ export function FileEditor({
   const isMarkdown = language === "markdown";
   const isHtml = language === "html";
   const hasPreview = isMarkdown || isHtml;
+  const kind = mediaKindFor(path);
 
   useEffect(() => {
     if (!hasPreview) {
@@ -215,12 +237,58 @@ export function FileEditor({
     }
   }, [hasPreview]);
 
+  // Media is viewer-only, at any size: it streams from its own endpoint and
+  // never reaches CodeMirror or a save surface. Text-based media (SVG) is
+  // deliberately included, because an editing surface whose saves are refused
+  // would set users up to lose their edits; the viewer's download link is the
+  // way to get the source. lib/file-editor-save.ts enforces the same rule, so
+  // a stale open cannot be saved through the conflict-overwrite path either.
+  if (path && kind) {
+    return <MediaViewer path={path} kind={kind} fileName={baseName(path)} />;
+  }
+
+  // Truncated files (placeholder only) get read-only treatment: the real
+  // bytes are not here, so no editing surface and no save path. Media is
+  // the exception: the viewer streams from disk directly, so it works at
+  // any size.
+  if (truncated) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
+        <FileCode className="text-muted-foreground/70 h-4 w-4" />
+        <p className="ui-label">File too large to edit</p>
+        <p className="ui-meta text-center">
+          only a preview note is loaded; cannot save from here
+        </p>
+        {path && (
+          <a
+            href={downloadUrl(path)}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-1 ui-meta transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            download file
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  // Binary files: media streams inline, everything else gets a download
+  // affordance instead of a dead end.
   if (isBinary) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
         <FileCode className="text-muted-foreground/70 h-4 w-4" />
         <p className="ui-label">Binary file</p>
         <p className="ui-meta">no preview available</p>
+        {path && (
+          <a
+            href={downloadUrl(path)}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-1 ui-meta transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            download file
+          </a>
+        )}
       </div>
     );
   }
@@ -270,6 +338,15 @@ export function FileEditor({
                 )}
               </button>
             </>
+          )}
+          {path && (
+            <a
+              href={downloadUrl(path)}
+              title="Download file"
+              className="border-[var(--fill-2)] text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground flex items-center gap-1 border-l px-2.5 transition-colors"
+            >
+              <Download className="h-3 w-3" />
+            </a>
           )}
           {onSave && (
             <>

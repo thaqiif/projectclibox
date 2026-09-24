@@ -1,11 +1,8 @@
 "use client";
 
 import {
-  Columns2,
   FolderOpen,
-  Rows2,
   SquareTerminal,
-  Terminal,
 } from "lucide-react";
 import { usePanes } from "@/contexts/PaneContext";
 import {
@@ -21,13 +18,10 @@ import type { ViewMode } from "@/lib/panes";
  * The workbench's view controls, hoisted out of the terminal.
  *
  * These used to be a strip on every pane's tab bar. There is one terminal
- * now, so they belong to the workbench, not to a pane — and the splits go
- * to tmux, which means they outlive the page.
+ * now, so they belong to the workbench, not to a pane.
  *
- * Two different kinds of control live here and now look like it. What the
- * main surface *is* — terminal or files — is a segmented control, one choice
- * out of a set, with a selection that slides between the options. The shell
- * is a drawer that toggles independently, so it is a separate button.
+ * What the main surface *is* — terminal or files — is a segmented control,
+ * one choice out of a set, with a selection that slides between the options.
  */
 
 const SEGMENTS: { mode: ViewMode; label: string; icon: LucideIcon }[] = [
@@ -64,87 +58,11 @@ function Segment({
   );
 }
 
-function DrawerToggle({
-  icon: Icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: LucideIcon;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-pressed={active}
-          aria-label={label}
-          onClick={onClick}
-          className={cn(
-            "press focus-ring flex h-8 w-8 items-center justify-center rounded-full",
-            "transition-colors duration-200",
-            active
-              ? "bg-primary/14 text-primary"
-              : "text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground"
-          )}
-        >
-          <Icon className="h-4 w-4" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{label}</p>
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function SplitControl({
-  icon: Icon,
-  tooltip,
-  disabled,
-  onClick,
-}: {
-  icon: LucideIcon;
-  tooltip: string;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          onClick={onClick}
-          disabled={disabled}
-          aria-label={tooltip}
-          className={cn(
-            "press focus-ring text-muted-foreground hover:text-foreground",
-            "flex h-8 w-8 items-center justify-center rounded-full",
-            "transition-colors duration-200 hover:bg-[var(--fill-4)]",
-            "disabled:pointer-events-none disabled:opacity-30"
-          )}
-        >
-          <Icon className="h-4 w-4" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{tooltip}</p>
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
 export function WorkbenchBar() {
   const {
     attachedTmux,
     viewMode,
-    shellDrawerOpen,
     setViewMode,
-    toggleShellDrawer,
-    splitPane,
   } = usePanes();
 
   // Nothing attached means the welcome screen is up: there is no terminal
@@ -186,32 +104,6 @@ export function WorkbenchBar() {
             onClick={() => setViewMode(segment.mode)}
           />
         ))}
-      </div>
-
-      <div className="flex items-center gap-0.5">
-        <DrawerToggle
-          icon={Terminal}
-          label="Shell"
-          active={shellDrawerOpen}
-          onClick={toggleShellDrawer}
-        />
-      </div>
-
-      {/* Splits are tmux splits: they persist across a refresh, and are
-          only meaningful once the terminal is attached. */}
-      <div className="flex items-center gap-0.5">
-        <SplitControl
-          icon={Columns2}
-          tooltip="Split horizontal"
-          disabled={!attachedTmux}
-          onClick={() => splitPane("horizontal")}
-        />
-        <SplitControl
-          icon={Rows2}
-          tooltip="Split vertical"
-          disabled={!attachedTmux}
-          onClick={() => splitPane("vertical")}
-        />
       </div>
     </div>
   );

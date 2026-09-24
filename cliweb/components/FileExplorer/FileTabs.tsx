@@ -11,6 +11,8 @@ interface FileTabsProps {
   onSelect: (path: string) => void;
   onClose: (path: string) => void;
   isDirty: (path: string) => boolean;
+  /** Optional close-all button at the right edge; parent handles confirmation. */
+  onCloseAll?: () => void;
 }
 
 export function FileTabs({
@@ -19,6 +21,7 @@ export function FileTabs({
   onSelect,
   onClose,
   isDirty,
+  onCloseAll,
 }: FileTabsProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeTabRef = useRef<HTMLDivElement>(null);
@@ -39,10 +42,11 @@ export function FileTabs({
   }
 
   return (
-    <div
-      ref={scrollRef}
-      className="scrollbar-none glass glass-edge-bottom relative z-10 flex h-9 items-stretch overflow-x-auto"
-    >
+    <div className="glass glass-edge-bottom relative z-10 flex h-9 items-stretch overflow-hidden">
+      <div
+        ref={scrollRef}
+        className="scrollbar-none flex min-w-0 flex-1 items-stretch overflow-x-auto"
+      >
       {files.map((file, index) => {
         const isActive = file.path === activeFilePath;
         const dirty = isDirty(file.path);
@@ -104,6 +108,19 @@ export function FileTabs({
           </div>
         );
       })}
+      </div>
+      {onCloseAll && (
+        <button
+          type="button"
+          onClick={onCloseAll}
+          title="Close all files"
+          aria-label="Close all files"
+          className="border-[var(--fill-2)] text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground flex shrink-0 items-center gap-1 border-l px-2.5 text-[0.7rem] transition-colors"
+        >
+          <X className="h-3 w-3" />
+          all
+        </button>
+      )}
     </div>
   );
 }

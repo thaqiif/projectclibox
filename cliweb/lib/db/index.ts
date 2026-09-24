@@ -2,12 +2,22 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import { runMigrations } from "./migrations";
+import { cliwebProfileSuffix } from "../runtime-environment";
 
 // Re-export types and queries
 export * from "./types";
 export { queries } from "./queries";
 
-const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), "cliweb.db");
+// Default DB location: under the persistent CLIWeb home. With CLIWEB_PROFILE
+// set (e.g. "test"), data lives in ~/.cliweb-<profile>/ so production and
+// test deployments never share data. Explicit DB_PATH always wins.
+const DB_PATH =
+  process.env.DB_PATH ||
+  path.join(
+    process.env.HOME || process.cwd(),
+    `.cliweb${cliwebProfileSuffix()}`,
+    "cliweb.db"
+  );
 const LOCK_PATH = DB_PATH + ".init-lock";
 
 // Simple file-based lock for initialization
@@ -50,6 +60,10 @@ function withInitLock<T>(fn: () => T): T {
 // Initialize database with schema
 function initDb(): Database.Database {
   return withInitLock(() => {
+    // better-sqlite3 does not create missing parent directories. This
+    // matters for non-default profiles (CLIWEB_PROFILE=test -> ~/.cliweb-test),
+    // which the container entrypoint does not pre-create.
+    fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     const db = new Database(DB_PATH, { timeout: 10000 });
 
     // Enable WAL mode for better concurrency

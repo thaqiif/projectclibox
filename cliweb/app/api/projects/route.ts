@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { guardJsonSameOrigin } from "@/lib/route-guards";
 import {
   getAllProjects,
   createProject,
@@ -21,6 +22,9 @@ export async function GET() {
 
 // POST /api/projects - Create a new project
 export async function POST(request: NextRequest) {
+  const guard = guardJsonSameOrigin(request);
+  if (guard) return guard;
+
   try {
     const body = await request.json();
     const { name, workingDirectory } = body;

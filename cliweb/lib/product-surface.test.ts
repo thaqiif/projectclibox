@@ -19,6 +19,9 @@ test("removed integrations are no longer shipped", () => {
     "components/GitDrawer/index.tsx",
     "components/DiffViewer/index.tsx",
     "components/PRCreationModal.tsx",
+    // The shell drawer: its only entry point was the workbench bar toggle,
+    // which is gone. The tmux split route stays; only its UI buttons left.
+    "components/ShellDrawer/index.tsx",
     "lib/model-catalog.ts",
     "lib/providers.ts",
     "lib/providers/registry.ts",
@@ -256,8 +259,8 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
     "the image should configure nanobrew's persistent root"
   );
   assert.ok(
-    compose.includes("source: /home/cliweb/nanobrew") &&
-      compose.includes("target: /opt/nanobrew"),
+    compose.includes("/home/cliweb/nanobrew:/opt/nanobrew") &&
+    compose.includes("/home/cliweb:/home/cliweb"),
     "nanobrew's fixed data root should be a host bind mount"
   );
   assert.ok(
@@ -457,7 +460,7 @@ test("the mounted workspaces are writable by cliweb", () => {
   );
 });
 
-test("desktop monitor workspace stays isolated from mobile", () => {
+test("monitor workspace adapts between desktop panes and mobile tabs", () => {
   const page = source("app/page.tsx");
   const desktop = source("components/views/DesktopView.tsx");
   const mobile = source("components/views/MobileView.tsx");
@@ -467,7 +470,10 @@ test("desktop monitor workspace stays isolated from mobile", () => {
   const route = source("app/api/monitor-workspace/route.ts");
 
   assert.match(page, /if \(isMobile\)[\s\S]*?<MobileView[\s\S]*?<DesktopView/);
-  assert.match(desktop, /useMonitorWorkspace\(\)/);
+  assert.match(page, /const monitor = useMonitorWorkspace\(\)/);
+  assert.match(desktop, /monitor\.workspace\?\.enabled/);
+  assert.match(monitor, /role="tablist"/);
+  assert.match(monitor, /aria-label="Monitor terminals"/);
   assert.match(desktop, /Toggle monitor workspace/);
   assert.match(desktop, /handleCloseTerminal\(activeTerminal\.name\)/);
   assert.doesNotMatch(desktop, /aria-label="Remove monitor pane"/);
@@ -496,10 +502,9 @@ test("desktop monitor workspace stays isolated from mobile", () => {
     /forgetTerminal\(terminal\.name\)/
   );
   assert.match(page, /if \(attachedTmux === name\) detach\(\)/);
-  assert.doesNotMatch(
-    mobile,
-    /MonitorWorkspace|useMonitorWorkspace|monitor pane/i
-  );
+  assert.match(mobile, /<MonitorWorkspace/);
+  assert.match(mobile, /onSelectPane=\{setSelectedPaneId\}/);
+  assert.match(mobile, /monitor\.assignTerminal\(selectedPane\.id, id\)/);
 });
 
 test("terminal cards expose desktop drag identities", () => {
@@ -577,6 +582,8 @@ test("unreachable surfaces are removed", () => {
     "lib/rangeSelectionUtils.ts",
     // An arbitrary-command endpoint nothing called.
     "app/api/exec/route.ts",
+    // The terminal paperclip was its only entry point.
+    "components/FilePicker.tsx",
   ];
 
   for (const relativePath of removedPaths) {
