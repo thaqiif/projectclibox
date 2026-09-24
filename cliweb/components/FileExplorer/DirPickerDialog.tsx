@@ -68,6 +68,20 @@ async function listDirs(path: string): Promise<{ files: FileNode[] }> {
 
 const normDir = (dir: string) => dir.replace(/\/+$/, "") || "/";
 
+/** Shared predicate so exact-only bulk destination rules stay testable. */
+export function isDirectoryBlocked(
+  currentDir: string,
+  blockedDirs: readonly string[] | undefined,
+  blockExact = false
+): boolean {
+  if (blockedDirs === undefined) return false;
+  const current = normDir(currentDir);
+  return blockedDirs.some((blockedDir) => {
+    const blocked = normDir(blockedDir);
+    return current === blocked || (!blockExact && current.startsWith(blocked + "/"));
+  });
+}
+
 const parentDir = (dir: string) =>
   dir.replace(/\/+$/, "").slice(0, dir.replace(/\/+$/, "").lastIndexOf("/")) || "/";
 
@@ -120,13 +134,7 @@ export function DirPickerDialog({
   }, [open, currentDir]);
 
   // Refuse blocked directories and their subtrees (moving a dir into itself).
-  const isBlocked =
-    blockedDirs !== undefined &&
-    blockedDirs.some(
-      (b) =>
-        normDir(currentDir) === normDir(b) ||
-        normDir(currentDir).startsWith(normDir(b) + "/")
-    );
+  const isBlocked = isDirectoryBlocked(currentDir, blockedDirs, blockExact);
 
   const chooseDisabled = loading || busy || isBlocked;
 
