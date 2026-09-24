@@ -37,13 +37,23 @@ interface ByteRange {
 /**
  * Parse a single-range Range header ("bytes=a-b", "bytes=a-", "bytes=-n").
  * Returns null when the header is absent, uses an unknown unit, or is
- * malformed: RFC 9110 says to ignore a Range field the server cannot satisfy
- * syntactically, so those requests get the full 200 representation. Returns
- * "unsatisfiable" for a syntactically valid but out-of-bounds request (416).
+ * malformed: RFC 9110 14.2 says to ignore a Range field the server cannot
+ * satisfy syntactically (and an unknown range unit MUST be ignored), so those
+ * requests get the full 200 representation. Returns "unsatisfiable" for a
+ * range-spec that is well formed but has no satisfiable member (416).
  * Multi-range requests are served as their first satisfiable member (a
  * single-range response is valid for any range set); no browser sends them
  * for media playback, but one that does still gets bytes rather than a 416
  * when only its first member is out of bounds.
+ *
+ * Numerals are deliberately NOT bounded by Number.isSafeInteger. RFC 9110
+ * 14.1.2 requires that recipients "anticipate potentially large decimal
+ * numerals and prevent parsing errors due to integer conversion overflows",
+ * and defines the out-of-range interpretations: a last-pos at or past the
+ * length means the remainder of the representation, and a suffix-length
+ * longer than the representation means the whole representation. Clamping
+ * (rather than rejecting) is what keeps bytes=0-999999999 and
+ * bytes=0-999999999999999999999999 behave identically.
  */
 function parseSingleRange(
   member: string,
@@ -58,18 +68,20 @@ function parseSingleRange(
   if (rawStart === "" && rawEnd === "") return null;
 
   if (rawStart === "") {
-    // Suffix range: last N bytes. A zero or absurd length is unsatisfiable.
+    // Suffix range: last N bytes. A zero suffix-length is not satisfiable
+    // (RFC 9110 14.1.2); a length past the representation is clamped to it.
     const suffix = Number(rawEnd);
-    if (!Number.isSafeInteger(suffix) || suffix === 0) return "unsatisfiable";
+    if (suffix === 0) return "unsatisfiable";
     if (size === 0) return "unsatisfiable";
     return { start: Math.max(size - suffix, 0), end: size - 1 };
   }
 
+  // first-pos at or past the length is the one genuinely unsatisfiable case;
+  // it also catches a numeral too large for a double (Infinity >= size).
   const start = Number(rawStart);
-  if (!Number.isSafeInteger(start)) return "unsatisfiable";
   if (size === 0 || start >= size) return "unsatisfiable";
+  // last-pos past the length (or absent) means "through the end".
   const parsedEnd = rawEnd === "" ? size - 1 : Number(rawEnd);
-  if (!Number.isSafeInteger(parsedEnd)) return "unsatisfiable";
   const end = Math.min(parsedEnd, size - 1);
   if (end < start) return "unsatisfiable";
   return { start, end };

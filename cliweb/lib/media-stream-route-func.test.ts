@@ -83,14 +83,32 @@ for (const range of [
   "bytes=8-4",
   "bytes=-0",
   "bytes=999999999999999999999999-",
-  "bytes=-999999999999999999999999",
-  "bytes=1-999999999999999999999999",
 ]) {
   test(`stream: rejects unsatisfiable range ${range}`, async () => {
     const response = await streamGet(request("stream", FILE, { range }));
     assert.equal(response.status, 416);
     assert.equal(response.headers.get("content-range"), "bytes */10");
     assert.equal(await bytes(response), "");
+  });
+}
+
+// RFC 9110 14.1.2: a recipient MUST anticipate potentially large decimal
+// numerals and prevent parsing errors from integer conversion overflow, a
+// last-pos at or past the length means the remainder of the representation,
+// and a suffix-length longer than the representation means all of it. These
+// are the same requests as "bytes=1-" and "bytes=-500" above, written with
+// numerals past a double's safe integer range, so they must clamp rather
+// than 416.
+for (const [range, expected, contentRange] of [
+  ["bytes=1-999999999999999999999999", "123456789", "bytes 1-9/10"],
+  ["bytes=-999999999999999999999999", "0123456789", "bytes 0-9/10"],
+]) {
+  test(`stream: clamps a huge but well-formed numeral (${range})`, async () => {
+    const response = await streamGet(request("stream", FILE, { range }));
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get("content-range"), contentRange);
+    assert.equal(response.headers.get("content-length"), String(expected.length));
+    assert.equal(await bytes(response), expected);
   });
 }
 
