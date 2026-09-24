@@ -162,6 +162,76 @@ test("concurrent uploads into a fresh <cwd>/tmp do not trip on the mkdir race", 
   assert.equal(readFileSync(join(tmp, "race-b.txt"), "utf8"), "x");
 });
 
+test("file-manager drops never recreate a missing destination", async () => {
+  const missing = join(WS, "gone-folder");
+  const init = await uploadPost(
+    jsonReq({
+      op: "init",
+      filename: "drop.txt",
+      totalBytes: 1,
+      totalChunks: 1,
+      targetDir: missing,
+      createTargetDir: false,
+    })
+  );
+  assert.equal(await status(init), 200);
+  const { uploadId } = await data(init);
+  const res = await uploadPost(
+    jsonReq({
+      op: "chunk",
+      uploadId,
+      chunkIndex: 0,
+      chunk: Buffer.from("x").toString("base64"),
+    })
+  );
+  assert.equal(await status(res), 409);
+  assert.match((await data(res)).error as string, /no longer exists/i);
+  assert.equal(existsSync(missing), false, "the destination stays deleted");
+});
+
+test("file-manager drops still land in an existing destination", async () => {
+  const existing = join(WS, "browsed-folder");
+  mkdirSync(existing, { recursive: true });
+  const init = await uploadPost(
+    jsonReq({
+      op: "init",
+      filename: "drop.txt",
+      totalBytes: 1,
+      totalChunks: 1,
+      targetDir: existing,
+      createTargetDir: false,
+    })
+  );
+  assert.equal(await status(init), 200);
+  const { uploadId } = await data(init);
+  const res = await uploadPost(
+    jsonReq({
+      op: "chunk",
+      uploadId,
+      chunkIndex: 0,
+      chunk: Buffer.from("x").toString("base64"),
+    })
+  );
+  assert.equal(await status(res), 200);
+  assert.equal(readFileSync(join(existing, "drop.txt"), "utf8"), "x");
+});
+
+test("one-shot uploads honor createTargetDir=false as well", async () => {
+  const missing = join(WS, "gone-one-shot");
+  const res = await uploadPost(
+    jsonReq({
+      filename: "shot.png",
+      base64: Buffer.from("x").toString("base64"),
+      mimeType: "image/png",
+      targetDir: missing,
+      createTargetDir: false,
+    })
+  );
+  assert.equal(await status(res), 409);
+  assert.match((await data(res)).error as string, /no longer exists/i);
+  assert.equal(existsSync(missing), false);
+});
+
 test("terminal upload returns a clean conflict when cwd is a file", async () => {
   const fileCwd = join(WS, "file-cwd");
   writeFileSync(fileCwd, "not a directory");

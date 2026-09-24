@@ -23,6 +23,7 @@ import { useFileDrop } from "@/hooks/useFileDrop";
 import {
   pasteLongAsFilePref,
   pasteActionFor,
+  isPasteEditorTarget,
   setPasteLongAsFilePref,
   shouldUploadPaste,
   uploadFileToTemp,
@@ -247,12 +248,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       (event: ClipboardEvent) => {
         // Paste dialogs live inside the terminal container. Let their textareas
         // receive native paste, including the clipboardData-null browser path.
-        if (
-          event.target instanceof Element &&
-          event.target.closest("[data-terminal-paste-editor]")
-        ) {
-          return;
-        }
+        if (isPasteEditorTarget(event.target)) return;
 
         const files = event.clipboardData?.files
           ? Array.from(event.clipboardData.files)

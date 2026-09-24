@@ -11,6 +11,13 @@ export interface UploadOptions {
    * more specific message for the same failure (paste-as-file fallback).
    */
   quiet?: boolean;
+  /**
+   * Create the target directory when it is missing (default true). Terminal
+   * uploads create their <cwd>/tmp leaf; callers that name an existing folder
+   * (file-manager drops) set false so a deleted destination fails instead of
+   * being recreated.
+   */
+  createTargetDir?: boolean;
 }
 
 /**
@@ -65,6 +72,26 @@ export function pasteActionFor(input: {
 
 /** localStorage key for the paste-long-as-file user preference. */
 export const PASTE_LONG_AS_FILE_PREF = "paste-long-as-file";
+
+/** Marks the paste dialogs' own textareas so the terminal leaves them alone. */
+export const PASTE_EDITOR_ATTR = "data-terminal-paste-editor";
+
+/**
+ * True when a paste event landed inside a paste dialog's own textarea. Those
+ * textareas must receive native paste (the browser path where clipboardData is
+ * unavailable), so the terminal's capture listener stays out of the way.
+ */
+export function isPasteEditorTarget(target: unknown): boolean {
+  if (!target || typeof target !== "object") return false;
+  const closest = (target as { closest?: unknown }).closest;
+  if (typeof closest !== "function") return false;
+  return Boolean(
+    (closest as (selector: string) => unknown).call(
+      target,
+      `[${PASTE_EDITOR_ATTR}]`
+    )
+  );
+}
 
 /**
  * Read the paste-long-as-file user preference. Default is enabled; kept in
@@ -215,6 +242,7 @@ export async function uploadFileWithProgress(
       mimeType: file.type || "",
       targetDir: options.targetDir ?? undefined,
       overwrite: options.overwrite,
+      createTargetDir: options.createTargetDir,
     }),
   });
 

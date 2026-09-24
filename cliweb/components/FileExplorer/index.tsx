@@ -999,7 +999,12 @@ function ListingBody({
   const listingRef = useRef<HTMLDivElement>(null);
   const handleDroppedFile = useCallback(
     async (file: File) => {
-      await uploadFileToTemp(file, { targetDir: workingDirectory });
+      await uploadFileToTemp(file, {
+        targetDir: workingDirectory,
+        // The browsed folder must already exist: never recreate a directory
+        // the user just deleted, and never invent one they are not looking at.
+        createTargetDir: false,
+      });
     },
     [workingDirectory]
   );

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   PASTE_AS_FILE_THRESHOLD,
   PASTE_LONG_AS_FILE_PREF,
+  PASTE_EDITOR_ATTR,
+  isPasteEditorTarget,
   pasteActionFor,
   pasteFileName,
   pasteLongAsFilePref,
@@ -182,4 +184,20 @@ test("upload completion notifies subscribers and isolates listener failures", ()
     ["/home/u/project/tmp/paste-1.txt"],
     "unsubscribed listeners stop receiving events"
   );
+});
+
+test("the terminal ignores pastes aimed at a paste dialog's own textarea", () => {
+  const editor = {
+    closest: (selector: string) =>
+      selector === `[${PASTE_EDITOR_ATTR}]` ? editor : null,
+  };
+  // xterm's hidden textarea and ordinary page elements stay interceptable.
+  const xtermTextarea = { closest: () => null };
+  assert.equal(isPasteEditorTarget(editor), true);
+  assert.equal(isPasteEditorTarget(xtermTextarea), false);
+  // Non-element paste targets (null target, plain objects) must not throw.
+  assert.equal(isPasteEditorTarget(null), false);
+  assert.equal(isPasteEditorTarget(undefined), false);
+  assert.equal(isPasteEditorTarget({}), false);
+  assert.equal(isPasteEditorTarget("div"), false);
 });

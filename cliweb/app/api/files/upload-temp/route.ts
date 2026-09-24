@@ -47,6 +47,7 @@ const UPLOAD_TTL_MS = 60 * 60 * 1000;
 interface UploadSession {
   filename: string;
   targetDirectory: string | null;
+  createTargetDir: boolean;
   mimeType: string;
   overwrite: boolean;
   chunkSizeBytes: number;
@@ -139,7 +140,8 @@ function writeAssembledFile(
   filename: string,
   mimeType: string,
   targetDirectory: string | null,
-  overwrite: boolean
+  overwrite: boolean,
+  createTargetDir: boolean
 ): { path?: string; error?: string; status?: number } {
   if (targetDirectory) {
     // Terminal targets are <cwd>/tmp. Create only that leaf. Recreating every
@@ -162,6 +164,13 @@ function writeAssembledFile(
             status: 409,
           };
         }
+      } else if (!createTargetDir) {
+        // File-manager drops name an existing browsed folder. Recreating it
+        // would silently resurrect a directory the user just deleted.
+        return {
+          error: `Upload destination no longer exists: ${targetDirectory}`,
+          status: 409,
+        };
       } else {
         try {
           fs.mkdirSync(targetDirectory);
@@ -248,7 +257,14 @@ function writeAssembledFile(
  */
 async function handleOneShot(
   request: Request,
-  body: { filename?: unknown; base64?: unknown; mimeType?: unknown; targetDir?: unknown; overwrite?: unknown }
+  body: {
+    filename?: unknown;
+    base64?: unknown;
+    mimeType?: unknown;
+    targetDir?: unknown;
+    overwrite?: unknown;
+    createTargetDir?: unknown;
+  }
 ): Promise<NextResponse> {
   // Cheap gate first: a Content-Length that already exceeds the limit can
   // bail before the body is parsed. Best-effort only — chunked or encoding
@@ -260,7 +276,8 @@ async function handleOneShot(
 
   // Body arrives pre-parsed from the dispatcher; a Request's JSON body can
   // only be read once, so re-reading it here always throws.
-  const { filename, base64, mimeType, targetDir, overwrite } = body;
+  const { filename, base64, mimeType, targetDir, overwrite, createTargetDir } =
+    body;
 
   // base64 inflates by 4/3, so the decoded payload is what must fit under
   // the limit. Checking the raw string would let a ~1.33x oversized file
@@ -286,7 +303,8 @@ async function handleOneShot(
     typeof filename === "string" ? filename : "",
     typeof mimeType === "string" ? mimeType : "",
     targetDirectory,
-    overwrite === true
+    overwrite === true,
+    createTargetDir !== false
   );
   if (result.error) return badRequest(result.error, result.status);
 
@@ -300,8 +318,15 @@ async function handleOneShot(
 async function handleInit(body: Record<string, unknown>): Promise<NextResponse> {
   sweepExpiredSessions();
 
-  const { filename, totalBytes, totalChunks, mimeType, targetDir, overwrite } =
-    body;
+  const {
+    filename,
+    totalBytes,
+    totalChunks,
+    mimeType,
+    targetDir,
+    overwrite,
+    createTargetDir,
+  } = body;
 
   if (typeof filename !== "string" || filename.trim() === "") {
     return badRequest("filename is required");
@@ -349,6 +374,7 @@ async function handleInit(body: Record<string, unknown>): Promise<NextResponse> 
   sessions.set(uploadId, {
     filename,
     targetDirectory,
+    createTargetDir: createTargetDir !== false,
     mimeType:
       typeof mimeType === "string" && mimeType
         ? mimeType
@@ -480,7 +506,8 @@ async function handleChunk(
       session.filename,
       session.mimeType,
       session.targetDirectory,
-      session.overwrite
+      session.overwrite,
+      session.createTargetDir
     );
     if (result.error) return badRequest(result.error, result.status);
 
@@ -525,6 +552,7 @@ export async function POST(request: Request) {
         mimeType?: unknown;
         targetDir?: unknown;
         overwrite?: unknown;
+        createTargetDir?: unknown;
       }
     );
   } catch (error) {
