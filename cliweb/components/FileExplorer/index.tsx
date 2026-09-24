@@ -568,7 +568,7 @@ function DesktopFileExplorer({
   }, []);
 
   return (
-    <div ref={containerRef} className="bg-background flex h-full w-full">
+    <div ref={containerRef} className="bg-background flex h-full min-w-0 w-full">
       {/* File tree panel */}
       {/* relative anchors the upload banner's absolute positioning to this
           panel; without it the banner climbs to the nearest positioned
@@ -626,7 +626,7 @@ function DesktopFileExplorer({
       </div>
 
       {/* Editor panel */}
-      <div className="flex h-full min-w-0 flex-1 flex-col">
+      <div className="flex h-full min-h-0 min-w-0 w-full flex-1 flex-col">
         {/* Tabs */}
         {openFiles.length > 0 && (
           <FileTabs
@@ -645,7 +645,7 @@ function DesktopFileExplorer({
         )}
 
         {/* Editor or empty state */}
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="min-h-0 min-w-0 w-full flex-1 overflow-hidden">
           {fileLoading ? (
             <div className="flex h-full items-center justify-center gap-2">
               <Loader2 className="text-muted-foreground h-3.5 w-3.5 animate-spin" />
@@ -807,7 +807,7 @@ function MobileFileExplorer({
     const isCurrentDirty = activeFilePath ? isDirty(activeFilePath) : false;
 
     return (
-      <div className="bg-background flex h-full w-full flex-col">
+      <div className="bg-background flex h-full min-w-0 w-full flex-col">
         {/* Header */}
         <div className="glass glass-edge-bottom relative z-10 flex h-10 shrink-0 items-center gap-1 pr-1 pl-1">
           <Button
@@ -848,7 +848,7 @@ function MobileFileExplorer({
         )}
 
         {/* Editor */}
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="min-h-0 min-w-0 w-full flex-1 overflow-hidden">
           {fileLoading ? (
             <div className="flex h-full items-center justify-center gap-2">
               <Loader2 className="text-muted-foreground h-3.5 w-3.5 animate-spin" />
@@ -893,7 +893,7 @@ function MobileFileExplorer({
 
   // Show file tree
   return (
-    <div className="bg-background relative flex h-full w-full flex-col">
+    <div className="bg-background relative flex h-full min-w-0 w-full flex-col">
       <div className="glass glass-edge-bottom relative z-10 flex h-14 shrink-0 items-center gap-1 px-2">
         <div className="min-w-0 flex-1">
           <span className="ui-label">Files</span>
@@ -1391,7 +1391,7 @@ function ListingBody({
     <div
       ref={listingRef}
       {...fileDragHandlers}
-      className="relative flex min-h-0 flex-1 flex-col"
+      className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col"
     >
       {isFileDrag && (
         <div className="bg-background/60 ring-primary pointer-events-none absolute inset-0 z-10 flex items-center justify-center ring-1 ring-inset">

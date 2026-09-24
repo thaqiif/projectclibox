@@ -392,7 +392,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
     return (
       <div
         ref={containerRef}
-        className="bg-background flex flex-col overflow-hidden"
+        className="bg-background flex h-full min-h-0 min-w-0 w-full max-w-full flex-col overflow-hidden"
         style={{
           position: "relative",
           width: "100%",
@@ -404,7 +404,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
         <div
           ref={terminalRef}
           className={cn(
-            "terminal-container min-h-0 w-full flex-1 overflow-hidden",
+            "terminal-container min-h-0 min-w-0 w-full flex-1 overflow-hidden",
             selectMode && "ring-primary ring-2 ring-inset",
             isDragging && "ring-primary ring-2 ring-inset"
           )}

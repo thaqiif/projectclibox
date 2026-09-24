@@ -211,7 +211,7 @@ function MonitorPane({
 
   return (
     <div
-      className="bg-background relative flex h-full min-w-0 flex-col overflow-hidden border border-[var(--fill-2)]"
+      className="bg-background relative flex h-full min-w-0 w-full flex-col overflow-hidden border border-[var(--fill-2)]"
       data-monitor-pane={paneId}
       onDragOver={(event) => {
         event.preventDefault();
@@ -284,7 +284,7 @@ function MonitorPane({
           </Button>
         )}
       </div>
-      <div className="min-h-0 min-w-0 flex-1">
+      <div className="min-h-0 min-w-0 w-full flex-1">
         {showFiles && terminal?.working_directory ? (
           <FileExplorer
             workingDirectory={terminal.working_directory}
@@ -465,7 +465,12 @@ export function MonitorWorkspace({
   const visiblePanes = mobile ? workspace.panes : desktopPanes;
 
   return (
-    <div className={cn("h-full min-w-0", mobile ? "flex flex-col" : "flex")}>
+    <div
+      className={cn(
+        "h-full min-w-0 w-full",
+        mobile ? "flex flex-col" : "flex"
+      )}
+    >
       {mobile && (
         <div className="bg-background glass-edge-bottom relative z-10 flex shrink-0 items-center gap-1 px-2 pb-2 pt-[calc(0.5rem+env(safe-area-inset-top))]">
           <Button
@@ -632,10 +637,10 @@ export function MonitorWorkspace({
       )}
       <div
         className={cn(
-          "min-w-0",
+          "min-h-0 min-w-0 w-full",
           mobile
-            ? "min-h-0 flex-1"
-            : "grid h-full gap-px bg-[var(--fill-2)]"
+            ? "flex-1"
+            : "grid h-full flex-1 gap-px bg-[var(--fill-2)]"
         )}
         style={
           mobile
@@ -658,7 +663,10 @@ export function MonitorWorkspace({
               role={mobile ? "tabpanel" : undefined}
               aria-labelledby={mobile ? `monitor-tab-${index}` : undefined}
               hidden={mobile && !selected}
-              className={cn("min-w-0", mobile ? "h-full w-full" : "min-h-0")}
+              className={cn(
+                "min-w-0 w-full",
+                mobile ? "h-full" : "min-h-0"
+              )}
             >
               <MonitorPane
                 paneId={pane.id}

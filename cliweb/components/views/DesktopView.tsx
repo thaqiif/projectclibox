@@ -134,7 +134,7 @@ export function DesktopView({
 
         {/* The terminal is content, not chrome: it stays opaque, and the
             glass bar above it is what floats. */}
-        <div className="bg-background relative min-h-0 flex-1">
+        <div className="bg-background relative min-h-0 min-w-0 w-full flex-1">
           {monitor.workspace?.enabled ? (
             <MonitorWorkspace
               workspace={monitor.workspace}

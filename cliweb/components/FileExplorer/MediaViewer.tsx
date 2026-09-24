@@ -369,7 +369,7 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
   // leaving the image with no source at all.
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col">
+    <div className="flex h-full min-h-0 min-w-0 w-full flex-col">
       <div className="glass glass-edge-bottom relative z-10 flex h-11 shrink-0 items-center justify-between px-1 sm:h-8 sm:px-2">
         <span className="ui-label hidden min-w-0 truncate sm:block">{fileName}</span>
         <div className="ml-auto flex items-center gap-0.5">
@@ -410,7 +410,7 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
         tabIndex={0}
         role="group"
         aria-label={`${fileName} image preview. Pinch or use plus and minus to zoom, drag or use arrow keys to pan, zero resets.`}
-        className="focus-visible:ring-primary relative flex min-h-0 flex-1 items-center justify-center overflow-hidden focus-visible:ring-2 focus-visible:outline-none"
+        className="focus-visible:ring-primary relative flex min-h-0 min-w-0 w-full flex-1 items-center justify-center overflow-hidden focus-visible:ring-2 focus-visible:outline-none"
         onKeyDown={handleKeyDown}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -498,7 +498,7 @@ function StreamingPlayer({
         controls
         preload="metadata"
         playsInline
-        className="max-h-full max-w-full rounded-md bg-black object-contain"
+        className="max-h-full min-w-0 w-full max-w-full rounded-md bg-black object-contain"
         onError={() => setError(true)}
       />
     ) : (
@@ -509,13 +509,13 @@ function StreamingPlayer({
         aria-label={`${fileName} audio player`}
         controls
         preload="metadata"
-        className="w-full max-w-md"
+        className="w-full max-w-full"
         onError={() => setError(true)}
       />
     );
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col">
+    <div className="flex h-full min-h-0 min-w-0 w-full flex-col">
       <div className="glass glass-edge-bottom relative z-10 flex h-11 shrink-0 items-center justify-between px-1 sm:h-8 sm:px-2">
         <span className="ui-label min-w-0 truncate">{fileName}</span>
         <a
@@ -530,7 +530,7 @@ function StreamingPlayer({
       </div>
       <div
         className={cn(
-          "flex min-h-0 flex-1 items-center justify-center p-2 sm:p-4",
+          "flex min-h-0 min-w-0 w-full flex-1 items-center justify-center p-2 sm:p-4",
           kind === "audio" && "px-2 sm:px-6"
         )}
       >
