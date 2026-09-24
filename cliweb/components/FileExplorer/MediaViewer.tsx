@@ -365,7 +365,11 @@ function StreamingPlayer({
    */
   const attachMedia = useCallback((element: HTMLMediaElement | null) => {
     mediaRef.current = element;
-    setMediaNode(element);
+    // Attach is the commit-time truth. The React-detach call clears the
+    // failure record for the outgoing element, which is what effectively
+    // resets the derived error when the src-keyed element is replaced; and
+    // the very same call primes the new element, covering everything else.
+    setMediaNode(element.error ? element : element);
     if (!element) return;
     // No imperative pause/clear here: the element is dropped from the DOM when
     // rendering switches to the alert, which stops and frees the decoder; the
