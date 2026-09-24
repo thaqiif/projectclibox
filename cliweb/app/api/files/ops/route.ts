@@ -64,20 +64,48 @@ function writeTrashMeta(meta: TrashMeta): void {
 }
 
 /**
- * Pick a unique trash name for `origPath`: original basename, then
- * "name.<timestamp>", "name.<timestamp>-1", ... until a free slot is found.
+ * Reserve a free trash slot for `origPath` and return its trash path.
+ *
+ * The slot is claimed by creating its metadata file with an exclusive create
+ * (`wx`) before the item is moved, so claiming a slot and recording its
+ * metadata are one step: the metadata can only ever describe the item that is
+ * about to land in that slot. (Today the whole handler is synchronous, so a
+ * single process cannot interleave two deletes; the exclusive create keeps the
+ * invariant true if that ever changes.)
+ *
+ * A slot whose metadata exists without its item - an orphan left by a crash
+ * between purge's two removals - is skipped rather than reused. Reusing it left
+ * the stale `origPath` in place, so the next delete of the same name produced a
+ * trash entry whose restore moved the new item to the previous item's location.
+ *
+ * The caller must remove the reserved metadata if the move then fails.
  */
-function uniqueTrashPath(origPath: string): string {
+function reserveTrashSlot(origPath: string): string {
   const base = basename(origPath);
   const stamp = new Date()
     .toISOString()
     .replace(/[-:]/g, "")
     .replace(/\..+$/, "");
-  let candidate = join(TRASH_DIR, `${base}.${stamp}`);
-  for (let n = 0; existsSync(candidate); n++) {
-    candidate = join(TRASH_DIR, `${base}.${stamp}-${n}`);
+  for (let n = 0; ; n++) {
+    const candidate = join(
+      TRASH_DIR,
+      n === 0 ? `${base}.${stamp}` : `${base}.${stamp}-${n - 1}`
+    );
+    // An item already sitting in this slot owns it (its metadata may be
+    // missing if that write failed), so move on to the next suffix.
+    if (existsSync(candidate)) continue;
+    try {
+      writeTrashMeta({
+        origPath,
+        trashPath: candidate,
+        deletedAt: new Date().toISOString(),
+      });
+      return candidate;
+    } catch (error) {
+      // Orphaned metadata occupies this slot; leave it and try the next one.
+      if ((error as { code?: string }).code !== "EEXIST") throw error;
+    }
   }
-  return candidate;
 }
 
 /**
@@ -461,19 +489,16 @@ export async function POST(request: NextRequest) {
       );
     }
     mkdirSync(TRASH_DIR, { recursive: true });
-    const trashPath = uniqueTrashPath(path);
-    renameAcrossDevices(path, trashPath);
-    const meta: TrashMeta = {
-      origPath: path,
-      trashPath,
-      deletedAt: new Date().toISOString(),
-    };
+    // Reserve the slot (metadata first) so the recorded original path always
+    // belongs to this item, then release the reservation if the move fails:
+    // metadata for an item that never arrived would strand the trash entry and
+    // make a later delete of the same name inherit the wrong original path.
+    const trashPath = reserveTrashSlot(path);
     try {
-      writeTrashMeta(meta);
-    } catch (metaErr) {
-      console.error("Failed to write trash meta:", metaErr);
-      // Item is already trashed; report success but flag the missing meta
-      return NextResponse.json({ ok: true, trashPath, metaError: true });
+      renameAcrossDevices(path, trashPath);
+    } catch (moveError) {
+      rmSync(metaPathFor(trashPath), { force: true });
+      throw moveError;
     }
     return NextResponse.json({ ok: true, trashPath });
   } catch (error) {
