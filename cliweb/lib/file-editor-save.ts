@@ -1,7 +1,4 @@
-import { mediaKindFor } from "./media-mime";
-
 export interface SaveableFileState {
-  path?: string;
   isBinary: boolean;
   truncated: boolean;
 }
@@ -11,7 +8,5 @@ export const NON_EDITABLE_SAVE_ERROR =
 
 /** Return a user-facing refusal when the editor never loaded editable bytes. */
 export function saveRefusalFor(file: SaveableFileState): string | null {
-  return file.isBinary || file.truncated || mediaKindFor(file.path) !== null
-    ? NON_EDITABLE_SAVE_ERROR
-    : null;
+  return file.isBinary || file.truncated ? NON_EDITABLE_SAVE_ERROR : null;
 }

@@ -228,7 +228,6 @@ export function FileEditor({
   const isMarkdown = language === "markdown";
   const isHtml = language === "html";
   const hasPreview = isMarkdown || isHtml;
-  const kind = mediaKindFor(path);
 
   useEffect(() => {
     if (!hasPreview) {
@@ -237,18 +236,15 @@ export function FileEditor({
     }
   }, [hasPreview]);
 
-  // Every recognized media extension streams through the viewer, including
-  // text-based formats such as SVG that binary sniffing would otherwise make
-  // editable. Media paths never expose CodeMirror or a save command.
-  if (path && kind) {
-    return <MediaViewer path={path} kind={kind} fileName={baseName(path)} />;
-  }
-
   // Truncated files (placeholder only) get read-only treatment: the real
   // bytes are not here, so no editing surface and no save path. Media is
   // the exception: the viewer streams from disk directly, so it works at
   // any size.
   if (truncated) {
+    const kind = mediaKindFor(path);
+    if (path && kind) {
+      return <MediaViewer path={path} kind={kind} fileName={baseName(path)} />;
+    }
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
         <FileCode className="text-muted-foreground/70 h-4 w-4" />
@@ -272,6 +268,14 @@ export function FileEditor({
   // Binary files: media streams inline, everything else gets a download
   // affordance instead of a dead end.
   if (isBinary) {
+    // Every path that reaches the viewer is binary or truncated, and the hook
+    // refuses to save both, so displayed media can never be edited in place.
+    // Text-based media (SVG) keeps its normal editor because the bytes really
+    // are loaded, which is the case the refusal exists for.
+    const kind = mediaKindFor(path);
+    if (path && kind) {
+      return <MediaViewer path={path} kind={kind} fileName={baseName(path)} />;
+    }
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
         <FileCode className="text-muted-foreground/70 h-4 w-4" />

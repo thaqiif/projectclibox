@@ -3,6 +3,11 @@ export interface Point {
   y: number;
 }
 
+export interface Size {
+  width: number;
+  height: number;
+}
+
 export const MIN_MEDIA_ZOOM = 0.2;
 export const MAX_MEDIA_ZOOM = 12;
 
@@ -25,5 +30,28 @@ export function offsetAfterZoom(
   return {
     x: cursor.x - (cursor.x - offset.x) * ratio,
     y: cursor.y - (cursor.y - offset.y) * ratio,
+  };
+}
+
+/**
+ * Keep a dragged image reachable: the pan is capped so at least
+ * `minVisible` of the container stays covered by the (scaled) image, which
+ * stops a large image being dragged entirely out of view. `fitted` is the
+ * untransformed layout size of the image, `container` the viewport size.
+ */
+export function clampMediaOffset(
+  offset: Point,
+  fitted: Size,
+  container: Size,
+  zoom: number,
+  minVisible = 0.25
+): Point {
+  const limit = (scaled: number, viewport: number) =>
+    Math.max(0, (scaled + viewport) / 2 - minVisible * viewport);
+  const limitX = limit(fitted.width * zoom, container.width);
+  const limitY = limit(fitted.height * zoom, container.height);
+  return {
+    x: Math.min(limitX, Math.max(-limitX, offset.x)),
+    y: Math.min(limitY, Math.max(-limitY, offset.y)),
   };
 }

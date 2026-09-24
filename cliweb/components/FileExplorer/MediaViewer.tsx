@@ -15,7 +15,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MediaKind } from "@/lib/media-mime";
-import { clampMediaZoom, offsetAfterZoom } from "@/lib/media-viewer";
+import {
+  clampMediaOffset,
+  clampMediaZoom,
+  offsetAfterZoom,
+} from "@/lib/media-viewer";
 
 export type { MediaKind } from "@/lib/media-mime";
 
@@ -23,7 +27,6 @@ interface MediaViewerProps {
   path: string;
   kind: MediaKind;
   fileName: string;
-  onClose?: () => void;
 }
 
 /**
@@ -65,6 +68,7 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const imageRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -124,14 +128,31 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
     [zoom, offset]
   );
 
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    const d = dragRef.current;
-    if (!d || d.pointerId !== e.pointerId) return;
-    setOffset({
-      x: d.baseX + (e.clientX - d.startX),
-      y: d.baseY + (e.clientY - d.startY),
-    });
-  }, []);
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const d = dragRef.current;
+      if (!d || d.pointerId !== e.pointerId) return;
+      const next = {
+        x: d.baseX + (e.clientX - d.startX),
+        y: d.baseY + (e.clientY - d.startY),
+      };
+      const image = imageRef.current;
+      const container = containerRef.current;
+      if (!image || !container) {
+        setOffset(next);
+        return;
+      }
+      setOffset(
+        clampMediaOffset(
+          next,
+          { width: image.offsetWidth, height: image.offsetHeight },
+          { width: container.clientWidth, height: container.clientHeight },
+          zoom
+        )
+      );
+    },
+    [zoom]
+  );
 
   const endDrag = useCallback(() => {
     dragRef.current = null;
@@ -155,7 +176,10 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
             onClick={() => zoomAt(1 / 1.25)}
             icon={<Minus className="h-3 w-3" />}
           />
-          <span className="text-muted-foreground ui-meta w-12 text-center tabular-nums">
+          <span
+            aria-live="polite"
+            className="text-muted-foreground ui-meta w-12 text-center tabular-nums"
+          >
             {Math.round(zoom * 100)}%
           </span>
           <IconOnlyButton
@@ -180,6 +204,7 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
         </div>
       </div>
       <div
+        ref={containerRef}
         className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}
