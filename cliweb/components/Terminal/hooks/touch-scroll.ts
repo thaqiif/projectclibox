@@ -11,9 +11,10 @@ interface TouchScrollConfig {
   isMobile: boolean;
 }
 
-const TOUCH_WHEEL_STEP = 20;
-const TOUCH_INERTIA_DECAY_MS = 180;
-const MIN_INERTIA_VELOCITY = 0.025;
+const FALLBACK_ROW_HEIGHT = 20;
+const TOUCH_INERTIA_DECAY_MS = 260;
+const TOUCH_VELOCITY_SAMPLE_WEIGHT = 0.45;
+const MIN_INERTIA_VELOCITY = 0.015;
 
 export function setupTouchScroll(config: TouchScrollConfig): () => void {
   const { terminal, core, selectModeRef, isMobile } = config;
@@ -29,7 +30,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
   let velocityY = 0;
   let gestureActive = false;
   let scrollDirection: "vertical" | "horizontal" | null = null;
-  let scrollAccumulator = 0;
+  let tuiRowHeight = FALLBACK_ROW_HEIGHT;
   let inertiaFrame: number | null = null;
 
   const cancelInertia = () => {
@@ -44,22 +45,20 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     clientX: number,
     clientY: number
   ) => {
-    scrollAccumulator += fingerDeltaY;
-    while (Math.abs(scrollAccumulator) >= TOUCH_WHEEL_STEP) {
-      const wheelDelta = scrollAccumulator > 0 ? -100 : 100;
-      element.dispatchEvent(
-        new WheelEvent("wheel", {
-          deltaY: wheelDelta,
-          deltaMode: WheelEvent.DOM_DELTA_PIXEL,
-          bubbles: true,
-          cancelable: true,
-          clientX,
-          clientY,
-        })
-      );
-      scrollAccumulator +=
-        scrollAccumulator > 0 ? -TOUCH_WHEEL_STEP : TOUCH_WHEEL_STEP;
-    }
+    // Model the finger movement as fractional terminal rows. WTerm carries
+    // the fractional part between events and emits one mouse-wheel report per
+    // completed row, instead of turning each small touch movement into a
+    // burst of full-strength wheel events.
+    element.dispatchEvent(
+      new WheelEvent("wheel", {
+        deltaY: -fingerDeltaY / tuiRowHeight,
+        deltaMode: WheelEvent.DOM_DELTA_LINE,
+        bubbles: true,
+        cancelable: true,
+        clientX,
+        clientY,
+      })
+    );
   };
 
   const applyFingerDelta = (
@@ -89,7 +88,14 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     velocityY = 0;
     gestureActive = true;
     scrollDirection = null;
-    scrollAccumulator = 0;
+    const row = element.querySelector<HTMLElement>(
+      ".term-row:not(.term-scrollback-row)"
+    );
+    const measuredRowHeight = row?.getBoundingClientRect().height ?? 0;
+    tuiRowHeight =
+      Number.isFinite(measuredRowHeight) && measuredRowHeight > 0
+        ? measuredRowHeight
+        : FALLBACK_ROW_HEIGHT;
     // Do not focus the hidden keyboard textarea here. A swipe is a scroll
     // gesture; tapping still focuses through the normal click handler.
   };
@@ -116,7 +122,8 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     const elapsed = Math.max(1, now - lastTouchTime);
     lastY = touch.clientY;
     lastTouchTime = now;
-    velocityY = velocityY * 0.65 + (deltaY / elapsed) * 0.35;
+    const sampleVelocity = deltaY / elapsed;
+    velocityY += (sampleVelocity - velocityY) * TOUCH_VELOCITY_SAMPLE_WEIGHT;
     if (Math.abs(deltaY) < 0.1) return;
 
     applyFingerDelta(deltaY, touch.clientX, touch.clientY);
@@ -151,7 +158,6 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
       } else {
         inertiaFrame = null;
         velocityY = 0;
-        scrollAccumulator = 0;
       }
     };
 

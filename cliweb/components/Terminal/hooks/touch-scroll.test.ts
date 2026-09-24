@@ -13,6 +13,9 @@ class FakeTouchElement {
   addEventListener(name: string, listener: (event: any) => void) {
     this.listeners.set(name, listener);
   }
+  querySelector() {
+    return null;
+  }
   removeEventListener(name: string) {
     this.listeners.delete(name);
   }
@@ -29,6 +32,7 @@ test("mobile swipes use terminal wheel input without opening the keyboard", () =
   );
   class FakeWheelEvent {
     static DOM_DELTA_PIXEL = 0;
+    static DOM_DELTA_LINE = 1;
     constructor(
       readonly type: string,
       readonly init: Record<string, unknown>
@@ -68,7 +72,11 @@ test("mobile swipes use terminal wheel input without opening the keyboard", () =
     });
     assert.equal(focusCount, 0);
     assert.equal(element.wheelEvents.length, 1);
-    assert.equal(element.wheelEvents[0].init.deltaY, -100);
+    assert.equal(
+      element.wheelEvents[0].init.deltaMode,
+      FakeWheelEvent.DOM_DELTA_LINE
+    );
+    assert.equal(element.wheelEvents[0].init.deltaY, -1.5);
   } finally {
     cleanup();
     if (originalWheelEvent)
