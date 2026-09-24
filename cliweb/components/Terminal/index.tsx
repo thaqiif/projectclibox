@@ -500,18 +500,24 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
         {...dragHandlers}
         onKeyDownCapture={handleSelectAllKeyDown}
       >
-        {/* Terminal container - NO padding! FitAddon reads offsetHeight which includes padding */}
+        {/* Keep stateful styling on the wrapper. WTerm adds classes such as
+            .wterm, .focused, and .has-scrollback to its host node; React must
+            not replace those classes when selection or drag state changes. */}
         <div
-          ref={terminalRef}
           className={cn(
             "terminal-container min-h-0 min-w-0 w-full flex-1 overflow-hidden",
             selectMode && "ring-primary ring-2 ring-inset",
             isDragging && "ring-primary ring-2 ring-inset"
           )}
-          onClick={focus}
-          onTouchStart={selectMode ? (e) => e.stopPropagation() : undefined}
-          onTouchEnd={selectMode ? (e) => e.stopPropagation() : undefined}
-        />
+        >
+          <div
+            ref={terminalRef}
+            className="h-full min-h-0 min-w-0 w-full max-w-full overflow-hidden"
+            onClick={focus}
+            onTouchStart={selectMode ? (e) => e.stopPropagation() : undefined}
+            onTouchEnd={selectMode ? (e) => e.stopPropagation() : undefined}
+          />
+        </div>
 
         {/* Select mode overlay - shows terminal text in a selectable format */}
         {selectMode && (
