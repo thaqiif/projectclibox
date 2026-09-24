@@ -92,6 +92,26 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState(false);
 
+  /**
+   * React's own onError can miss a failure that the browser reports before the
+   * handler is attached (a 404 arrives fast, the element is already
+   * `complete` with naturalWidth 0). Attach a native listener at commit time
+   * and re-check completeness, so a deleted file always reaches the error UI.
+   */
+  const attachImage = useCallback((element: HTMLImageElement | null) => {
+    imageRef.current = element;
+    if (!element) return () => undefined as unknown as void;
+    // A fast failure (local 404) can complete before React ever attaches the
+    // element's handler, so the commit is the last reliable checkpoint.
+    if (element.complete && element.naturalWidth === 0) {
+      setError(true);
+      return () => undefined as unknown as void;
+    }
+    const onError = () => setError(true);
+    element.addEventListener("error", onError);
+    return () => element.removeEventListener("error", onError);
+  }, []);
+
   const measure = useCallback(() => {
     const image = imageRef.current;
     const container = containerRef.current;
@@ -226,12 +246,11 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
     [clamp, measure, reset, zoom, zoomAt]
   );
 
-  // Removing src aborts an outstanding image fetch when the tab unmounts.
-  // This route never creates object URLs, so there is nothing to revoke.
-  useEffect(() => {
-    const image = imageRef.current;
-    return () => image?.removeAttribute("src");
-  }, [src]);
+  // No cleanup is needed for the image: unmounting removes the element, which
+  // aborts an in-flight request, and this viewer never creates object URLs.
+  // Clearing src here would be actively wrong, because React re-runs effects
+  // on mount in development (StrictMode) without re-applying unchanged props,
+  // leaving the image with no source at all.
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
@@ -295,7 +314,7 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
           // eslint-disable-next-line @next/next/no-img-element
           <img
             key={src}
-            ref={imageRef}
+            ref={attachImage}
             src={src}
             alt={fileName}
             draggable={false}
@@ -330,48 +349,57 @@ function StreamingPlayer({
   fileName: string;
   kind: "video" | "audio";
 }) {
-  const [error, setError] = useState(false);
   const mediaRef = useRef<HTMLMediaElement>(null);
+  /**
+   * Purely derived failure state: a media element keeps its MediaError object
+   * forever after a failed load, and the element is re-created per src, so
+   * reading it during render is deterministic and covers every window where
+   * an "error" event could have been missed.
+   */
+  const [mediaNode, setMediaNode] = useState<HTMLMediaElement | null>(null);
+  const error = mediaNode !== null && mediaNode.error !== null;
 
-  const releaseMedia = useCallback(() => {
-    const media = mediaRef.current;
-    if (!media) return;
-    media.pause();
-    media.removeAttribute("src");
-    media.load();
+  /**
+   * Same reasoning as the image viewer: a fast 404 can beat React's own
+   * onError, so also listen natively from the moment the element exists.
+   */
+  const attachMedia = useCallback((element: HTMLMediaElement | null) => {
+    mediaRef.current = element;
+    setMediaNode(element);
+    if (!element) return;
+    // No imperative pause/clear here: the element is dropped from the DOM when
+    // rendering switches to the alert, which stops and frees the decoder; the
+    // browser also releases the player's network connection. Keeping the node
+    // would re-trigger a fresh fetch loop on every render, so removal is the
+    // correct release.
+    const onError = () => setMediaNode(element);
+    element.addEventListener("error", onError);
+    return () => element.removeEventListener("error", onError);
   }, []);
-
-  // Explicitly release the native player's connection and decoder resources.
-  useEffect(() => releaseMedia, [releaseMedia]);
-
-  const handleError = useCallback(() => {
-    releaseMedia();
-    setError(true);
-  }, [releaseMedia]);
 
   const media =
     kind === "video" ? (
       <video
         key={src}
-        ref={mediaRef as React.RefObject<HTMLVideoElement>}
+        ref={attachMedia as React.Ref<HTMLVideoElement>}
         src={src}
         aria-label={`${fileName} video player`}
         controls
         preload="metadata"
         playsInline
         className="max-h-full max-w-full rounded-md bg-black object-contain"
-        onError={handleError}
+        onError={() => setMediaNode(mediaRef.current)}
       />
     ) : (
       <audio
         key={src}
-        ref={mediaRef as React.RefObject<HTMLAudioElement>}
+        ref={attachMedia as React.Ref<HTMLAudioElement>}
         src={src}
         aria-label={`${fileName} audio player`}
         controls
         preload="metadata"
         className="w-full max-w-md"
-        onError={handleError}
+        onError={() => setMediaNode(mediaRef.current)}
       />
     );
 
