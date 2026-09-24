@@ -9,21 +9,13 @@ host Docker daemon.
 
 ```bash
 cp .env.example .env
-
-# Required by the kernel-TUN Tailscale sidecar on the Docker host.
-sudo modprobe tun
-sudo install -d -o root -g root -m 0700 /var/lib/cliweb-tailscale
-sudo chown root:root /var/lib/cliweb-tailscale
-sudo chmod 0700 /var/lib/cliweb-tailscale
-
 docker compose up -d --build
 ```
 
 Open <http://localhost:3011> (or the configured `HOST_PORT`). The default bind
 address is localhost-only. Set `HOST_BIND=0.0.0.0` when you intentionally want
 to reach the UI from another device on your LAN, and protect it with a firewall
-or reverse proxy. The Tailscale sidecar setup and its `/dev/net/tun` host
-prerequisite are described below.
+or reverse proxy.
 
 This UI can execute shell commands and read/write the mounted workspace. Do not
 publish it to an untrusted network without adding authentication and network
@@ -114,75 +106,6 @@ HTML
 On hosts without a Vulkan device the flags are harmless — Chromium degrades
 to SwiftShader, matching stock behaviour.
 
-## Tailscale sidecar
-
-Compose runs a pinned Tailscale daemon in a sidecar that shares CLIWeb's
-network namespace. The sidecar uses kernel TUN mode, so the **Docker host**
-must provide `/dev/net/tun` before the stack starts:
-
-```bash
-# Linux hosts may need the module loaded first.
-sudo modprobe tun
-ls -l /dev/net/tun   # must be a character device
-
-# Tailscale stores node identity and credentials here; keep it root-only.
-sudo install -d -o root -g root -m 0700 /var/lib/cliweb-tailscale
-sudo chown root:root /var/lib/cliweb-tailscale
-sudo chmod 0700 /var/lib/cliweb-tailscale
-
-docker compose up -d --build
-```
-
-The first authentication is interactive. Run this command and follow the
-login URL it prints (or the browser flow it opens):
-
-```bash
-docker compose exec -it tailscale tailscale --socket=/tmp/tailscaled.sock up --accept-dns=false
-```
-
-Check the node and its addresses with:
-
-```bash
-docker compose exec tailscale tailscale --socket=/tmp/tailscaled.sock status
-docker compose exec tailscale tailscale --socket=/tmp/tailscaled.sock ip
-```
-
-CLIWeb remains available locally at
-`http://localhost:3011`. After the node is authorized, a permitted tailnet
-client can use the Tailscale IPv4 address from `tailscale ip`, for example
-`http://100.x.y.z:3011`; no separate sidecar port mapping is needed because
-the two services share a network namespace. The normal CLIWeb host port
-continues to be owned by the `cliweb` service.
-
-The node identity and login state are persisted in the host bind mount
-`/var/lib/cliweb-tailscale`, so restarts, image rebuilds, and
-`docker compose down` followed by `docker compose up` do not require logging
-in again. This is a bind mount, not a Docker-managed volume:
-`docker compose down -v` does **not** delete the Tailscale state, the
-`/home/cliweb` home, or workspace bind mounts, and this Compose file defines no
-named volumes. Remove those host directories manually only when you deliberately
-want to discard their state.
-
-Tailnet reachability is not application authentication. CLIWeb exposes a shell
-and mounted files to any client that can reach port 3011, so review your
-Tailscale ACLs/grants, device access, and tags before authorizing users. Keep
-the default localhost bind unless LAN access is intentional, and add an
-application authentication layer or reverse proxy if the tailnet includes
-untrusted users. Never place `TS_AUTHKEY` in the root `.env`: Compose passes
-that file's values into CLIWeb terminal environments. Use the interactive
-`tailscale up` flow instead, or handle a short-lived secret outside the root
-terminal environment.
-
-This setup deliberately uses kernel TUN (`--tun=tailscale0`) because it gives
-the shared namespace a normal Tailscale interface and makes direct access to
-CLIWeb's port straightforward. It requires `/dev/net/tun` plus `NET_ADMIN`
-and `NET_RAW`. Tailscale's userspace mode
-(`--tun=userspace-networking`) can avoid the kernel TUN device and associated
-interface permissions, which is useful on restricted hosts, but it does not
-create a normal `tailscale0` interface; applications then need the userspace
-SOCKS5/HTTP proxy or another Tailscale application-level feature, so the direct
-tailnet-to-port setup documented here no longer applies unchanged.
-
 ## Persistence
 
 The host directory `/home/cliweb` is bind-mounted at the same path in the
@@ -221,8 +144,6 @@ the same repo, e.g. two Coolify applications). Differences from production:
   stack collide with it.
 - `CLIWEB_PROFILE=test`, so app state lives under `~/.cliweb-test/` inside
   its own home (redundant with the separate home, but harmless).
-- Tailscale state: `/var/lib/cliweb-tailscale-test`, so the two deployments
-  hold separate tailnet identities.
 
 No environment variables are required: test-specific defaults and `TEST_`
 override names keep a shared production `.env` from redirecting these mounts
@@ -252,7 +173,7 @@ See [.env.example](.env.example) for the small set of supported settings:
   which is useful for API keys or project-specific configuration.
 
 `docker compose down -v` does not remove the persistent host bind mounts
-(`/home/cliweb`, the workspace, nanobrew, or Tailscale state); this Compose file
+(`/home/cliweb`, the workspace, or nanobrew); this Compose file
 has no named volumes. Stop the stack and remove the relevant host directories
 manually only when you intentionally want to discard saved state.
 
