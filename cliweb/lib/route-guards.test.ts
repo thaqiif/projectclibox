@@ -42,8 +42,17 @@ test("bodyless DELETE without Content-Type passes the JSON guard", async () => {
   );
 });
 
-test("bodyless GET passes the JSON guard the same way", async () => {
-  await expectPass(guardJsonContent, request({ method: "GET" }));
+test("null RequestInit body is truly bodyless even with a form Content-Type", async () => {
+  for (const body of [undefined, null]) {
+    const req = request({
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    assert.equal(req.body, null);
+    assert.equal(await req.clone().text(), "");
+    await expectPass(guardJsonContent, req);
+  }
 });
 
 test("a request with a JSON body still passes the JSON guard", async () => {
@@ -58,15 +67,23 @@ test("a request with a JSON body still passes the JSON guard", async () => {
 });
 
 test("a request with a body but wrong Content-Type is still rejected", async () => {
-  await expectStatus(
-    guardJsonContent,
-    request({
-      method: "POST",
-      headers: { "content-type": "text/plain" },
-      body: "evil",
-    }),
-    415
-  );
+  const req = request({
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: "action=delete",
+  });
+
+  // Fetch does not add Content-Length to this Request object. The non-null
+  // body stream, not that optional transport header, is the payload signal.
+  assert.equal(req.headers.get("content-length"), null);
+  assert.notEqual(req.body, null);
+  await expectStatus(guardJsonContent, req, 415);
+});
+
+test("even an empty-string payload has a body stream and needs JSON", async () => {
+  const req = request({ method: "POST", body: "" });
+  assert.notEqual(req.body, null);
+  await expectStatus(guardJsonContent, req, 415);
 });
 
 test("bodyless DELETE with a wrong Origin is still rejected 403", async () => {
@@ -81,55 +98,86 @@ test("bodyless DELETE with a wrong Origin is still rejected 403", async () => {
   );
 });
 
-test("same-origin guard requires Origin to equal Host", async () => {
-  await expectStatus(
-    guardSameOrigin,
-    request({
-      method: "DELETE",
-      headers: { origin: "http://localhost", host: "otherhost" },
-    }),
-    403
-  );
-  await expectPass(
-    guardSameOrigin,
-    request({
-      method: "DELETE",
-      headers: { origin: "http://localhost", host: "localhost" },
-    })
-  );
-});
-
-test("behind a proxy, a rewritten Host with a matching X-Forwarded-Host passes", async () => {
-  // Coolify-style reverse proxy: browser Origin is the public domain, the
-  // proxy may rewrite Host to the internal upstream. The guard must accept
-  // the proxy-declared forwarded host or production POSTs would 403.
-  await expectPass(
-    guardSameOrigin,
-    request({
-      method: "DELETE",
+test("same-origin Host and proxy fallback case matrix", async () => {
+  const cases: Array<{
+    name: string;
+    headers: Record<string, string>;
+    status: "pass" | 403;
+  }> = [
+    {
+      name: "no Origin (native client)",
+      headers: { host: "cliweb.example.com" },
+      status: "pass",
+    },
+    {
+      name: "same-origin Host",
       headers: {
         origin: "https://cliweb.example.com",
-        host: "internal-upstream",
-        "x-forwarded-host": "cliweb.example.com",
+        host: "cliweb.example.com",
       },
-    })
-  );
-});
-
-test("X-Forwarded-Host does not rescue a forged origin", async () => {
-  // The fallback compares against the proxy header, not against attacker data.
-  await expectStatus(
-    guardSameOrigin,
-    request({
-      method: "DELETE",
+      status: "pass",
+    },
+    {
+      name: "Host comparison is case-insensitive",
+      headers: {
+        origin: "https://cliweb.example.com",
+        host: "CLIWEB.EXAMPLE.COM",
+      },
+      status: "pass",
+    },
+    {
+      name: "cross-origin browser through correctly configured proxy",
       headers: {
         origin: "https://evil.example",
         host: "internal-upstream",
         "x-forwarded-host": "cliweb.example.com",
       },
-    }),
-    403
-  );
+      status: 403,
+    },
+    {
+      name: "proxy-rewritten Host with public forwarded host",
+      headers: {
+        origin: "https://cliweb.example.com",
+        host: "internal-upstream",
+        "x-forwarded-host": "cliweb.example.com",
+      },
+      status: "pass",
+    },
+    {
+      name: "mismatched Host without proxy header",
+      headers: {
+        origin: "https://cliweb.example.com",
+        host: "internal-upstream",
+      },
+      status: 403,
+    },
+    {
+      name: "invalid Origin",
+      headers: { origin: "not a URL", host: "cliweb.example.com" },
+      status: 403,
+    },
+    {
+      // A raw client controls both values and therefore passes. It has no
+      // browser-managed ambient credentials, so this is outside CSRF's threat
+      // model. Proxies must overwrite inbound X-Forwarded-Host regardless.
+      name: "direct client spoofs Origin and X-Forwarded-Host together",
+      headers: {
+        origin: "https://evil.example",
+        host: "internal-upstream",
+        "x-forwarded-host": "evil.example",
+      },
+      status: "pass",
+    },
+  ];
+
+  for (const entry of cases) {
+    const req = request({ method: "DELETE", headers: entry.headers });
+    if (entry.status === "pass") {
+      await expectPass(guardSameOrigin, req);
+    } else {
+      await expectStatus(guardSameOrigin, req, entry.status);
+    }
+  }
 });
 
 test("first X-Forwarded-Host value wins in a chained proxy", async () => {

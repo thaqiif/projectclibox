@@ -20,9 +20,13 @@ import { NextResponse } from "next/server";
  * doubles as a CSRF tripwire.
  *
  * Bodyless requests — a bare `fetch(url, { method: "DELETE" })` sends
- * neither a body nor a Content-Type — carry nothing that a hostile page
- * could use to change data, so the content-type only guards requests that
- * actually have a body.
+ * neither a body nor a Content-Type — have no payload for this guard to
+ * classify. Per Fetch Standard §5.3, "The body getter steps are to return
+ * null if this's body is null; otherwise this's body's stream." Request
+ * construction only extracts `RequestInit.body` when it exists and is
+ * non-null (§5.4). Thus `request.body === null` means there is no payload;
+ * a payload sent without Content-Length still produces a body stream. The
+ * separate same-origin guard remains responsible for bodyless CSRF attempts.
  */
 export function guardJsonContent(request: Request): NextResponse | null {
   if (request.body == null) return null;
@@ -49,6 +53,13 @@ export function guardJsonContent(request: Request): NextResponse | null {
  * is accepted as an alternative comparison target: it is only consulted
  * when the plain Host comparison fails, so direct deployments are
  * unaffected and a proxy without the header keeps the strict check.
+ *
+ * A raw HTTP client can spoof both Origin and X-Forwarded-Host and pass this
+ * comparison. That is not a CSRF bypass: such a client does not receive a
+ * browser's ambient credentials. A cross-origin browser script cannot send
+ * X-Forwarded-Host without a successful CORS preflight because it is not a
+ * CORS-safelisted header, and an HTML form cannot set it at all. The edge
+ * proxy must still overwrite, rather than trust, inbound forwarding headers.
  * Proxies that strip BOTH Host and X-Forwarded-Host need their own
  * forwarding config; see README "Production migration checklist".
  */
@@ -66,8 +77,8 @@ export function guardSameOrigin(request: Request): NextResponse | null {
     );
   }
 
-  const host = request.headers.get("host");
-  if (host && originHost === host) return null;
+  const host = request.headers.get("host")?.toLowerCase();
+  if (host && originHost.toLowerCase() === host) return null;
 
   // Proxy fallback: compare against the host the proxy says it forwarded
   // for (first value wins; X-Forwarded-Host: a, b means the outermost hop).

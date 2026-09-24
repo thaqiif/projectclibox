@@ -1,8 +1,8 @@
 # Test-deployment compose file.
 #
-# Same stack as docker-compose.yml (production), with hardcoded paths and
-# ports so a second Coolify app can deploy from this branch/app without
-# touching production's state:
+# Same stack as docker-compose.yml (production), with test-specific defaults
+# and override names so a second Coolify app can deploy from this branch/app
+# without touching production's state:
 #
 #   - persisted home:   /home/cliweb-test   (container sees /home/cliweb)
 #   - workspaces:       ./workspaces-test   (container sees /workspaces)
@@ -53,7 +53,7 @@ services:
       - /home/cliweb-test:/home/cliweb
       - /home/cliweb-test/nanobrew:/opt/nanobrew
       # Test workspaces folder beside the repo checkout's default.
-      - ${WORKSPACE_DIR:-./workspaces-test}:/workspaces
+      - ${TEST_WORKSPACE_DIR:-./workspaces-test}:/workspaces
 
     # Pass host devices through so web terminals can use hardware features.
     # Mirror of production's mapping; remove lines for devices the host

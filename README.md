@@ -213,8 +213,8 @@ the same repo, e.g. two Coolify applications). Differences from production:
 - Persisted home: `/home/cliweb-test` on the host (production uses
   `/home/cliweb`), so settings, database, trash, and installed tools are
   completely separate.
-- Workspaces: `./workspaces-test` (override with `WORKSPACE_DIR`), so project
-  folders are separate too.
+- Workspaces: `./workspaces-test` (override with `TEST_WORKSPACE_DIR`), so
+  project folders are separate too.
 - Host port: `3012` (override with `TEST_HOST_PORT`, bind with
   `TEST_HOST_BIND`); production stays on `3011`. The `TEST_` prefix means a
   `.env` that sets `HOST_PORT=3011` for production cannot make the test
@@ -224,10 +224,12 @@ the same repo, e.g. two Coolify applications). Differences from production:
 - Tailscale state: `/var/lib/cliweb-tailscale-test`, so the two deployments
   hold separate tailnet identities.
 
-Because every persisted path is hardcoded in this file, no environment
-variables are required: point the second Coolify application at this compose
-file and deploy. The startup ownership guard (`.deployment-owner`) is still
-satisfied, since each deployment now chowns its own home only.
+No environment variables are required: test-specific defaults and `TEST_`
+override names keep a shared production `.env` from redirecting these mounts
+or ports. Point the second Coolify application at this compose file and deploy.
+The startup ownership guard (`.deployment-owner`) is still satisfied even if
+production and test use different PUID/PGID values: each deployment writes the
+marker under its own host home and chowns only that home.
 
 ## Configuration
 
@@ -336,9 +338,10 @@ via `CREATE TABLE IF NOT EXISTS` plus `INSERT OR IGNORE`, so it is idempotent
 and safe against databases created by earlier images: a volume that already
 has the old (32b74ba-era) `projects` schema keeps its extra columns, which the
 current `SELECT *` queries tolerate, and the data stays intact. This was
-verified by replaying the current migrations against clones of every historical
-prod schema (migration rows `{1}`, `{1,2}`, `{1,2,3}`, and an empty `_migrations`
-table), in all cases with successful queries and unchanged row data.
+verified by replaying the current migrations against each historical production
+schema/tracker combination (migration rows `{1}`, `{1,2}`, `{1,3}`, `{1,2,3}`,
+and an empty `_migrations` table), in all cases with assertions for successful
+queries and unchanged pre-existing row data.
 
 ## Production migration checklist (develop -> master deploy)
 
@@ -348,16 +351,19 @@ Coolify rebuild production. Read end to end before deploying.
 ### 1. Back up first (rollback anchor)
 
 ```sh
-# On the Docker host, before deploying:
-cp -a /home/cliweb/.cliweb/cliweb.db /home/cliweb/.cliweb/cliweb.db.bak
+# On the Docker host, before deploying. SQLite's online backup includes data
+# that may still be in the live database's WAL file.
+sqlite3 /home/cliweb/.cliweb/cliweb.db \
+  ".backup '/home/cliweb/.cliweb/cliweb.db.bak'"
+sqlite3 /home/cliweb/.cliweb/cliweb.db.bak "PRAGMA integrity_check"
 ```
 
 Rollback procedure: revert the Coolify application to the previous deploy
-(the previous image is kept), or checkout this repo to master before the
-merge and redeploy. The old code runs against the same database file; the
-migration for a DB that already has `_migrations` row 1 is a no-op, so old
-code + old DB = exactly today's behavior. Take the `.db.bak` backup anyway
-if anything abnormal appears in the first-boot logs.
+(the previous image is kept), or redeploy the pre-merge master revision. The
+current migration is schema-compatible with the old image, so an image-only
+rollback can keep the live database. To restore the exact pre-deploy data,
+stop the application first, replace `cliweb.db` with `cliweb.db.bak`, remove
+stale `cliweb.db-wal` and `cliweb.db-shm` files, then start the old image.
 
 ### 2. Data and layout compatibility (verified)
 
@@ -399,6 +405,12 @@ same-origin UI traffic passes. Two residual risks and their handling:
   forwarding (e.g. proxy_set_header Host $host plus X-Forwarded-Host in the
   reverse proxy config) or temporarily roll back by pinning the previous
   image.
+- The fallback assumes the trusted edge overwrites inbound forwarding
+  headers. A raw HTTP client can make `Origin` and `X-Forwarded-Host` agree,
+  but it has no browser-managed ambient credentials and therefore cannot use
+  that fact for CSRF. Browser cross-origin requests cannot add this non-
+  safelisted header without a successful CORS preflight. Do not expose the
+  origin server directly to browsers around that trusted edge.
 - Absence of `Origin` passes (curl/CLI clients unaffected).
 
 ### 5. Post-deploy smoke test
