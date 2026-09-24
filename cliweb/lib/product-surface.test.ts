@@ -478,10 +478,10 @@ test("monitor workspace adapts between desktop panes and mobile tabs", () => {
   assert.match(desktop, /handleCloseTerminal\(activeTerminal\.name\)/);
   assert.doesNotMatch(desktop, /aria-label="Remove monitor pane"/);
   assert.match(monitor, /TERMINAL_DRAG_TYPE/);
-  assert.match(monitor, /tmuxAttachCommand/);
+  assert.doesNotMatch(monitor, /tmuxAttachCommand/);
   assert.match(monitor, /key=\{terminal\.id\}/);
   assert.match(monitor, /key=\{terminalId\}/);
-  assert.match(monitor, /tmuxAttachCommand\(name, cwd\)/);
+  assert.match(monitor, /sessionName=\{name\}/);
   assert.match(monitor, /projectNameFor/);
   assert.match(monitor, /Remove monitor pane/);
   assert.match(monitor, /Drop a terminal here/);

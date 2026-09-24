@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  createTerminalWithName,
   killTerminal,
   renameTerminal,
   sanitizeTerminalName,
@@ -7,10 +8,16 @@ import {
 } from "@/lib/terminals";
 import {
   forgetTerminal,
+  registeredTerminalPath,
   renameTerminalRow,
   terminalRowExists,
 } from "@/lib/terminal-registry";
-import { guardJsonSameOrigin, guardSameOrigin } from "@/lib/route-guards";
+import {
+  guardJsonRequiredSameOrigin,
+  guardJsonSameOrigin,
+  guardSameOrigin,
+} from "@/lib/route-guards";
+import { rememberTerminal } from "@/lib/terminal-registry";
 
 /**
  * DELETE /api/terminals/:name - close a terminal for good.
@@ -42,6 +49,43 @@ export async function DELETE(
     console.error("Error killing terminal:", error);
     return NextResponse.json(
       { error: "Failed to kill terminal" },
+      { status: 500 }
+    );
+  }
+}
+
+/** POST /api/terminals/:name - restart a stopped registered terminal. */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ name: string }> }
+) {
+  const guard = guardJsonRequiredSameOrigin(request);
+  if (guard) return guard;
+
+  try {
+    const { name } = await params;
+    const decoded = decodeURIComponent(name);
+    const cwd = registeredTerminalPath(decoded);
+    if (!cwd) {
+      return NextResponse.json(
+        { error: "No registered terminal with that name" },
+        { status: 404 }
+      );
+    }
+    if (await terminalExists(decoded)) {
+      return NextResponse.json(
+        { error: "Terminal is already running" },
+        { status: 409 }
+      );
+    }
+
+    const terminal = await createTerminalWithName(decoded, cwd);
+    rememberTerminal(terminal.name, terminal.path);
+    return NextResponse.json({ success: true, name: terminal.name });
+  } catch (error) {
+    console.error("Error restarting terminal:", error);
+    return NextResponse.json(
+      { error: "Failed to restart terminal" },
       { status: 500 }
     );
   }

@@ -8,7 +8,6 @@ import { useViewportHeight } from "@/hooks/useViewportHeight";
 import { useTerminals } from "@/hooks/useTerminals";
 import { useProjects } from "@/hooks/useProjects";
 import type { TerminalRecord } from "@/lib/terminals";
-import { tmuxAttachCommand } from "@/lib/tmux-attach";
 import type { TerminalHandle } from "@/components/Terminal";
 import { DesktopView } from "@/components/views/DesktopView";
 import { MobileView } from "@/components/views/MobileView";
@@ -75,18 +74,32 @@ function HomeContent() {
   /**
    * Point the workbench at a tmux terminal.
    *
-   * The pty behind the terminal is a plain shell, so "attaching" means
-   * running `tmux attach` in it. If it is already inside tmux we detach
-   * first (Ctrl-B d) and clear whatever is on the command line, otherwise
-   * the attach command would be typed into the running program instead of
-   * the shell.
+   * The PTY connects directly to the selected tmux session. Changing this
+   * name tears down the old WebSocket and attaches the new session by ID.
    */
   const attachToTerminal = useCallback(
-    (name: string) => {
+    async (name: string) => {
       const record = terminals.find((t) => t.tmux_name === name);
-      const command = tmuxAttachCommand(name, record?.working_directory);
-
       const terminal = getTerminal();
+
+      if (record?.alive === false) {
+        const response = await fetch(
+          `/api/terminals/${encodeURIComponent(name)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          }
+        );
+        if (!response.ok) {
+          debugLog(`Failed to restart terminal ${name}: ${response.status}`);
+          return;
+        }
+        await fetchTerminals();
+        if (terminal && attachedTmux === name) {
+          return;
+        }
+      }
 
       // Already looking at it. Re-running the attach would detach the
       // client and immediately reattach, which throws away the redraw and
@@ -98,8 +111,8 @@ function HomeContent() {
       }
 
       // Nothing is mounted while the welcome screen is up. Recording the
-      // attachment is enough: that mounts the terminal, and its connect
-      // handler runs the same command once the pty is ready.
+      // attachment mounts a terminal that receives a capability for this
+      // session before the server creates its PTY.
       if (!terminal) {
         debugLog(`Attaching on mount: ${name}`);
         attach(name);
@@ -107,22 +120,9 @@ function HomeContent() {
         return;
       }
 
-      const isInTmux = !!attachedTmux;
-      if (isInTmux) terminal.sendInput("\x02d");
-
-      setTimeout(
-        () => {
-          terminal.sendInput("\x03");
-          setTimeout(() => {
-            terminal.sendCommand(command);
-            attach(name);
-            terminal.focus();
-            // The restart changes what the listing should say.
-            void fetchTerminals();
-          }, 50);
-        },
-        isInTmux ? 100 : 0
-      );
+      attach(name);
+      terminal.focus();
+      void fetchTerminals();
     },
     [getTerminal, attachedTmux, attach, terminals, fetchTerminals]
   );

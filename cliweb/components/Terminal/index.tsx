@@ -10,8 +10,8 @@ import {
   useMemo,
 } from "react";
 import { useTheme } from "next-themes";
-import "@xterm/xterm/css/xterm.css";
-import { WifiOff, Upload, Loader2, X } from "lucide-react";
+import "@wterm/dom/css";
+import { Copy, WifiOff, Upload, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ScrollToBottomButton } from "./ScrollToBottomButton";
@@ -32,6 +32,7 @@ import {
   uploadTextAsPasteFile,
 } from "@/lib/file-upload";
 import { useFontScale } from "@/contexts/FontScaleContext";
+import { terminalHistoryText } from "./hooks/terminal-engine-adapter";
 
 /**
  * Mobile long-paste dialog. Clipboard text is captured from the paste event
@@ -119,8 +120,11 @@ export interface TerminalHandle {
 }
 
 interface TerminalProps {
+  sessionName?: string;
+  isActive?: boolean;
   onConnected?: () => void;
   onDisconnected?: () => void;
+  onTitle?: (title: string) => void;
   onBeforeUnmount?: (scrollState: TerminalScrollState) => void;
   initialScrollState?: TerminalScrollState;
   /**
@@ -133,8 +137,11 @@ interface TerminalProps {
 export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
   function Terminal(
     {
+      sessionName,
+      isActive = true,
       onConnected,
       onDisconnected,
+      onTitle,
       onBeforeUnmount,
       initialScrollState,
       workingDirectory,
@@ -148,9 +155,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
     const { theme: currentTheme, resolvedTheme } = useTheme();
     const [selectMode, setSelectMode] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
+    const [osc52Pending, setOsc52Pending] = useState<string | null>(null);
+    const [osc52ManualText, setOsc52ManualText] = useState<string | null>(null);
     // Long clipboard text captured from paste on mobile, shown in the
     // "Paste options" dialog; null means no dialog.
     const [longPasteText, setLongPasteText] = useState<string | null>(null);
+
+    const handleOsc52ClipboardWrite = useCallback((text: string) => {
+      setOsc52Pending(text);
+      setOsc52ManualText(null);
+    }, []);
 
     // Use the full theme string (e.g., "dark-purple") for terminal theming
     const terminalTheme = useMemo(() => {
@@ -164,24 +178,84 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
     const {
       connectionState,
       isAtBottom,
-      xtermRef,
+      coreRef,
       scrollToBottom,
       copySelection,
       sendInput,
       sendCommand,
       focus,
       reconnect,
+      initializationError,
     } = useTerminalConnection({
       terminalRef,
+      sessionName,
+      isActive,
       onConnected,
       onDisconnected,
+      onTitle,
       onBeforeUnmount,
+      onClipboardWrite: handleOsc52ClipboardWrite,
       initialScrollState,
       isMobile,
       fontScale,
       theme: terminalTheme,
       selectMode,
     });
+
+    useEffect(() => {
+      setOsc52Pending(null);
+      setOsc52ManualText(null);
+    }, [sessionName]);
+
+    const handleCopyOsc52 = useCallback(() => {
+      if (osc52Pending === null) return;
+
+      let clipboardWrite: Promise<void> | null = null;
+      try {
+        clipboardWrite = navigator.clipboard?.writeText
+          ? navigator.clipboard.writeText(osc52Pending)
+          : null;
+      } catch {
+        // A browser can throw synchronously when clipboard access is blocked.
+      }
+
+      // execCommand is the synchronous, gesture-bound fallback for browsers
+      // without the Clipboard API or pages where it is denied.
+      const textarea = document.createElement("textarea");
+      textarea.value = osc52Pending;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      textarea.style.pointerEvents = "none";
+      document.body.appendChild(textarea);
+      textarea.select();
+      let legacyCopied = false;
+      try {
+        legacyCopied = document.execCommand("copy");
+      } catch {
+        // Keep the text available in the manual-copy panel below.
+      }
+      textarea.remove();
+
+      if (legacyCopied) {
+        setOsc52Pending(null);
+        setOsc52ManualText(null);
+        return;
+      }
+
+      if (clipboardWrite) {
+        void clipboardWrite.then(
+          () => {
+            setOsc52Pending(null);
+            setOsc52ManualText(null);
+          },
+          () => {
+            if (!legacyCopied) setOsc52ManualText(osc52Pending);
+          }
+        );
+      } else {
+        setOsc52ManualText(osc52Pending);
+      }
+    }, [osc52Pending]);
 
     // Drop/paste uploads land in <cwd>/tmp, not the cwd root; without a
     // working directory the uploader falls back to /tmp.
@@ -241,9 +315,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
     );
 
     // Intercept clipboard paste on the terminal container. Clipboard events
-    // always target xterm's hidden textarea, which lives inside containerRef,
+    // always target WTerm's hidden textarea, which lives inside containerRef,
     // so capturing at the container is the reliable interception point. Local
-    // capture listener fires before xterm's own paste listeners.
+    // capture listener fires before WTerm's paste handler.
     const handlePasteCapture = useCallback(
       (event: ClipboardEvent) => {
         // Paste dialogs live inside the terminal container. Let their textareas
@@ -262,7 +336,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
           preferFile: pasteLongAsFilePref(),
         });
 
-        // ignore: short text keeps xterm's default flow, and a desktop user
+        // ignore: short text keeps WTerm's default flow, and a desktop user
         // who turned the preference off keeps the old inline paste.
         if (action === "ignore") return;
 
@@ -364,6 +438,24 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
       };
     }, [handlePasteCapture]);
 
+    const handleSelectAllKeyDown = useCallback(
+      (event: React.KeyboardEvent<HTMLDivElement>) => {
+        const target = event.target as HTMLElement | null;
+        if (
+          !terminalRef.current?.contains(document.activeElement) ||
+          target?.closest("[data-terminal-paste-editor]") ||
+          !(event.metaKey || event.ctrlKey) ||
+          event.key.toLowerCase() !== "a"
+        ) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        setSelectMode(true);
+      },
+      []
+    );
+
     // Expose imperative methods
     useImperativeHandle(ref, () => ({
       sendCommand,
@@ -373,21 +465,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 
     // Extract terminal text for select mode overlay
     const terminalText = useMemo(() => {
-      if (!selectMode || !xtermRef.current) return "";
-
-      const term = xtermRef.current;
-      const buffer = term.buffer.active;
-      const startRow = Math.max(0, buffer.baseY - 500);
-      const endRow = buffer.baseY + term.rows;
-      const lines: string[] = [];
-
-      for (let i = startRow; i < endRow; i++) {
-        const line = buffer.getLine(i);
-        if (line) lines.push(line.translateToString(true));
-      }
-
-      return lines.join("\n");
-    }, [selectMode, xtermRef]);
+      if (!selectMode || !coreRef.current) return "";
+      return terminalHistoryText(coreRef.current);
+    }, [selectMode, coreRef]);
 
     return (
       <div
@@ -399,6 +479,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
           height: "100%",
         }}
         {...dragHandlers}
+        onKeyDownCapture={handleSelectAllKeyDown}
       >
         {/* Terminal container - NO padding! FitAddon reads offsetHeight which includes padding */}
         <div
@@ -464,6 +545,50 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
         {/* Scroll to bottom button */}
         <ScrollToBottomButton visible={!isAtBottom} onClick={scrollToBottom} />
 
+        {osc52Pending !== null && (
+          <div className="bg-background/95 absolute top-3 right-3 z-20 flex max-w-[min(32rem,calc(100%-1.5rem))] items-center gap-2 rounded-lg border border-[var(--fill-2)] px-3 py-2 text-xs shadow-lg">
+            <span className="min-w-0 flex-1 truncate">Terminal requested clipboard access</span>
+            <button
+              onClick={handleCopyOsc52}
+              className="bg-primary text-primary-foreground flex shrink-0 items-center gap-1 rounded px-2 py-1 font-medium"
+            >
+              <Copy className="h-3 w-3" /> Copy
+            </button>
+            <button
+              aria-label="Dismiss clipboard request"
+              onClick={() => {
+                setOsc52Pending(null);
+                setOsc52ManualText(null);
+              }}
+              className="text-muted-foreground hover:text-foreground shrink-0"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
+        {osc52ManualText !== null && (
+          <div className="bg-background/95 absolute top-14 right-3 z-20 flex w-[min(32rem,calc(100%-1.5rem))] flex-col gap-2 rounded-lg border border-[var(--fill-2)] p-3 text-xs shadow-lg">
+            <div className="flex items-center justify-between gap-2">
+              <span>Clipboard access was denied. Select and copy this text.</span>
+              <button
+                aria-label="Close manual clipboard text"
+                onClick={() => setOsc52ManualText(null)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <textarea
+              aria-label="Text requested by terminal"
+              readOnly
+              value={osc52ManualText}
+              onFocus={(event) => event.currentTarget.select()}
+              className="max-h-32 min-h-16 w-full resize-y overflow-auto rounded border border-[var(--fill-2)] bg-[var(--fill-4)] p-2 font-mono text-xs select-text"
+            />
+          </div>
+        )}
+
         {/* Mobile: Toolbar with special keys (native keyboard handles text) */}
         {isMobile && (
           <TerminalToolbar
@@ -516,6 +641,26 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
               Tap to reconnect
             </span>
           </button>
+        )}
+
+        {connectionState === "error" && (
+          <div className="bg-background/95 absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 px-6 text-center">
+            <WifiOff className="text-muted-foreground h-8 w-8" />
+            <span className="text-foreground text-sm font-medium">
+              Terminal connection failed
+            </span>
+            {initializationError && (
+              <span className="text-muted-foreground max-w-md text-xs">
+                {initializationError}
+              </span>
+            )}
+            <button
+              onClick={reconnect}
+              className="bg-primary text-primary-foreground rounded-lg px-4 py-2 text-sm"
+            >
+              Retry
+            </button>
+          </div>
         )}
       </div>
     );

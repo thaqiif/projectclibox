@@ -25,6 +25,13 @@ const execFileAsync = promisify(execFile);
  */
 const SEP = "%%";
 
+function tmuxEnvironment(): NodeJS.ProcessEnv {
+  const environment = buildCliwebEnvironment();
+  delete environment.TMUX;
+  delete environment.TMUX_PANE;
+  return environment;
+}
+
 export interface Terminal {
   /** tmux name; the terminal's identity. */
   name: string;
@@ -41,13 +48,77 @@ export interface Terminal {
 async function tmux(args: string[]): Promise<string> {
   try {
     const { stdout } = await execFileAsync("tmux", args, {
-      env: buildCliwebEnvironment(),
+      env: tmuxEnvironment(),
     });
     return stdout;
   } catch {
     // No server running, or the terminal vanished between calls. Both are
     // ordinary states, not errors.
     return "";
+  }
+}
+
+async function tmuxOrThrow(args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync("tmux", args, {
+    env: tmuxEnvironment(),
+  });
+  return stdout;
+}
+
+async function configureManagedSession(name: string): Promise<void> {
+  const env = tmuxEnvironment();
+  await execFileAsync("tmux", ["set-option", "-g", "extended-keys", "on"], {
+    env,
+  });
+
+  // Append the capability only once and preserve every feature installed by
+  // the operator or another application.
+  const features = await tmux(["show-option", "-gqv", "terminal-features"]);
+  if (!features.split(/[\s,]+/u).includes("xterm*:extkeys")) {
+    await execFileAsync(
+      "tmux",
+      ["set-option", "-ga", "terminal-features", "xterm*:extkeys"],
+      { env }
+    );
+  }
+
+  // URL images are an explicit WTerm extension. tmux handles XTGETTCAP
+  // itself, so WTerm-aware clients read this session option inside tmux.
+  await execFileAsync(
+    "tmux",
+    ["set-option", "-t", name, "@cliweb_wterm_url_image", "1"],
+    { env }
+  );
+
+  const windowIds = (await tmuxOrThrow([
+    "list-windows",
+    "-t",
+    name,
+    "-F",
+    "#{window_id}",
+  ])).trim().split("\n").filter(Boolean);
+  for (const windowId of windowIds) {
+    await execFileAsync(
+      "tmux",
+      ["set-window-option", "-t", windowId, "allow-passthrough", "on"],
+      { env }
+    );
+  }
+
+  const hooks = await tmux(["show-hooks", "-t", name]);
+  if (!hooks.includes("set-window-option allow-passthrough on")) {
+    await execFileAsync(
+      "tmux",
+      [
+        "set-hook",
+        "-a",
+        "-t",
+        name,
+        "after-new-window",
+        "set-window-option allow-passthrough on",
+      ],
+      { env }
+    );
   }
 }
 
@@ -150,7 +221,15 @@ export async function terminalExists(name: string): Promise<boolean> {
  */
 export async function createTerminal(cwd: string): Promise<Terminal> {
   const name = `term-${randomUUID()}`;
-  const environment = buildCliwebEnvironment();
+  return createTerminalWithName(name, cwd);
+}
+
+/** Create a named terminal from a trusted registry path when restarting it. */
+export async function createTerminalWithName(
+  name: string,
+  cwd: string
+): Promise<Terminal> {
+  const environment = tmuxEnvironment();
 
   await execFileAsync(
     "tmux",
@@ -169,6 +248,7 @@ export async function createTerminal(cwd: string): Promise<Terminal> {
   // Mouse mode makes tmux's own splits usable in the browser: scrolling,
   // pane focus and divider dragging all work without a prefix key.
   await tmux(["set-option", "-t", name, "mouse", "on"]);
+  await configureManagedSession(name);
 
   // The status bar duplicates what the workbench already shows, and eats a
   // row of the interactive program. Global, so hand-started terminals lose it too.

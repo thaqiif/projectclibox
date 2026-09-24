@@ -1,7 +1,15 @@
 "use client";
 
 import type { RefObject } from "react";
-import type { Terminal as XTerm } from "@xterm/xterm";
+import type { WTerm } from "@wterm/dom";
+import type { GhosttyCore } from "@wterm/ghostty";
+
+export type TerminalConnectionState =
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "reconnecting"
+  | "error";
 
 export interface TerminalScrollState {
   scrollTop: number;
@@ -11,9 +19,13 @@ export interface TerminalScrollState {
 
 export interface UseTerminalConnectionProps {
   terminalRef: RefObject<HTMLDivElement | null>;
+  sessionName?: string;
+  isActive?: boolean;
   onConnected?: () => void;
   onDisconnected?: () => void;
   onBeforeUnmount?: (scrollState: TerminalScrollState) => void;
+  onClipboardWrite?: (text: string) => void;
+  onTitle?: (title: string) => void;
   initialScrollState?: TerminalScrollState;
   isMobile?: boolean;
   fontScale?: number;
@@ -22,9 +34,11 @@ export interface UseTerminalConnectionProps {
 }
 
 export interface UseTerminalConnectionReturn {
-  connectionState: "connecting" | "connected" | "disconnected" | "reconnecting";
+  connectionState: TerminalConnectionState;
   isAtBottom: boolean;
-  xtermRef: RefObject<XTerm | null>;
+  terminalInstanceRef: RefObject<WTerm | null>;
+  coreRef: RefObject<GhosttyCore | null>;
+  initializationError: string | null;
   scrollToBottom: () => void;
   copySelection: () => boolean;
   sendInput: (data: string) => void;

@@ -118,7 +118,7 @@ test("edge drop inserts beside an occupied pane and steals an already-monitored 
   const stolen = dropMonitorTerminal(state, "right", "term-a", "after");
   assert.deepEqual(
     stolen.panes.map((pane) => pane.terminalId),
-    [null, "term-b", "term-a"]
+    ["term-b", "term-a"]
   );
 });
 

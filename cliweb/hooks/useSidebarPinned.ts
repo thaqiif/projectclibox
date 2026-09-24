@@ -55,7 +55,7 @@ export function useSidebarPinned() {
 
       if (isCtrl) {
         const target = event.target as Element | null;
-        if (target?.closest?.(".xterm")) return;
+        if (target?.closest?.(".wterm")) return;
       }
 
       event.preventDefault();

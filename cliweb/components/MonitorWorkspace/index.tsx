@@ -15,7 +15,6 @@ import {
   TerminalSkeleton,
   FileExplorerSkeleton,
 } from "@/components/Pane/PaneSkeletons";
-import { tmuxAttachCommand } from "@/lib/tmux-attach";
 import type { TerminalHandle } from "@/components/Terminal";
 import type { TerminalRecord } from "@/lib/terminals";
 import type { Project } from "@/lib/db";
@@ -108,23 +107,79 @@ function MonitorTerminal({
   name,
   cwd,
   onRestarted,
+  onTitle,
+  restart = false,
+  isActive,
 }: {
   name: string;
   cwd?: string | null;
   onRestarted: () => Promise<void>;
+  onTitle: (title: string) => void;
+  restart?: boolean;
+  isActive: boolean;
 }) {
   const ref = useRef<TerminalHandle | null>(null);
-  const handleConnected = useCallback(() => {
-    const handle = ref.current;
-    if (!handle) return;
-    setTimeout(() => {
-      handle.sendCommand(tmuxAttachCommand(name, cwd));
-      handle.focus();
-      void onRestarted();
-    }, 100);
-  }, [name, cwd, onRestarted]);
+  const [retry, setRetry] = useState(0);
+  const requestKey = restart ? `${name}:${retry}` : "idle";
+  const [startupState, setStartupState] = useState<{
+    requestKey: string;
+    value: "restarting" | "ready" | "error";
+  }>({
+    requestKey,
+    value: restart ? "restarting" : "ready",
+  });
+  const startup =
+    startupState.requestKey === requestKey
+      ? startupState.value
+      : restart
+        ? "restarting"
+        : "ready";
+  useEffect(() => {
+    if (!restart) return;
+    let cancelled = false;
+    void fetch(`/api/terminals/${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Terminal restart failed");
+        if (cancelled) return;
+        await onRestarted();
+        if (!cancelled) setStartupState({ requestKey, value: "ready" });
+      })
+      .catch(() => {
+        if (!cancelled) setStartupState({ requestKey, value: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [name, onRestarted, requestKey, restart]);
 
-  return <Terminal ref={ref} onConnected={handleConnected} workingDirectory={cwd} />;
+  if (startup !== "ready") {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-sm font-medium">
+          {startup === "restarting" ? "Restarting terminal…" : "Terminal restart failed"}
+        </p>
+        {startup === "error" && (
+          <Button size="sm" onClick={() => setRetry((value) => value + 1)}>
+            Retry
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Terminal
+      ref={ref}
+      sessionName={name}
+      isActive={isActive}
+      onTitle={onTitle}
+      workingDirectory={cwd}
+    />
+  );
 }
 
 function MonitorPane({
@@ -135,6 +190,7 @@ function MonitorPane({
   canRemove,
   canInsert,
   mobile,
+  isActive,
   onAssign,
   onMove,
   onRemove,
@@ -147,6 +203,7 @@ function MonitorPane({
   canRemove: boolean;
   canInsert: boolean;
   mobile: boolean;
+  isActive: boolean;
   onAssign: (paneId: string, terminalId: string, side: MonitorDropSide) => void;
   onMove: (sourcePaneId: string, anchorPaneId: string, side: MonitorDropSide) => void;
   onRemove: (paneId: string) => void;
@@ -156,6 +213,11 @@ function MonitorPane({
   const [hoverSide, setHoverSide] = useState<MonitorDropSide | null>(null);
   const [hoverKind, setHoverKind] = useState<"terminal" | "pane" | null>(null);
   const [showFiles, setShowFiles] = useState(false);
+  const [terminalTitleState, setTerminalTitleState] = useState<{
+    terminalId: string | null;
+    restart: boolean;
+    title: string | null;
+  }>({ terminalId, restart, title: null });
   const fileEditor = useFileEditor();
   const { reset: resetFileEditor } = fileEditor;
   const empty = !terminalId && !restart;
@@ -184,7 +246,16 @@ function MonitorPane({
     }
   };
 
-  const title = terminal?.name ?? terminalId;
+  const terminalTitle =
+    terminalTitleState.terminalId === terminalId &&
+    terminalTitleState.restart === restart
+      ? terminalTitleState.title
+      : null;
+  const handleTerminalTitle = useCallback(
+    (title: string) => setTerminalTitleState({ terminalId, restart, title }),
+    [terminalId, restart]
+  );
+  const title = terminalTitle?.trim() || terminal?.name || terminalId;
 
   // A different terminal in the pane means a different working directory
   // for Files, and a torn-down tmux attachment for the editor state.
@@ -299,12 +370,18 @@ function MonitorPane({
             name={terminal.tmux_name}
             cwd={terminal.working_directory}
             onRestarted={onTerminalsChanged}
+            onTitle={handleTerminalTitle}
+            restart={restart}
+            isActive={isActive}
           />
         ) : restart && terminalId ? (
           <MonitorTerminal
             key={terminalId}
             name={terminalId}
             onRestarted={onTerminalsChanged}
+            onTitle={handleTerminalTitle}
+            restart
+            isActive={isActive}
           />
         ) : terminalId ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
@@ -676,6 +753,7 @@ export function MonitorWorkspace({
                 canRemove={canRemove}
                 canInsert={canInsert}
                 mobile={mobile}
+                isActive={selected}
                 onAssign={onAssignTerminal}
                 onMove={onMovePane}
                 onRemove={onRemovePane}

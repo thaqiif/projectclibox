@@ -191,10 +191,10 @@ test("the terminal ignores pastes aimed at a paste dialog's own textarea", () =>
     closest: (selector: string) =>
       selector === `[${PASTE_EDITOR_ATTR}]` ? editor : null,
   };
-  // xterm's hidden textarea and ordinary page elements stay interceptable.
-  const xtermTextarea = { closest: () => null };
+  // WTerm's hidden textarea and ordinary page elements stay interceptable.
+  const terminalTextarea = { closest: () => null };
   assert.equal(isPasteEditorTarget(editor), true);
-  assert.equal(isPasteEditorTarget(xtermTextarea), false);
+  assert.equal(isPasteEditorTarget(terminalTextarea), false);
   // Non-element paste targets (null target, plain objects) must not throw.
   assert.equal(isPasteEditorTarget(null), false);
   assert.equal(isPasteEditorTarget(undefined), false);

@@ -1,0 +1,26 @@
+diff --git a/node_modules/@wterm/ghostty/dist/ghostty-core.d.ts b/node_modules/@wterm/ghostty/dist/ghostty-core.d.ts
+index f93b700..e1bbaa9 100644
+--- a/node_modules/@wterm/ghostty/dist/ghostty-core.d.ts
++++ b/node_modules/@wterm/ghostty/dist/ghostty-core.d.ts
+@@ -69,7 +69,7 @@ export declare class GhosttyCore implements TerminalCore {
+     cursorKeysApp(): boolean;
+     bracketedPaste(): boolean;
+     usingAltScreen(): boolean;
+-    mouseTracking(): 0 | 1000 | 1002;
++    mouseTracking(): 0 | 1000 | 1002 | 1003;
+     mouseSgr(): boolean;
+     focusEvents(): boolean;
+     synchronizedOutput(): boolean;
+diff --git a/node_modules/@wterm/ghostty/dist/ghostty-core.js b/node_modules/@wterm/ghostty/dist/ghostty-core.js
+index 79f3dfa..48a3cf8 100644
+--- a/node_modules/@wterm/ghostty/dist/ghostty-core.js
++++ b/node_modules/@wterm/ghostty/dist/ghostty-core.js
+@@ -248,7 +248,7 @@ export class GhosttyCore {
+         if (this._disposed || this.termPtr === 0)
+             return 0;
+         const mode = this.wasm.exports.mouse_tracking(this.termPtr);
+-        return mode === 1000 || mode === 1002 ? mode : 0;
++        return mode === 1000 || mode === 1002 || mode === 1003 ? mode : 0;
+     }
+     mouseSgr() {
+         if (this._disposed || this.termPtr === 0)

@@ -1,31 +1,36 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { Terminal as XTerm } from "@xterm/xterm";
-import type { FitAddon } from "@xterm/addon-fit";
-import { WS_RECONNECT_BASE_DELAY } from "../constants";
+import type { WTerm } from "@wterm/dom";
+import type { GhosttyCore } from "@wterm/ghostty";
 import type {
+  TerminalConnectionState,
   TerminalScrollState,
   UseTerminalConnectionProps,
   UseTerminalConnectionReturn,
 } from "./useTerminalConnection.types";
 import {
-  createTerminal,
-  updateTerminalForMobile,
-  updateTerminalTheme,
-} from "./terminal-init";
+  createTerminalEngineAdapter,
+  restoreTerminalScroll,
+  setTerminalScrollBottom,
+} from "./terminal-engine-adapter";
 import { setupTouchScroll } from "./touch-scroll";
 import { createWebSocketConnection } from "./websocket-connection";
-import { setupResizeHandlers } from "./resize-handlers";
 import { DEFAULT_FONT_SCALE } from "../../../lib/font-scale";
+import { Osc52Filter } from "../../../lib/osc52-filter";
+import { WS_RECONNECT_BASE_DELAY } from "../constants";
 
 export type { TerminalScrollState } from "./useTerminalConnection.types";
 
 export function useTerminalConnection({
   terminalRef,
+  sessionName,
+  isActive = true,
   onConnected,
   onDisconnected,
   onBeforeUnmount,
+  onClipboardWrite,
+  onTitle,
   initialScrollState,
   isMobile = false,
   fontScale = DEFAULT_FONT_SCALE,
@@ -33,216 +38,258 @@ export function useTerminalConnection({
   selectMode = false,
 }: UseTerminalConnectionProps): UseTerminalConnectionReturn {
   const [isAtBottom, setIsAtBottom] = useState(true);
-  const [connectionState, setConnectionState] = useState<
-    "connecting" | "connected" | "disconnected" | "reconnecting"
-  >("connecting");
+  const [connectionState, setConnectionState] =
+    useState<TerminalConnectionState>("connecting");
+  const [initializationError, setInitializationError] = useState<string | null>(
+    null
+  );
+  const [retryGeneration, setRetryGeneration] = useState(0);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const xtermRef = useRef<XTerm | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
-  const reconnectFnRef = useRef<(() => void) | null>(null);
-
-  // Reconnection tracking
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const terminalInstanceRef = useRef<WTerm | null>(null);
+  const coreRef = useRef<GhosttyCore | null>(null);
+  const adapterRef = useRef<Awaited<ReturnType<typeof createTerminalEngineAdapter>> | null>(null);
+  const managerRef = useRef<ReturnType<typeof createWebSocketConnection> | null>(
+    null
+  );
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelayRef = useRef<number>(WS_RECONNECT_BASE_DELAY);
   const intentionalCloseRef = useRef<boolean>(false);
-  const fontScaleRef = useRef(fontScale);
-  const callbacksRef = useRef({ onConnected, onDisconnected, onBeforeUnmount });
-  const initialScrollStateRef = useRef(initialScrollState);
   const selectModeRef = useRef(selectMode);
+  const activeRef = useRef(isActive);
+  const appearanceRef = useRef({ isMobile, theme, fontScale });
+  const initialScrollTopRef = useRef(initialScrollState?.scrollTop);
+  const touchCleanupRef = useRef<(() => void) | null>(null);
+  const callbacksRef = useRef({
+    onConnected,
+    onDisconnected,
+    onBeforeUnmount,
+    onClipboardWrite,
+    onTitle,
+  });
+  const osc52FilterRef = useRef(new Osc52Filter());
 
   useEffect(() => {
-    fontScaleRef.current = fontScale;
-  }, [fontScale]);
+    appearanceRef.current = { isMobile, theme, fontScale };
+    initialScrollTopRef.current = initialScrollState?.scrollTop;
+  }, [isMobile, theme, fontScale, initialScrollState?.scrollTop]);
 
-  // Store callbacks and state in refs so connection handlers always see the
-  // latest props without rebuilding the terminal connection.
   useEffect(() => {
-    callbacksRef.current = { onConnected, onDisconnected, onBeforeUnmount };
-  }, [onConnected, onDisconnected, onBeforeUnmount]);
-
+    callbacksRef.current = {
+      onConnected,
+      onDisconnected,
+      onBeforeUnmount,
+      onClipboardWrite,
+      onTitle,
+    };
+  }, [onConnected, onDisconnected, onBeforeUnmount, onClipboardWrite, onTitle]);
   useEffect(() => {
     selectModeRef.current = selectMode;
   }, [selectMode]);
+  useEffect(() => {
+    activeRef.current = isActive;
+  }, [isActive]);
 
-  // Simple callbacks
-  const scrollToBottom = useCallback(
-    () => xtermRef.current?.scrollToBottom(),
-    []
-  );
+  const scrollToBottom = useCallback(() => {
+    const terminal = terminalInstanceRef.current;
+    if (terminal) setTerminalScrollBottom(terminal);
+  }, []);
 
   const copySelection = useCallback(() => {
-    const selection = xtermRef.current?.getSelection();
-    if (selection) {
-      navigator.clipboard.writeText(selection);
+    const selection = window.getSelection()?.toString() ?? "";
+    if (!selection) return false;
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(selection).catch(() => undefined);
       return true;
     }
     return false;
   }, []);
 
   const sendInput = useCallback((data: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "input", data }));
-    }
+    managerRef.current?.sendInput(data);
   }, []);
-
   const sendCommand = useCallback((command: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "command", data: command }));
-    }
+    managerRef.current?.sendCommand(command);
   }, []);
-
-  const focus = useCallback(() => xtermRef.current?.focus(), []);
-
+  const focus = useCallback(() => {
+    terminalInstanceRef.current?.focus();
+  }, []);
   const reconnect = useCallback(() => {
-    reconnectFnRef.current?.();
+    setInitializationError(null);
+    const manager = managerRef.current;
+    if (manager) {
+      manager.reconnect();
+      return;
+    }
+    setConnectionState("connecting");
+    setRetryGeneration((generation) => generation + 1);
   }, []);
 
-  // Main setup effect
   useEffect(() => {
-    const terminalElement = terminalRef.current;
-    if (!terminalElement) return;
+    const element = terminalRef.current;
+    if (!element) return;
+    const osc52Filter = osc52FilterRef.current;
 
     let cancelled = false;
-    // Reset intentional close flag (may be true from previous cleanup)
+    let onScroll: (() => void) | null = null;
     intentionalCloseRef.current = false;
-    let cleanupTouchScroll: (() => void) | null = null;
-    let cleanupResizeHandlers: (() => void) | null = null;
-    let cleanupWebSocket: (() => void) | null = null;
-    let cleanupTerminal: (() => void) | null = null;
+    managerRef.current = null;
+    terminalInstanceRef.current = null;
+    coreRef.current = null;
+    adapterRef.current = null;
+    const start = async () => {
+      if (!sessionName) {
+        throw new Error("Select a live terminal session to connect");
+      }
 
-    const connectTimeout = setTimeout(() => {
-      if (cancelled) return;
+      const adapter = await createTerminalEngineAdapter(element, {
+        isMobile: appearanceRef.current.isMobile,
+        theme: appearanceRef.current.theme,
+        fontScale: appearanceRef.current.fontScale,
+        onData: sendInput,
+        onResize: (cols, rows) => managerRef.current?.sendResize(cols, rows),
+        onTitle: (title) => callbacksRef.current.onTitle?.(title),
+      });
+      if (cancelled) {
+        adapter.dispose();
+        return;
+      }
 
-      // Initialize terminal
-      const { term, fitAddon, cleanup } = createTerminal(
-        terminalElement,
-        isMobile,
-        theme,
-        fontScaleRef.current
-      );
-      xtermRef.current = term;
-      fitAddonRef.current = fitAddon;
-      cleanupTerminal = cleanup;
+      adapterRef.current = adapter;
+      terminalInstanceRef.current = adapter.terminal;
+      coreRef.current = adapter.core;
 
-      // Scroll tracking
-      term.onScroll(() => {
-        const buffer = term.buffer.active;
-        setIsAtBottom(buffer.viewportY >= buffer.baseY);
+      onScroll = () => {
+        const terminal = adapter.terminal;
+        const atBottom =
+          terminal.element.scrollHeight -
+            terminal.element.scrollTop -
+            terminal.element.clientHeight <=
+          2;
+        setIsAtBottom(atBottom);
+      };
+      adapter.terminal.element.addEventListener("scroll", onScroll, {
+        passive: true,
+      });
+      touchCleanupRef.current = setupTouchScroll({
+        terminal: adapter.terminal,
+        core: adapter.core,
+        selectModeRef,
+        isMobile: appearanceRef.current.isMobile,
       });
 
-      // Setup touch scroll
-      cleanupTouchScroll = setupTouchScroll({ term, selectModeRef });
+      // Wait for WTerm's ResizeObserver to measure the real pane before the
+      // one-use capability is issued and the PTY is attached.
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      );
+      if (cancelled) return;
+      adapter.fit();
+      restoreTerminalScroll(adapter.terminal, initialScrollTopRef.current);
 
-      // Setup WebSocket
-      const wsManager = createWebSocketConnection(
-        term,
+      managerRef.current = createWebSocketConnection(
+        adapter.terminal,
+        sessionName,
         {
           onConnected: () => {
             callbacksRef.current.onConnected?.();
-            // Restore scroll state after connection
-            if (initialScrollStateRef.current && terminalRef.current) {
-              setTimeout(() => {
-                const viewport = terminalRef.current?.querySelector(
-                  ".xterm-viewport"
-                ) as HTMLElement;
-                if (viewport)
-                  viewport.scrollTop = initialScrollStateRef.current!.scrollTop;
-              }, 200);
-            }
+            if (activeRef.current) adapter.terminal.focus();
           },
           onDisconnected: () => callbacksRef.current.onDisconnected?.(),
           onConnectionStateChange: setConnectionState,
+          onFatalError: setInitializationError,
+          onOutput: (data) => {
+            const result = osc52Filter.push(data);
+            if (result.terminalData) adapter.terminal.write(result.terminalData);
+            if (result.clipboardText !== undefined) {
+              callbacksRef.current.onClipboardWrite?.(result.clipboardText);
+            }
+          },
         },
         wsRef,
         reconnectTimeoutRef,
         reconnectDelayRef,
         intentionalCloseRef
       );
-      cleanupWebSocket = wsManager.cleanup;
-      reconnectFnRef.current = wsManager.reconnect;
+    };
 
-      // Setup resize handlers
-      cleanupResizeHandlers = setupResizeHandlers({
-        term,
-        fitAddon,
-        containerRef: terminalRef,
-        isMobile,
-        sendResize: wsManager.sendResize,
-      });
-    }, 150);
+    void start().catch((error: unknown) => {
+      if (cancelled) return;
+      const message =
+        error instanceof Error ? error.message : "Terminal initialization failed";
+      console.error("Failed to initialize WTerm/Ghostty:", error);
+      setInitializationError(message);
+      setConnectionState("error");
+    });
 
     return () => {
       cancelled = true;
-      clearTimeout(connectTimeout);
       intentionalCloseRef.current = true;
-
-      // Save scroll state before unmount
-      const term = xtermRef.current;
-      if (term && callbacksRef.current.onBeforeUnmount) {
-        const buffer = term.buffer.active;
-        const viewport = terminalElement.querySelector(
-          ".xterm-viewport"
-        ) as HTMLElement;
+      const terminal = terminalInstanceRef.current;
+      if (terminal && callbacksRef.current.onBeforeUnmount) {
+        const cursor = coreRef.current?.getCursor();
         callbacksRef.current.onBeforeUnmount({
-          scrollTop: viewport?.scrollTop ?? 0,
-          cursorY: buffer.cursorY,
-          baseY: buffer.baseY,
+          scrollTop: terminal.element.scrollTop,
+          cursorY: cursor?.row ?? 0,
+          baseY: coreRef.current?.getScrollbackCount() ?? 0,
         });
       }
 
-      // Cleanup in reverse order
-      cleanupResizeHandlers?.();
-      cleanupWebSocket?.();
-      cleanupTouchScroll?.();
-      cleanupTerminal?.();
-
-      // Reset refs
-      reconnectDelayRef.current = WS_RECONNECT_BASE_DELAY;
-
-      if (wsRef.current) wsRef.current = null;
-      if (xtermRef.current) {
-        try {
-          xtermRef.current.dispose();
-        } catch {
-          /* ignore */
-        }
-        xtermRef.current = null;
+      managerRef.current?.cleanup();
+      managerRef.current = null;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
-      fitAddonRef.current = null;
+      if (onScroll && terminal) {
+        terminal.element.removeEventListener("scroll", onScroll);
+      }
+      touchCleanupRef.current?.();
+      touchCleanupRef.current = null;
+      adapterRef.current?.dispose();
+      osc52Filter.reset();
+      adapterRef.current = null;
+      terminalInstanceRef.current = null;
+      coreRef.current = null;
+      reconnectDelayRef.current = WS_RECONNECT_BASE_DELAY;
     };
-  }, [isMobile, terminalRef, theme]);
+  }, [sendInput, sessionName, terminalRef, retryGeneration]);
 
-  // Handle isMobile changes dynamically
   useEffect(() => {
-    const term = xtermRef.current;
-    const fitAddon = fitAddonRef.current;
-    if (!term || !fitAddon) return;
+    const adapter = adapterRef.current;
+    if (!adapter) return;
+    adapter.applyAppearance(isMobile, theme, fontScale);
+  }, [isMobile, theme, fontScale]);
 
-    updateTerminalForMobile(
-      term,
-      fitAddon,
+  useEffect(() => {
+    const adapter = adapterRef.current;
+    if (!adapter) return;
+    touchCleanupRef.current?.();
+    touchCleanupRef.current = setupTouchScroll({
+      terminal: adapter.terminal,
+      core: adapter.core,
+      selectModeRef,
       isMobile,
-      (cols, rows) => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "resize", cols, rows }));
-        }
-      },
-      fontScale
-    );
-  }, [isMobile, fontScale]);
+    });
+    return () => {
+      touchCleanupRef.current?.();
+      touchCleanupRef.current = null;
+    };
+  }, [isMobile]);
 
-  // Handle theme changes dynamically
   useEffect(() => {
-    if (xtermRef.current) {
-      updateTerminalTheme(xtermRef.current, theme);
-    }
-  }, [theme]);
+    const terminal = terminalInstanceRef.current;
+    if (!terminal || !isActive) return;
+    terminal.fit();
+    terminal.focus();
+  }, [isActive]);
 
   return {
     connectionState,
     isAtBottom,
-    xtermRef,
+    terminalInstanceRef,
+    coreRef,
+    initializationError,
     scrollToBottom,
     copySelection,
     sendInput,
