@@ -35,6 +35,23 @@ test("deriveSelectAllState: stale extra selections do not fake 'all'", () => {
   assert.equal(deriveSelectAllState(listed, new Set(["/proj/gone.txt"])), "none");
 });
 
+test("deriveSelectAllState: duplicate listed paths cannot corrupt the count", () => {
+  // A duplicated entry in listedPaths (server listing quirk) must not
+  // inflate the total past the number of selected matches: counting 2 of
+  // 3 with both covered stays 'all', not a phantom 'some'.
+  const duped = [listed[0], listed[1], listed[1]];
+  assert.equal(deriveSelectAllState(duped, new Set([listed[0], listed[1]])), "all");
+  assert.equal(deriveSelectAllState(duped, new Set([listed[0]])), "some");
+});
+
+test("deriveSelectAllState: selection superset of the listing stays 'all'", () => {
+  // Selection may reference paths from a previous page/filter; only the
+  // listed coverage matters.
+  const extra = new Set([...listed, "/other/x.ts"]);
+  assert.equal(deriveSelectAllState(listed, extra), "all");
+  assert.equal(deriveSelectAllState([listed[0]], extra), "all");
+});
+
 test("applySelectAllToggle: unchecked selects exactly the listed rows", () => {
   const next = applySelectAllToggle(listed, new Set());
   assert.deepEqual([...next].sort(), [...listed].sort());

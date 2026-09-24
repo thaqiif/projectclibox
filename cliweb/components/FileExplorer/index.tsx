@@ -1015,6 +1015,8 @@ function ListingBody({
 
   // Selection refers to paths in the listing; start fresh when navigating.
   // Derived-reset pattern: adjust state during render instead of an effect.
+  // clearSelection() (not a bare new Set()) keeps this reset on the same
+  // model helper as every other clear path.
   const [prevWorkingDir, setPrevWorkingDir] = useState(workingDirectory);
   if (prevWorkingDir !== workingDirectory) {
     setPrevWorkingDir(workingDirectory);
@@ -1162,12 +1164,11 @@ function ListingBody({
             : "Select all listed items"
         }
         tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setSelectedPaths((prev) => applySelectAllToggle(listedPaths, prev));
-          }
-        }}
+        // No onKeyDown toggle here: a native <button> synthesizes click on
+        // Enter and Space, so a keydown handler would run the toggle twice
+        // per key press (keydown, then the synthesized click) — selecting
+        // and immediately clearing in one gesture. The click handler alone
+        // is keyboard-complete.
         onClick={() =>
           setSelectedPaths((prev) => applySelectAllToggle(listedPaths, prev))
         }
