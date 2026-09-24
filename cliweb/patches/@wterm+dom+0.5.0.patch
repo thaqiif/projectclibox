@@ -1,16 +1,36 @@
 diff --git a/node_modules/@wterm/dom/dist/input.js b/node_modules/@wterm/dom/dist/input.js
-index be2e64d..65df4f2 100644
+index be2e64d..3cb3f09 100644
 --- a/node_modules/@wterm/dom/dist/input.js
 +++ b/node_modules/@wterm/dom/dist/input.js
-@@ -41,6 +41,7 @@ const FIXED_KEYS = {
+@@ -41,7 +41,16 @@ const FIXED_KEYS = {
  export class InputHandler {
      constructor(element, onData, getBridge, getCellSize = () => null) {
          this.composing = false;
 +        this.compositionResult = null;
          this.mouseButtons = 0;
++        this.wheelPartialScroll = 0;
++        this.lastMouseTracking = 0;
++        this.lastMouseSgr = false;
++        this.lastAltScreen = false;
++        this.wheelScrollFrame = null;
++        this.wheelScrollStart = null;
++        this.wheelScrollTarget = null;
++        this.wheelScrollStartTime = 0;
          this.focused = false;
          this.suppressedKeyUps = new Set();
-@@ -236,11 +237,18 @@ export class InputHandler {
+         this.pressedModifiers = new Set();
+@@ -139,6 +148,10 @@ export class InputHandler {
+         this.element.removeEventListener("mousedown", this._onMouseDown);
+         this.stopMouseCapture();
+         this.element.removeEventListener("wheel", this._onWheel);
++        if (this.wheelScrollFrame !== null) {
++            this.element.ownerDocument.defaultView?.cancelAnimationFrame(this.wheelScrollFrame);
++            this.wheelScrollFrame = null;
++        }
+         this.element.classList.remove("focused");
+         this.textarea.remove();
+     }
+@@ -236,11 +249,18 @@ export class InputHandler {
      }
      handleCompositionStart() {
          this.composing = true;
@@ -30,7 +50,7 @@ index be2e64d..65df4f2 100644
          this.textarea.value = "";
      }
      handleInput() {
-@@ -248,6 +256,13 @@ export class InputHandler {
+@@ -248,6 +268,13 @@ export class InputHandler {
              return;
          const value = this.textarea.value;
          if (value) {
@@ -44,7 +64,48 @@ index be2e64d..65df4f2 100644
              this.onData(value);
              this.textarea.value = "";
          }
-@@ -268,7 +283,7 @@ export class InputHandler {
+@@ -255,8 +282,39 @@ export class InputHandler {
+     handleMouse(event, kind) {
+         const bridge = this.getBridge();
+         const tracking = bridge?.mouseTracking?.() ?? 0;
+-        if (!bridge || tracking === 0 || !bridge.mouseSgr?.())
++        if (!bridge)
++            return;
++        const sgr = bridge.mouseSgr?.() ?? false;
++        const altScreen = bridge.usingAltScreen?.() ?? false;
++        if (tracking !== this.lastMouseTracking || sgr !== this.lastMouseSgr || altScreen !== this.lastAltScreen) {
++            this.wheelPartialScroll = 0;
++            this.lastMouseTracking = tracking;
++            this.lastMouseSgr = sgr;
++            this.lastAltScreen = altScreen;
++        }
++        if (kind === "wheel" && tracking === 0) {
++            const hasScrollback = (bridge.getScrollbackCount?.() ?? 0) > 0;
++            if (altScreen || !hasScrollback) {
++                event.preventDefault();
++                const lines = this.consumeWheelEvent(event, bridge);
++                if (lines !== 0) {
++                    this.onData(event.deltaY < 0 ? "\x1b[A" : "\x1b[B");
++                }
++                return;
++            }
++            this.handleScrollbackWheel(event);
++            return;
++        }
++        if (tracking === 0)
+             return;
++        if (kind === "wheel") {
++            // Once the application has enabled mouse tracking, wheel input
++            // belongs to it even when a high-resolution delta has not yet
++            // accumulated to one terminal row.
++            event.preventDefault();
++            if (this.consumeWheelEvent(event, bridge) === 0)
++                return;
++        }
+         if (kind === "press" &&
+             isLinkActivationModifier(event, this.element.ownerDocument.defaultView?.navigator ?? navigator) &&
+             event.target instanceof Element &&
+@@ -268,7 +326,7 @@ export class InputHandler {
          if (kind === "release" && event.button > 2)
              return;
          const supportedButtons = event.buttons & 7;
@@ -53,8 +114,112 @@ index be2e64d..65df4f2 100644
              return;
          }
          const view = this.element.ownerDocument.defaultView;
+@@ -336,16 +394,9 @@ export class InputHandler {
+         let final = "M";
+         if (kind === "wheel") {
+             const wheel = event;
+-            if (Math.abs(wheel.deltaX) > Math.abs(wheel.deltaY)) {
+-                if (wheel.deltaX === 0)
+-                    return;
+-                code = (wheel.deltaX < 0 ? 66 : 67) | modifiers;
+-            }
+-            else {
+-                if (wheel.deltaY === 0)
+-                    return;
+-                code = (wheel.deltaY < 0 ? 64 : 65) | modifiers;
+-            }
++            if (wheel.deltaY === 0 || wheel.shiftKey)
++                return;
++            code = (wheel.deltaY < 0 ? 64 : 65) | modifiers;
+         }
+         else {
+             const button = kind === "move"
+@@ -363,8 +414,81 @@ export class InputHandler {
+             if (kind === "release")
+                 final = "m";
+         }
+-        event.preventDefault();
+-        this.onData(`\x1b[<${code};${col};${row}${final}`);
++        if (kind !== "wheel")
++            event.preventDefault();
++        if (sgr) {
++            this.onData(`\x1b[<${code};${col};${row}${final}`);
++            return;
++        }
++        if (col > 223 || row > 223)
++            return;
++        const legacyCode = final === "m" ? 3 | modifiers : code;
++        this.onData(`\x1b[M${String.fromCharCode(legacyCode + 32)}${String.fromCharCode(col + 32)}${String.fromCharCode(row + 32)}`);
++    }
++    consumeWheelEvent(wheel, bridge) {
++        if (wheel.deltaY === 0 || wheel.shiftKey)
++            return 0;
++        let amount = wheel.deltaY;
++        if (wheel.altKey || wheel.ctrlKey)
++            amount *= 5;
++        if (wheel.deltaMode === WheelEvent.DOM_DELTA_PIXEL) {
++            const cellSize = this.getCellSize();
++            const rowHeight = cellSize?.rowHeight ?? this.element.clientHeight / Math.max(1, bridge.getRows());
++            if (!(rowHeight > 0))
++                return 0;
++            amount /= rowHeight;
++            if (Math.abs(wheel.deltaY) < 50)
++                amount *= 0.3;
++        }
++        else if (wheel.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
++            amount *= bridge.getRows();
++        }
++        this.wheelPartialScroll += amount;
++        const lines = Math.floor(Math.abs(this.wheelPartialScroll)) * (this.wheelPartialScroll > 0 ? 1 : -1);
++        this.wheelPartialScroll %= 1;
++        return lines;
++    }
++    handleScrollbackWheel(wheel) {
++        if (wheel.deltaY === 0 || this.element.scrollHeight <= this.element.clientHeight)
++            return;
++        const view = this.element.ownerDocument.defaultView;
++        if (!view)
++            return;
++        const cellSize = this.getCellSize();
++        let delta = wheel.deltaY;
++        if (wheel.deltaMode === WheelEvent.DOM_DELTA_LINE) {
++            delta *= cellSize?.rowHeight ?? 16;
++        }
++        else if (wheel.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
++            delta *= this.element.clientHeight;
++        }
++        wheel.preventDefault();
++        const now = view.performance?.now() ?? Date.now();
++        const base = this.wheelScrollTarget ?? this.element.scrollTop;
++        const max = Math.max(0, this.element.scrollHeight - this.element.clientHeight);
++        this.wheelScrollStart = this.element.scrollTop;
++        this.wheelScrollTarget = Math.max(0, Math.min(max, base + delta));
++        this.wheelScrollStartTime = now;
++        if (this.wheelScrollFrame !== null)
++            return;
++        const animate = (time) => {
++            if (this.wheelScrollStart === null || this.wheelScrollTarget === null) {
++                this.wheelScrollFrame = null;
++                return;
++            }
++            const progress = Math.min(1, Math.max(0, (time - this.wheelScrollStartTime) / 100));
++            const eased = 1 - Math.pow(1 - progress, 3);
++            this.element.scrollTop = this.wheelScrollStart + (this.wheelScrollTarget - this.wheelScrollStart) * eased;
++            if (progress < 1) {
++                this.wheelScrollFrame = view.requestAnimationFrame(animate);
++            }
++            else {
++                this.wheelScrollFrame = null;
++                this.wheelScrollStart = null;
++                this.wheelScrollTarget = null;
++            }
++        };
++        this.wheelScrollFrame = view.requestAnimationFrame(animate);
+     }
+     stopMouseCapture() {
+         this.mouseButtons = 0;
 diff --git a/node_modules/@wterm/dom/dist/wterm.d.ts b/node_modules/@wterm/dom/dist/wterm.d.ts
-index a1ed7aa..260692d 100644
+index a1ed7aa..b255e50 100644
 --- a/node_modules/@wterm/dom/dist/wterm.d.ts
 +++ b/node_modules/@wterm/dom/dist/wterm.d.ts
 @@ -63,6 +63,7 @@ export declare class WTerm {
@@ -66,7 +231,7 @@ index a1ed7aa..260692d 100644
      private _scheduleRender;
      private _cancelScheduledRender;
 diff --git a/node_modules/@wterm/dom/dist/wterm.js b/node_modules/@wterm/dom/dist/wterm.js
-index db547b9..90d2409 100644
+index db547b9..87c38b4 100644
 --- a/node_modules/@wterm/dom/dist/wterm.js
 +++ b/node_modules/@wterm/dom/dist/wterm.js
 @@ -126,7 +126,6 @@ export class WTerm {
