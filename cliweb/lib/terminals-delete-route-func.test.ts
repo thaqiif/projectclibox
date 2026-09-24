@@ -81,8 +81,9 @@ function deleteRequest(name: string) {
     method: "DELETE",
     headers: new Headers({ origin: "http://localhost", host: "localhost" }),
     nextUrl: new URL(`http://localhost/api/terminals/${encoded}`),
-    // body is null exactly like a real bodyless undici Request.
-    body: null,
+    // Next's Node adapter can expose a stream even when the HTTP request had
+    // no body. The DELETE route must therefore rely on the origin guard only.
+    body: new ReadableStream(),
   } as unknown as import("next/server").NextRequest;
 }
 

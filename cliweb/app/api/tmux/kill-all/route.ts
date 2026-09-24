@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { killTerminal } from "@/lib/terminals";
 import { forgetTerminal, listKnownTerminals } from "@/lib/terminal-registry";
-import { guardJsonSameOrigin } from "@/lib/route-guards";
+import { guardSameOrigin } from "@/lib/route-guards";
 
 /**
  * POST /api/tmux/kill-all - close every terminal for good.
@@ -12,7 +12,9 @@ import { guardJsonSameOrigin } from "@/lib/route-guards";
  * entries the sidebar is showing, live or already stopped.
  */
 export async function POST(request: Request) {
-  const guard = guardJsonSameOrigin(request);
+  // This action has no payload; the Node adapter may still expose an empty
+  // request stream, so only the origin check applies.
+  const guard = guardSameOrigin(request);
   if (guard) return guard;
 
   try {

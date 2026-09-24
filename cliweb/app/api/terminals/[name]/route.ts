@@ -10,7 +10,7 @@ import {
   renameTerminalRow,
   terminalRowExists,
 } from "@/lib/terminal-registry";
-import { guardJsonSameOrigin } from "@/lib/route-guards";
+import { guardJsonSameOrigin, guardSameOrigin } from "@/lib/route-guards";
 
 /**
  * DELETE /api/terminals/:name - close a terminal for good.
@@ -23,7 +23,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ name: string }> }
 ) {
-  const guard = guardJsonSameOrigin(request);
+  // DELETE carries no JSON body. Next's Node adapter can still expose an
+  // empty request stream here, so check origin directly instead of content type.
+  const guard = guardSameOrigin(request);
   if (guard) return guard;
 
   try {

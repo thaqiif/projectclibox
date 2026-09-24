@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { guardJsonSameOrigin } from "@/lib/route-guards";
+import { guardJsonSameOrigin, guardSameOrigin } from "@/lib/route-guards";
 import {
   getProject,
   updateProject,
@@ -74,7 +74,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
 // DELETE /api/projects/[id] - Delete a project
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
-  const guard = guardJsonSameOrigin(request);
+  const guard = guardSameOrigin(request);
   if (guard) return guard;
 
   try {

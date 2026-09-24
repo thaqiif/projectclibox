@@ -19,14 +19,11 @@ import { NextResponse } from "next/server";
  * cross-origin page POST application/json without CORS preflight, so this
  * doubles as a CSRF tripwire.
  *
- * Bodyless requests — a bare `fetch(url, { method: "DELETE" })` sends
- * neither a body nor a Content-Type — have no payload for this guard to
- * classify. Per Fetch Standard §5.3, "The body getter steps are to return
- * null if this's body is null; otherwise this's body's stream." Request
- * construction only extracts `RequestInit.body` when it exists and is
- * non-null (§5.4). Thus `request.body === null` means there is no payload;
- * a payload sent without Content-Length still produces a body stream. The
- * separate same-origin guard remains responsible for bodyless CSRF attempts.
+ * A native Fetch Request with no body has `request.body === null`, so this
+ * guard skips its content-type check in that case. Some Node framework
+ * adapters wrap incoming HTTP messages as streams even when the wire request
+ * had no body; bodyless routes should use `guardSameOrigin` directly instead
+ * of relying on this check to identify them.
  */
 export function guardJsonContent(request: Request): NextResponse | null {
   if (request.body == null) return null;
