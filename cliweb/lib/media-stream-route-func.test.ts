@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -147,6 +153,33 @@ test("stream: HEAD errors are bodyless", async () => {
   );
   assert.equal(response.status, 404);
   assert.equal(await bytes(response), "");
+});
+
+test("stream: repeated and aborted reads do not leak descriptors", async () => {
+  const fdDir = "/proc/self/fd";
+  if (!existsSync(fdDir)) return; // Linux-only observation
+  const before = readdirSync(fdDir).length;
+
+  for (let i = 0; i < 40; i++) {
+    const response = await streamGet(
+      request("stream", FILE, { range: `bytes=${i % 5}-` })
+    );
+    await response.arrayBuffer();
+  }
+  for (let i = 0; i < 20; i++) {
+    const controller = new AbortController();
+    const aborted = {
+      ...request("stream", FILE),
+      signal: controller.signal,
+    } as unknown as import("next/server").NextRequest;
+    const response = await streamGet(aborted);
+    controller.abort();
+    await response.body?.cancel().catch(() => undefined);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  const after = readdirSync(fdDir).length;
+  assert.ok(after <= before + 2, `descriptor count grew ${before} -> ${after}`);
 });
 
 test("stream: a file deleted before the request returns 404", async () => {

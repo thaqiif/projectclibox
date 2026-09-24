@@ -73,14 +73,34 @@ function parseRange(
   return { start, end };
 }
 
-async function closeQuietly(handle: fs.promises.FileHandle) {
-  // The read stream owns the descriptor once it is created; a later close here
-  // would be a double close. Ignore failures either way.
+/**
+ * Open a descriptor directly instead of using fs.promises.open: a FileHandle
+ * would close the same descriptor again during garbage collection, which can
+ * hit a recycled fd. A raw descriptor is owned by exactly one code path.
+ */
+function openReadOnly(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    fs.open(
+      filePath,
+      fs.constants.O_RDONLY | fs.constants.O_NONBLOCK,
+      (error, fd) => (error ? reject(error) : resolve(fd))
+    );
+  });
+}
+
+function closeQuietly(fd: number) {
   try {
-    await handle.close();
+    fs.closeSync(fd);
   } catch {
-    /* already closed */
+    /* already closed by the read stream */
   }
+}
+
+function statDescriptor(fd: number): Promise<fs.Stats> {
+  // fs.promises has no fstat; this keeps the fstat off the event loop.
+  return new Promise((resolve, reject) => {
+    fs.fstat(fd, (error, stat) => (error ? reject(error) : resolve(stat)));
+  });
 }
 
 function errorResponse(message: string, status: number, headers: HeadersInit) {
@@ -88,7 +108,7 @@ function errorResponse(message: string, status: number, headers: HeadersInit) {
 }
 
 async function streamFile(request: NextRequest, includeBody: boolean) {
-  let handle: fs.promises.FileHandle | null = null;
+  let fd: number | null = null;
   const baseHeaders: Record<string, string> = {
     "X-Content-Type-Options": "nosniff",
     // Neutralizes script in inline SVG documents served from this origin.
@@ -119,10 +139,7 @@ async function streamFile(request: NextRequest, includeBody: boolean) {
     // no-op for regular files and stops a FIFO in the workspace from blocking
     // the open until some other process writes to it.
     try {
-      handle = await fs.promises.open(
-        filePath,
-        fs.constants.O_RDONLY | fs.constants.O_NONBLOCK
-      );
+      fd = await openReadOnly(filePath);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT" || code === "ENOTDIR") {
@@ -137,24 +154,24 @@ async function streamFile(request: NextRequest, includeBody: boolean) {
       throw error;
     }
 
-    const stat = await handle.stat();
+    const stat = await statDescriptor(fd);
 
     if (stat.isDirectory()) {
-      await closeQuietly(handle);
-      handle = null;
+      closeQuietly(fd);
+      fd = null;
       return errorResponse("Cannot stream a directory", 400, baseHeaders);
     }
     if (!stat.isFile()) {
       // FIFOs, sockets and devices would block or misreport their size.
-      await closeQuietly(handle);
-      handle = null;
+      closeQuietly(fd);
+      fd = null;
       return errorResponse("Cannot stream this file type", 415, baseHeaders);
     }
 
     const kind = mediaKindFor(filePath);
     if (!kind) {
-      await closeQuietly(handle);
-      handle = null;
+      closeQuietly(fd);
+      fd = null;
       return errorResponse("Only media files can be streamed", 415, baseHeaders);
     }
 
@@ -167,8 +184,8 @@ async function streamFile(request: NextRequest, includeBody: boolean) {
     };
 
     if (range === "unsatisfiable") {
-      await closeQuietly(handle);
-      handle = null;
+      closeQuietly(fd);
+      fd = null;
       return new NextResponse(null, {
         status: 416,
         headers: { ...headers, "Content-Range": `bytes */${size}` },
@@ -186,28 +203,25 @@ async function streamFile(request: NextRequest, includeBody: boolean) {
     // HEAD and empty files never allocate a read stream. A ranged request for
     // an empty file was already rejected above, so the empty response is 200.
     if (!includeBody || length === 0) {
-      await closeQuietly(handle);
-      handle = null;
+      closeQuietly(fd);
+      fd = null;
       return new NextResponse(null, { status: range ? 206 : 200, headers });
     }
 
     const nodeStream = fs.createReadStream(filePath, {
-      fd: handle.fd,
+      fd,
       start: slice.start,
       end: slice.end,
-      // The descriptor stays owned by the FileHandle so it is closed exactly
-      // once, here, instead of being closed by the stream and then again by
-      // the handle's garbage collector (which can close a recycled fd).
-      autoClose: false,
+      // The stream owns the descriptor from here and closes it exactly once,
+      // whether it ends, errors or is destroyed by an aborted request.
+      autoClose: true,
     });
-    const ownedHandle = handle;
-    handle = null;
+    fd = null;
     const abort = () => nodeStream.destroy();
     request.signal.addEventListener("abort", abort, { once: true });
-    nodeStream.once("close", () => {
-      request.signal.removeEventListener("abort", abort);
-      void closeQuietly(ownedHandle);
-    });
+    nodeStream.once("close", () =>
+      request.signal.removeEventListener("abort", abort)
+    );
     const body = Readable.toWeb(
       nodeStream
     ) as unknown as ReadableStream<Uint8Array>;
@@ -217,7 +231,7 @@ async function streamFile(request: NextRequest, includeBody: boolean) {
     console.error("Error streaming file:", error);
     return errorResponse("Failed to stream file", 500, baseHeaders);
   } finally {
-    if (handle) await closeQuietly(handle);
+    if (fd !== null) closeQuietly(fd);
   }
 }
 
