@@ -10,6 +10,7 @@ import {
   configureClientFeatures,
   configureScrollBindings,
 } from "./lib/terminals";
+import { capturePaneHistory } from "./lib/tmux-history";
 import {
   attachNativeScroll,
   parseScrollRequest,
@@ -437,6 +438,21 @@ app.prepare().then(() => {
           case "command":
             if (typeof msg.data === "string") ptyProcess.write(msg.data + "\r");
             break;
+          case "history": {
+            // Scrollback for local, round-trip-free scrolling (see
+            // lib/tmux-history.ts). The id pairs the answer with its request.
+            const id = Number(msg.id);
+            const count = Number(msg.count);
+            if (!Number.isInteger(id) || !Number.isInteger(count)) break;
+            const session = attachedCapability?.sessionId;
+            if (!session) break;
+            void capturePaneHistory(session, count).then((history) => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "history", id, ...history }));
+              }
+            });
+            break;
+          }
           case "native_scroll": {
             const request = parseScrollRequest(msg);
             if (request) nativeScroll?.scroll(request.pane, request.delta);

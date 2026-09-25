@@ -219,6 +219,7 @@ export async function createTerminalEngineAdapter(
   }
 
   const cleanupLinks = setupBareUrlLinks(element);
+  void publishCorePalette(element);
 
   const syncHostState = () => {
     const terminalColors = core.getTerminalColors();
@@ -276,6 +277,36 @@ export async function createTerminalEngineAdapter(
   terminal.fit();
   syncHostState();
   return adapter;
+}
+
+/**
+ * The core resolves colour numbers with its own palette, not the theme's
+ * CSS variables, so anything drawn outside it (the history view) needs that
+ * palette to match. A small offscreen core writes one cell per colour and
+ * reads back what it resolved to; the result is published as
+ * --term-core-color-N on the terminal element.
+ */
+async function publishCorePalette(element: HTMLElement): Promise<void> {
+  let probe: GhosttyCore | null = null;
+  try {
+    probe = await GhosttyCore.load({ wasmPath: "/ghostty-vt.wasm" });
+    probe.init(256, 1);
+    let cells = "";
+    for (let n = 0; n < 256; n += 1) cells += `\x1b[38;5;${n}m#`;
+    probe.writeString(cells);
+    for (let n = 0; n < 256; n += 1) {
+      const rgb = probe.getCell(0, n).fgRgb;
+      if (rgb === undefined) continue;
+      element.style.setProperty(
+        `--term-core-color-${n}`,
+        `rgb(${(rgb >> 16) & 255},${(rgb >> 8) & 255},${rgb & 255})`
+      );
+    }
+  } catch {
+    // The history view falls back to the theme palette.
+  } finally {
+    probe?.dispose();
+  }
 }
 
 function cellText(cell: CellData): string {

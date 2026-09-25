@@ -3,7 +3,18 @@
 import type { RefObject } from "react";
 import type { WTerm } from "@wterm/dom";
 import type { GhosttyCore } from "@wterm/ghostty";
-import { clearWheelRemainder } from "./copy-mode";
+import {
+  clearWheelRemainder,
+  readCopyModePosition,
+  topRowText,
+} from "./copy-mode";
+import {
+  closeHistoryView,
+  historyViewFor,
+  openHistoryView,
+  type HistoryPage,
+  type HistoryView,
+} from "./history-view";
 import type { NativePanes, NativeScrollTarget } from "./native-panes";
 import { createTuiPan, FLING_TIME_CONSTANT_MS } from "./tui-pan";
 
@@ -14,6 +25,8 @@ interface TouchScrollConfig {
   isMobile: boolean;
   /** Panes reported by TUIs that speak the native scroll protocol. */
   nativePanes?: NativePanes;
+  /** The shell's scrollback, for scrolling it locally (history-view.ts). */
+  requestHistory?: (count: number) => Promise<HistoryPage | null>;
 }
 
 const FALLBACK_ROW_HEIGHT = 20;
@@ -22,9 +35,22 @@ const MIN_INERTIA_VELOCITY = 0.015;
 const GESTURE_SLOP_PX = 8;
 // A finger that stopped before lifting should not fling.
 const RELEASE_STILL_MS = 60;
+// The first page of scrollback is small so it arrives quickly; the rest
+// follows in the background.
+const HISTORY_FIRST_PAGE = 300;
+const HISTORY_FULL = 5000;
+// Past this, the gesture scrolls through tmux as before.
+const HISTORY_DECISION_TIMEOUT_MS = 350;
 
 export function setupTouchScroll(config: TouchScrollConfig): () => void {
-  const { terminal, core, selectModeRef, isMobile, nativePanes } = config;
+  const {
+    terminal,
+    core,
+    selectModeRef,
+    isMobile,
+    nativePanes,
+    requestHistory,
+  } = config;
   if (!isMobile) return () => {};
 
   const element = terminal.element;
@@ -36,7 +62,15 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
   let lastTouchTime = 0;
   let velocityY = 0;
   let gestureActive = false;
-  let panning = false;
+  // normal: WTerm's own scrollback; pan: tmux or a TUI moves the text;
+  // history: a local copy of the shell's scrollback; deciding: waiting to
+  // hear whether that copy is available.
+  let mode: "normal" | "pan" | "history" | "deciding" = "normal";
+  let decision = 0;
+  let decidingDelta = 0;
+  let decidingRelease: number | null = null;
+  let history: HistoryView | null = null;
+  let rowHeight = FALLBACK_ROW_HEIGHT;
   let scrollDirection: "vertical" | "horizontal" | null = null;
   let inertiaFrame: number | null = null;
   let pendingDeltaY = 0;
@@ -70,7 +104,11 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
   });
 
   const applyFingerDelta = (deltaY: number) => {
-    if (panning) {
+    if (mode === "history") {
+      history?.move(deltaY);
+    } else if (mode === "deciding") {
+      decidingDelta += deltaY;
+    } else if (mode === "pan") {
       pan.move(deltaY);
     } else {
       // A finger moving down reveals older output above the current position.
@@ -183,10 +221,22 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     gestureActive = true;
     scrollDirection = null;
     // A touch landing on a moving view catches it, like a native list.
-    panning = core.usingAltScreen();
-    if (panning) {
-      const rowHeight = measureRowHeight();
-      pan.begin(rowHeight, nativePaneAt(startX, startY, rowHeight));
+    history = historyViewFor(element);
+    if (history) {
+      history.stop();
+      mode = "history";
+    } else if (core.usingAltScreen()) {
+      rowHeight = measureRowHeight();
+      const native = nativePaneAt(startX, startY, rowHeight);
+      const inCopyMode = readCopyModePosition(topRowText(element)) !== null;
+      if (!native && !inCopyMode && requestHistory) {
+        beginDeciding();
+      } else {
+        mode = "pan";
+        pan.begin(rowHeight, native);
+      }
+    } else {
+      mode = "normal";
     }
     // Do not focus the hidden keyboard textarea here. A swipe is a scroll
     // gesture; tapping still focuses through the normal click handler.
@@ -222,6 +272,55 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     velocityY += (sampleVelocity - velocityY) * TOUCH_VELOCITY_SAMPLE_WEIGHT;
     pendingDeltaY += deltaY;
     if (moveFrame === null) moveFrame = requestAnimationFrame(flushMove);
+  }
+
+  /**
+   * Ask for the shell's scrollback. A plain shell answers with it and the
+   * gesture scrolls a local copy; anything else (a full-screen app, a split
+   * window) or no answer in time scrolls through tmux as before. Finger
+   * travel in the meantime is kept and applied either way.
+   */
+  function beginDeciding() {
+    mode = "deciding";
+    decidingDelta = 0;
+    decidingRelease = null;
+    const token = (decision += 1);
+    const timer = setTimeout(
+      () => decide(token, null),
+      HISTORY_DECISION_TIMEOUT_MS
+    );
+    void requestHistory!(HISTORY_FIRST_PAGE).then((page) => {
+      clearTimeout(timer);
+      decide(token, page);
+    });
+  }
+
+  function decide(token: number, page: HistoryPage | null) {
+    if (token !== decision || mode !== "deciding") return;
+    const view = page ? openHistoryView(element, page, rowHeight) : null;
+    if (view) {
+      mode = "history";
+      history = view;
+      view.move(decidingDelta);
+      if (decidingRelease !== null) releaseHistory(decidingRelease);
+      // The rest of the scrollback, while the first screens are read.
+      void requestHistory!(HISTORY_FULL).then((full) => {
+        if (full && historyViewFor(element) === view) view.replace(full);
+      });
+      return;
+    }
+    mode = "pan";
+    pan.begin(rowHeight, null);
+    pan.move(decidingDelta);
+    if (decidingRelease !== null) pan.fling(decidingRelease);
+  }
+
+  function releaseHistory(velocity: number) {
+    const view = history;
+    view?.fling(velocity, () => {
+      // Back at the bottom: the live terminal takes over again.
+      if (view.atLive()) view.close();
+    });
   }
 
   const startInertia = (velocity: number) => {
@@ -264,7 +363,11 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
       scrollDirection === "vertical" && !still && !selectModeRef.current
         ? velocityY
         : 0;
-    if (panning) {
+    if (mode === "history") {
+      releaseHistory(velocity);
+    } else if (mode === "deciding") {
+      decidingRelease = velocity;
+    } else if (mode === "pan") {
       // Always called, even for taps: it also lets go of the pan.
       pan.fling(velocity);
     } else {
@@ -279,6 +382,8 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     cancelMove();
     unlistenTarget();
     pan.dispose();
+    decision += 1;
+    closeHistoryView(element);
     element.removeEventListener("touchstart", handleTouchStart);
     element.style.touchAction = "";
   };

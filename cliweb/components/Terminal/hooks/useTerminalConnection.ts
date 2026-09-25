@@ -20,6 +20,11 @@ import {
   createCopyModeWheel,
   type CopyModeExit,
 } from "./copy-mode";
+import {
+  closeHistoryView,
+  historyViewFor,
+  type HistoryPage,
+} from "./history-view";
 import { keepKeyboardInputInView } from "./keyboard-input";
 import { createNativePanes } from "./native-panes";
 import { setupTouchScroll } from "./touch-scroll";
@@ -33,6 +38,15 @@ import {
 import { WS_RECONNECT_BASE_DELAY } from "../constants";
 
 export type { TerminalScrollState } from "./useTerminalConnection.types";
+
+// Background refresh of an open history view while output arrives.
+const HISTORY_REFRESH_DELAY_MS = 250;
+const HISTORY_REFRESH_LINES = 5000;
+// Prefetch of the first page once output has been quiet this long.
+const HISTORY_PREFETCH_QUIET_MS = 700;
+const HISTORY_PREFETCH_LINES = 300;
+// A "not available" answer (full-screen app) is trusted this long.
+const HISTORY_UNAVAILABLE_TTL_MS = 5000;
 
 function rowHeightOf(element: HTMLElement): number {
   return (
@@ -134,12 +148,78 @@ export function useTerminalConnection({
   // Typing after a scroll returns to the prompt instead of being read as
   // tmux copy-mode commands (see copy-mode.ts).
   const sendInput = useCallback((data: string) => {
+    // Typing returns to the live screen, as in a native terminal.
+    const element = terminalInstanceRef.current?.element;
+    if (element) closeHistoryView(element);
     const prefix = copyModeExitRef.current?.prefixFor(data) ?? "";
     managerRef.current?.sendInput(prefix + data);
   }, []);
   // Panes reported by TUIs that support native scrolling (jcode).
   const [nativePanes] = useState(() => createNativePanes());
+  // The shell's scrollback, scrolled locally while it is open. Like a
+  // native list it is fetched ahead of time: once output has been quiet
+  // for a moment, and reused until more output arrives, so a swipe starts
+  // without a round trip. "Not available" (a full-screen app is running)
+  // is remembered for a few seconds too, so those swipes do not wait.
+  const outputSeqRef = useRef(0);
+  const historyCacheRef = useRef<{
+    seq: number;
+    at: number;
+    page: HistoryPage | null;
+  } | null>(null);
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestHistory = useCallback((count: number) => {
+    const cached = historyCacheRef.current;
+    if (cached?.page && cached.seq === outputSeqRef.current) {
+      const page = cached.page;
+      const complete =
+        page.lines.length - page.height >= Math.min(count, page.historySize);
+      if (complete) return Promise.resolve<HistoryPage | null>(page);
+    }
+    if (
+      cached &&
+      !cached.page &&
+      Date.now() - cached.at < HISTORY_UNAVAILABLE_TTL_MS
+    ) {
+      return Promise.resolve<HistoryPage | null>(null);
+    }
+    const seq = outputSeqRef.current;
+    const request =
+      managerRef.current?.requestHistory(count) ?? Promise.resolve(null);
+    return request.then((page) => {
+      historyCacheRef.current = { seq, at: Date.now(), page };
+      return page;
+    });
+  }, []);
+  const noteOutput = useCallback(() => {
+    outputSeqRef.current += 1;
+    if (!appearanceRef.current.isMobile) return;
+    if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+    prefetchTimerRef.current = setTimeout(() => {
+      prefetchTimerRef.current = null;
+      if (document.visibilityState === "visible") {
+        void requestHistory(HISTORY_PREFETCH_LINES);
+      }
+    }, HISTORY_PREFETCH_QUIET_MS);
+  }, [requestHistory]);
+  const historyRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // New output while scrolled back: fetch it in the background, keeping the
+  // text being read where it is.
+  const refreshHistorySoon = useCallback(
+    (element: HTMLElement) => {
+      if (!historyViewFor(element) || historyRefreshRef.current) return;
+      historyRefreshRef.current = setTimeout(() => {
+        historyRefreshRef.current = null;
+        void requestHistory(HISTORY_REFRESH_LINES).then((page) => {
+          if (page) historyViewFor(element)?.replace(page);
+        });
+      }, HISTORY_REFRESH_DELAY_MS);
+    },
+    [requestHistory]
+  );
   const sendCommand = useCallback((command: string) => {
+    const element = terminalInstanceRef.current?.element;
+    if (element) closeHistoryView(element);
     const prefix = copyModeExitRef.current?.prefixFor(command) ?? "";
     if (prefix) managerRef.current?.sendInput(prefix);
     managerRef.current?.sendCommand(command);
@@ -187,7 +267,12 @@ export function useTerminalConnection({
         theme: appearanceRef.current.theme,
         fontScale: appearanceRef.current.fontScale,
         onData: sendInput,
-        onResize: (cols, rows) => managerRef.current?.sendResize(cols, rows),
+        onResize: (cols, rows) => {
+          // A local history copy is laid out for the old size.
+          const element = terminalInstanceRef.current?.element;
+          if (element) closeHistoryView(element);
+          managerRef.current?.sendResize(cols, rows);
+        },
         onTitle: (title) => callbacksRef.current.onTitle?.(title),
       });
       if (cancelled) {
@@ -319,6 +404,7 @@ export function useTerminalConnection({
         selectModeRef,
         isMobile: appearanceRef.current.isMobile,
         nativePanes,
+        requestHistory,
       });
 
       // Wait for WTerm's ResizeObserver to measure the real pane before the
@@ -350,6 +436,8 @@ export function useTerminalConnection({
           onResourceFrame: handleResourceFrame,
           onNativeScroll: (panes) => nativePanes.update(panes),
           onOutput: (data) => {
+            noteOutput();
+            refreshHistorySoon(adapter.terminal.element);
             const result = osc52Filter.push(data);
             if (result.terminalData) {
               adapter.terminal.write(result.terminalData);
@@ -423,7 +511,16 @@ export function useTerminalConnection({
       coreRef.current = null;
       reconnectDelayRef.current = WS_RECONNECT_BASE_DELAY;
     };
-  }, [sendInput, sessionName, terminalRef, retryGeneration, nativePanes]);
+  }, [
+    sendInput,
+    sessionName,
+    terminalRef,
+    retryGeneration,
+    nativePanes,
+    requestHistory,
+    refreshHistorySoon,
+    noteOutput,
+  ]);
 
   useEffect(() => {
     const adapter = adapterRef.current;
@@ -441,12 +538,13 @@ export function useTerminalConnection({
       selectModeRef,
       isMobile,
       nativePanes,
+      requestHistory,
     });
     return () => {
       touchCleanupRef.current?.();
       touchCleanupRef.current = null;
     };
-  }, [isMobile, nativePanes]);
+  }, [isMobile, nativePanes, requestHistory]);
 
   useEffect(() => {
     const terminal = terminalInstanceRef.current;

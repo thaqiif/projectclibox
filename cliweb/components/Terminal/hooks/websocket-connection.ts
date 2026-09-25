@@ -2,7 +2,10 @@
 
 import type { WTerm } from "@wterm/dom";
 import type { HostResourceRequest } from "@wterm/ghostty";
+import type { HistoryPage } from "./history-view";
 import type { NativePane, NativePaneKind } from "./native-panes";
+
+const HISTORY_TIMEOUT_MS = 3000;
 import { isValidTerminalGrid } from "../../../lib/terminal-grid";
 import {
   decodeTerminalResourceFrame,
@@ -32,6 +35,8 @@ interface WebSocketManager {
   sendInput: (data: string) => void;
   sendCommand: (command: string) => void;
   sendNativeScroll: (pane: NativePaneKind, delta: number) => void;
+  /** The shell's scrollback, or null when unavailable (see tmux-history). */
+  requestHistory: (count: number) => Promise<HistoryPage | null>;
   sendResize: (cols: number, rows: number) => void;
   requestResource: (request: HostResourceRequest) => boolean;
   cancelResource: (id: number) => boolean;
@@ -75,6 +80,25 @@ export function createWebSocketConnection(
       wsRef.current.send(JSON.stringify({ type: "input", data }));
     }
   };
+
+  let historyRequestId = 0;
+  const historyWaiters = new Map<number, (page: HistoryPage | null) => void>();
+  const settleHistory = (id: number, page: HistoryPage | null) => {
+    const resolve = historyWaiters.get(id);
+    historyWaiters.delete(id);
+    resolve?.(page);
+  };
+  const requestHistory = (count: number) =>
+    new Promise<HistoryPage | null>((resolve) => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) {
+        resolve(null);
+        return;
+      }
+      const id = (historyRequestId += 1);
+      historyWaiters.set(id, resolve);
+      wsRef.current.send(JSON.stringify({ type: "history", id, count }));
+      setTimeout(() => settleHistory(id, null), HISTORY_TIMEOUT_MS);
+    });
 
   const sendNativeScroll = (pane: NativePaneKind, delta: number) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -246,6 +270,29 @@ export function createWebSocketConnection(
         typeof message.data === "string"
       ) {
         callbacks.onOutput(message.data);
+      } else if (message.type === "history") {
+        const page = message as unknown as {
+          id?: unknown;
+          available?: unknown;
+          lines?: unknown;
+          height?: unknown;
+          historySize?: unknown;
+        };
+        if (typeof page.id !== "number") return;
+        settleHistory(
+          page.id,
+          page.available === true &&
+            Array.isArray(page.lines) &&
+            page.lines.every((line) => typeof line === "string") &&
+            typeof page.height === "number" &&
+            typeof page.historySize === "number"
+            ? {
+                lines: page.lines as string[],
+                height: page.height,
+                historySize: page.historySize,
+              }
+            : null
+        );
       } else if (
         message.type === "native_scroll" &&
         Array.isArray((message as { panes?: unknown }).panes)
@@ -268,6 +315,7 @@ export function createWebSocketConnection(
 
     ws.onclose = () => {
       if (wsRef.current === ws) wsRef.current = null;
+      for (const id of [...historyWaiters.keys()]) settleHistory(id, null);
       callbacks.onNativeScroll?.([]);
       callbacks.onDisconnected?.();
       if (
@@ -333,6 +381,7 @@ export function createWebSocketConnection(
     sendInput,
     sendCommand,
     sendNativeScroll,
+    requestHistory,
     sendResize,
     requestResource: (request) =>
       sendResourceFrame({

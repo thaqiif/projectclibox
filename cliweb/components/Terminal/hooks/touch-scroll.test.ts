@@ -38,7 +38,9 @@ class FakeTouchElement extends FakeTarget {
   }
 }
 
-function withFakeBrowser(run: (frames: Array<(time: number) => void>) => void) {
+function withFakeBrowser(
+  run: (frames: Array<(time: number) => void>) => void | Promise<void>
+): void | Promise<void> {
   const originalWheelEvent = Object.getOwnPropertyDescriptor(
     globalThis,
     "WheelEvent"
@@ -61,15 +63,22 @@ function withFakeBrowser(run: (frames: Array<(time: number) => void>) => void) {
   globalThis.requestAnimationFrame = ((cb: (time: number) => void) =>
     frames.push(cb)) as typeof requestAnimationFrame;
   globalThis.cancelAnimationFrame = () => {};
-  try {
-    run(frames);
-  } finally {
+  const restore = () => {
     globalThis.requestAnimationFrame = originalRaf;
     globalThis.cancelAnimationFrame = originalCaf;
     if (originalWheelEvent)
       Object.defineProperty(globalThis, "WheelEvent", originalWheelEvent);
     else Reflect.deleteProperty(globalThis, "WheelEvent");
+  };
+  let result: void | Promise<void>;
+  try {
+    result = run(frames);
+  } catch (error) {
+    restore();
+    throw error;
   }
+  if (result instanceof Promise) return result.finally(restore);
+  restore();
 }
 
 const touch = (clientY: number) => ({
@@ -79,7 +88,10 @@ const touch = (clientY: number) => ({
   stopPropagation() {},
 });
 
-function setup(element: FakeTouchElement) {
+function setup(
+  element: FakeTouchElement,
+  requestHistory?: (count: number) => Promise<null>
+) {
   let focusCount = 0;
   const terminal = {
     element,
@@ -91,6 +103,7 @@ function setup(element: FakeTouchElement) {
     core,
     selectModeRef: { current: false },
     isMobile: true,
+    requestHistory,
   });
   return { cleanup, focusCount: () => focusCount };
 }
@@ -141,3 +154,27 @@ test("a swipe keeps working after the touched text is redrawn away", () => {
     }
   });
 });
+
+test("without local history (a full-screen app), travel so far still pans", () =>
+  withFakeBrowser(async (frames) => {
+    const element = new FakeTouchElement();
+    let answer: (value: null) => void = () => {};
+    const { cleanup } = setup(
+      element,
+      () => new Promise<null>((resolve) => (answer = resolve))
+    );
+    try {
+      element.listeners.get("touchstart")?.(touch(100));
+      element.listeners.get("touchmove")?.(touch(110));
+      element.listeners.get("touchmove")?.(touch(140));
+      frames.shift()?.(16);
+      // Still waiting for the answer: nothing sent yet.
+      assert.equal(element.wheelEvents.length, 0);
+      answer(null);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // The 30px travelled while deciding is applied to the pan.
+      assert.equal(element.wheelEvents.length, 1);
+    } finally {
+      cleanup();
+    }
+  }));

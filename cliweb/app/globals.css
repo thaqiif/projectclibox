@@ -352,6 +352,30 @@ body {
   color: var(--term-fg);
 }
 
+/* Shell scrollback scrolled locally (components/Terminal/hooks/history-view.ts).
+   It sits exactly over the grid and inherits its font and colours. */
+.terminal-container > .wterm.wterm-cliweb .history-view {
+  position: absolute;
+  z-index: 2;
+  overflow: hidden;
+  background: var(--term-bg);
+  contain: strict;
+}
+.terminal-container > .wterm.wterm-cliweb .history-rows {
+  position: absolute;
+  inset: 0 0 auto 0;
+  will-change: transform;
+}
+.terminal-container > .wterm.wterm-cliweb .history-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--term-row-height);
+  line-height: var(--term-row-height);
+  white-space: pre;
+  overflow: hidden;
+}
+
 /* While a touch pan slides the grid between tmux line redraws, the shifted
    grid must not become scrollable overflow of the host. */
 .terminal-container > .wterm.wterm-cliweb.touch-panning {
