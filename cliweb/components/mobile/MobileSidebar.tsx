@@ -124,7 +124,7 @@ export function MobileSidebar({
         ref={scrimRef}
         aria-hidden={!isOpen}
         style={{ opacity: 0, pointerEvents: "none" }}
-        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[3px] md:hidden"
+        className="fixed inset-0 z-40 bg-black/45 md:hidden"
         onClick={onClose}
       />
 

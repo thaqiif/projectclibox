@@ -141,7 +141,7 @@ export function ProjectCard({
     <div
       onClick={handleClick}
       className={cn(
-        "group press-sm relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 py-2",
+        "group press-sm relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-sm px-2 py-2",
         "min-h-[44px] md:min-h-[34px]",
         "transition-colors duration-200 hover:bg-[var(--fill-4)]"
       )}
@@ -208,7 +208,7 @@ export function ProjectCard({
                 variant="ghost"
                 size="icon-sm"
                 aria-label="New terminal"
-                className="h-8 w-8 rounded-full md:h-7 md:w-7"
+                className="h-8 w-8 rounded-sm md:h-7 md:w-7"
                 onClick={(e) => {
                   e.stopPropagation();
                   onNewTerminal();
@@ -230,7 +230,7 @@ export function ProjectCard({
                 variant="ghost"
                 size="icon-sm"
                 aria-label="Project actions"
-                className="h-8 w-8 rounded-full md:h-7 md:w-7"
+                className="h-8 w-8 rounded-sm md:h-7 md:w-7"
               >
                 <MoreHorizontal className="h-4 w-4" />
               </Button>

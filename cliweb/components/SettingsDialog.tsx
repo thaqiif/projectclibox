@@ -25,7 +25,7 @@ interface SettingsDialogProps {
 }
 
 const FONT_FAMILIES = [
-  { value: "default", label: "Default (SF Pro / Geist Sans)", css: "" },
+  { value: "default", label: "Default (Inter / system)", css: "" },
   { value: "inter", label: "Inter", css: "Inter, sans-serif" },
   { value: "roboto", label: "Roboto", css: "Roboto, sans-serif" },
   { value: "open-sans", label: "Open Sans", css: '"Open Sans", sans-serif' },
@@ -92,7 +92,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         overlayClassName="bg-transparent"
-        className="glass-thick glass-float max-h-[90vh] grid-rows-[auto_1fr_auto] gap-0 overflow-hidden border-0 shadow-[var(--elev-glass)] sm:top-4 sm:right-4 sm:bottom-4 sm:left-auto sm:max-w-sm sm:translate-x-0 sm:translate-y-0"
+        className="glass-thick glass-float max-h-[90vh] grid-rows-[auto_1fr_auto] gap-0 overflow-hidden rounded-md p-0 sm:top-4 sm:right-4 sm:bottom-4 sm:left-auto sm:max-w-sm sm:translate-x-0 sm:translate-y-0"
       >
         <DialogHeader className="edge-fade-bottom flex h-10 shrink-0 flex-row items-center px-5 pt-4 pb-3">
           <DialogTitle className="type-headline">Settings</DialogTitle>

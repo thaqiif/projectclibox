@@ -73,9 +73,9 @@ interface AButtonProps extends Omit<
 /* Heights follow the iOS control scale, and the corner grows with the
    control so the curvature stays optically constant. */
 const SIZE_CLASSES: Record<AButtonSize, { button: string; icon: string }> = {
-  sm: { button: "h-7 rounded-md px-2.5 text-[0.75rem]", icon: "h-3.5 w-3.5" },
-  md: { button: "h-9 rounded-lg px-3.5 text-[0.8125rem]", icon: "h-4 w-4" },
-  lg: { button: "h-11 rounded-xl px-5 text-[0.9375rem]", icon: "h-5 w-5" },
+  sm: { button: "h-7 rounded-sm px-2.5 text-[0.75rem]", icon: "h-3.5 w-3.5" },
+  md: { button: "h-9 rounded-sm px-3.5 text-[0.8125rem]", icon: "h-4 w-4" },
+  lg: { button: "h-11 rounded-sm px-5 text-[0.9375rem]", icon: "h-5 w-5" },
 };
 
 const VARIANT_MAP: Record<

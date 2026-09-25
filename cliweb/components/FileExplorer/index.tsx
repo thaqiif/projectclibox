@@ -103,7 +103,7 @@ function FileManagerActions({
   const [folderError, setFolderError] = useState<string | null>(null);
   const iconClass = compact
     ? "h-7 w-7 shrink-0 rounded"
-    : "h-10 w-10 shrink-0 rounded-full";
+    : "h-10 w-10 shrink-0 rounded-sm";
 
   const handleUploadSelection = async (
     event: React.ChangeEvent<HTMLInputElement>
@@ -889,12 +889,9 @@ function DesktopFileExplorer({
               onSave={onSave}
             />
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-2">
-              <p className="ui-label">No file open</p>
-              <p className="ui-meta">no file open</p>
-              <p className="ui-meta text-muted-foreground/70">
-                ❯ select a file from the tree
-              </p>
+            <div className="flex h-full flex-col items-center justify-center gap-1.5 px-4 text-center">
+              <p className="text-[0.8125rem] font-medium text-foreground">No file selected</p>
+              <p className="text-xs text-muted-foreground">Select a file to open it here.</p>
             </div>
           )}
         </div>
@@ -1067,7 +1064,7 @@ function MobileFileExplorer({
             variant="ghost"
             size="icon"
             onClick={onGoUp}
-            className="h-10 w-10 shrink-0 rounded-full"
+            className="h-10 w-10 shrink-0 rounded-sm"
             aria-label="Go back"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -1100,7 +1097,7 @@ function MobileFileExplorer({
       />
 
       {fileLoading && (
-        <div className="bg-background/80 absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
+        <div className="bg-background/85 absolute inset-0 z-50 flex items-center justify-center">
           <Loader2 className="text-primary h-6 w-6 animate-spin" />
         </div>
       )}
@@ -1389,7 +1386,7 @@ function ListingBody({
       className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col"
     >
       {isFileDrag && (
-        <div className="bg-background/60 ring-primary pointer-events-none absolute inset-0 z-10 flex items-center justify-center ring-1 ring-inset">
+        <div className="bg-[var(--shell-accent-tint)] ring-primary pointer-events-none absolute inset-0 z-10 flex items-center justify-center ring-1 ring-inset">
           <span className="bg-background text-foreground ui-label px-2 py-1">
             drop to upload into this folder
           </span>
@@ -1638,7 +1635,7 @@ function TrashUndoBannerRow({
   }, [entry.id]);
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border bg-background/95 px-4 py-2.5 shadow-lg backdrop-blur">
+    <div className="flex items-center gap-3 rounded-sm border border-[var(--shell-line-strong)] bg-[var(--shell-raised)] px-4 py-2.5">
       <Trash2 className="h-4 w-4 shrink-0 text-muted-foreground" />
       <span className="max-w-[40ch] truncate text-sm">
         Moved “{entry.name}” to trash

@@ -47,8 +47,8 @@ function Segment({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "press-sm focus-ring relative z-10 flex h-7 w-full items-center justify-center gap-1.5 rounded-full px-3",
-        "text-[0.75rem] font-medium transition-colors duration-200",
+        "press-sm focus-ring relative z-10 flex h-7 w-full items-center justify-center gap-1.5 rounded-sm px-3",
+        "text-[0.75rem] font-medium transition-colors duration-100",
         active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
       )}
     >
@@ -81,14 +81,13 @@ export function WorkbenchBar() {
           swapping — and it inherits the track's rounding. */}
       <div
         role="tablist"
-        className="relative grid grid-cols-2 items-center rounded-full bg-[var(--fill-4)] p-0.5"
+        className="relative grid grid-cols-2 items-center rounded-sm border border-[var(--shell-line)] bg-[var(--shell-hover)] p-0.5"
       >
         <span
           aria-hidden="true"
           className={cn(
-            "absolute top-0.5 bottom-0.5 left-0.5 rounded-full bg-[var(--fill-1)]",
-            "shadow-[var(--elev-1)]",
-            "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+            "absolute top-0.5 bottom-0.5 left-0.5 rounded-[2px] bg-[var(--shell-selected)]",
+            "transition-transform duration-150 ease-out"
           )}
           style={{
             width: `calc((100% - 0.25rem) / ${SEGMENTS.length})`,

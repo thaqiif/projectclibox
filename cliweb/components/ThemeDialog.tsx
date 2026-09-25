@@ -61,12 +61,12 @@ function ThemeRow({
     <button
       onClick={onClick}
       className={cn(
-        "press-sm focus-ring relative flex w-full items-center gap-3 py-2 pr-5 pl-4 text-left transition-colors",
+        "press-sm focus-ring relative flex w-full items-center gap-3 py-1.5 pr-5 pl-4 text-left transition-colors",
         active ? "bg-[var(--fill-3)]" : "hover:bg-[var(--fill-4)]"
       )}
     >
       {active && (
-        <span className="bg-primary absolute inset-y-0 left-0 w-[3px] rounded-r-full" />
+        <span className="bg-primary absolute inset-y-0 left-0 w-0.5" />
       )}
       {preview ? <Swatch preview={preview} /> : <span className="w-8" />}
       <span className="min-w-0 flex-1">
@@ -102,7 +102,7 @@ export function ThemeDialog({ open, onOpenChange }: ThemeDialogProps) {
         // picking a theme is pointless if the thing it repaints is hidden
         // behind the picker and dimmed to near-black.
         overlayClassName="bg-transparent"
-        className="glass-thick glass-float top-4 bottom-4 left-auto right-4 grid-rows-[auto_1fr_auto] translate-x-0 translate-y-0 gap-0 overflow-hidden border-0 shadow-[var(--elev-glass)] sm:max-w-xs"
+        className="glass-thick glass-float top-4 bottom-4 left-auto right-4 grid-rows-[auto_1fr_auto] translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-md p-0 sm:max-w-xs"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Theme</DialogTitle>

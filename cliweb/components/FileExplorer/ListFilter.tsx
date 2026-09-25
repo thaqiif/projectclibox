@@ -51,7 +51,7 @@ export function ListFilter({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="h-7 w-full rounded-md border border-border bg-background/60 pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        className="h-7 w-full rounded-sm border border-[var(--shell-line)] bg-[var(--shell-raised)] pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
       />
       {value !== "" && (
         <button

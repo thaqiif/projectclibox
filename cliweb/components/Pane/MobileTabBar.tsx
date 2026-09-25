@@ -42,7 +42,7 @@ function ViewModeButton({
       }}
       aria-pressed={currentMode === mode}
       className={cn(
-        "press-sm focus-ring relative z-10 flex h-8 min-w-11 items-center justify-center rounded-full",
+        "press-sm focus-ring relative z-10 flex h-8 min-w-11 items-center justify-center rounded-sm",
         "transition-colors duration-200",
         badge && "gap-1 px-2.5",
         currentMode === mode ? "text-foreground" : "text-muted-foreground"
@@ -127,7 +127,7 @@ function MobileTerminalTitle({
             cancel();
           }
         }}
-        className="ring-primary/50 h-9 min-w-0 flex-1 rounded-full bg-[var(--fill-3)] px-3 text-[0.8125rem] font-medium outline-none ring-2"
+        className="ring-primary/50 h-9 min-w-0 flex-1 rounded-sm bg-[var(--fill-3)] px-3 text-[0.8125rem] font-medium outline-none ring-2"
       />
     );
   }
@@ -137,7 +137,7 @@ function MobileTerminalTitle({
       type="button"
       onDoubleClick={startEditing}
       title="Double-click to rename"
-      className="press focus-ring flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-3 transition-colors hover:bg-[var(--fill-4)]"
+      className="press focus-ring flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-sm px-3 transition-colors hover:bg-[var(--fill-4)]"
     >
       <span className="truncate text-[0.8125rem] font-medium tracking-[-0.006em]">
         {name}
@@ -195,7 +195,7 @@ export function MobileTabBar({
             onMenuClick();
           }}
           aria-label="Open sidebar"
-          className="h-9 w-9 shrink-0 rounded-full"
+          className="h-9 w-9 shrink-0 rounded-sm"
         >
           <Menu className="h-[1.125rem] w-[1.125rem]" />
         </Button>
@@ -220,13 +220,13 @@ export function MobileTabBar({
       {terminal?.working_directory && (
         <div
           role="tablist"
-          className="relative flex shrink-0 items-center rounded-full bg-[var(--fill-4)] p-0.5"
+          className="relative flex shrink-0 items-center rounded-sm bg-[var(--fill-4)] p-0.5"
         >
           {/* The selection is one pill that travels, not three states that
               blink — same object, new place. */}
           <span
             aria-hidden="true"
-            className="absolute top-0.5 bottom-0.5 left-0.5 w-11 rounded-full bg-[var(--fill-1)] shadow-[var(--elev-1)] transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+            className="absolute top-0.5 bottom-0.5 left-0.5 w-11 rounded-sm bg-[var(--fill-1)]  transition-transform duration-150 ease-out"
             style={{
               transform: `translateX(${VIEW_MODE_ORDER.indexOf(viewMode) * 100}%)`,
             }}
@@ -258,7 +258,7 @@ export function MobileTabBar({
             e.stopPropagation();
             onMonitorToggle();
           }}
-          className="h-9 w-9 shrink-0 rounded-full"
+          className="h-9 w-9 shrink-0 rounded-sm"
         >
           <Columns3 className="h-4 w-4" />
         </Button>

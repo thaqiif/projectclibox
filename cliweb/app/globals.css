@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "../styles/themes.css";
-@import "../styles/liquid-glass.css";
+@import "../styles/shell.css";
 
 @plugin "@tailwindcss/typography";
 
@@ -48,12 +48,8 @@
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
-  /* SF Pro natively on Apple platforms — where the aesthetic is judged —
-     with the platform UI face as the cross-platform fallback so the metrics
-     stay close. */
   --font-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-    "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+    Inter, "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   --color-sidebar-ring: hsl(var(--sidebar-ring));
@@ -107,14 +103,12 @@
   --color-command-coral: #f5b6a6;
   --color-command-pink: #f3b5d2;
 
-  /* The iOS corner scale. The old 2-4px geometry read as an engineering
-     drawing; a material wants generous, continuous-feeling corners. */
-  --radius-xs: 6px;
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 18px;
-  --radius-2xl: 24px;
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 5px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
 
   /* Motion temperament: quick, precise, no bounce */
   --animate-status-pulse: status-pulse 1.6s ease-in-out infinite;
@@ -141,7 +135,7 @@
 }
 
 :root {
-  --radius: 8px;
+  --radius: 4px;
   /* Mobile viewport height - JS hook sets this dynamically for keyboard */
   --app-height: 100vh;
   --app-height: 100dvh;
@@ -188,10 +182,10 @@
    open tracking — not in mono, and not shouted. */
 @utility ui-label {
   font-size: 0.6875rem;
-  font-weight: 590;
-  letter-spacing: 0.045em;
+  font-weight: 600;
+  letter-spacing: 0;
   line-height: 1.2;
-  text-transform: uppercase;
+  text-transform: none;
   color: hsl(var(--muted-foreground));
 }
 

@@ -101,7 +101,7 @@ export function DesktopSidebar({
         style={{ width }}
         className={cn(
           "z-20 h-full overflow-hidden",
-          "transition-[width,transform] duration-300 ease-[cubic-bezier(0.23,1,0.32,1)]",
+          "transition-[width,transform] duration-150 ease-out",
           isPinned
             ? ["glass glass-edge-right relative flex-shrink-0 translate-x-0"]
             : [

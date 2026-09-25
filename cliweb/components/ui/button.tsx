@@ -4,19 +4,11 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
-/**
- * Buttons are controls, so they live in the glass layer — but restraint
- * matters: only the tinted and glass variants actually carry material.
- * Plain and ghost buttons are fills over whatever is behind them, which is
- * how Apple keeps a toolbar from turning into a wall of little windows.
- *
- * Every variant responds on pointer-*down* via `.press`, never only on
- * release.
- */
+/** Shared shell controls: small corners, solid fills, and visible focus. */
 const buttonVariants = cva(
   [
     "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap",
-    "rounded-lg border border-transparent text-[0.8125rem] font-medium",
+    "rounded-sm border border-transparent text-[0.8125rem] font-medium",
     "press focus-ring outline-none select-none",
     "disabled:pointer-events-none disabled:opacity-40",
     "aria-invalid:border-destructive",
@@ -27,13 +19,13 @@ const buttonVariants = cva(
       variant: {
         /** The one filled control in a view. Solid, so it reads as the answer. */
         default:
-          "bg-primary text-primary-foreground shadow-[var(--elev-1)] hover:bg-primary/90",
+          "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-[var(--elev-1)] hover:bg-destructive/90",
-        /** Glass: a control that floats over content it does not own. */
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        /** Bordered secondary control on the raised surface. */
         outline:
-          "glass-thin text-foreground rounded-lg hover:bg-[var(--fill-3)]",
-        /** A fill, not a material — safe to sit on top of glass. */
+          "border-[var(--shell-line-strong)] bg-[var(--shell-raised)] text-foreground hover:bg-[var(--fill-3)]",
+        /** Quiet secondary fill. */
         secondary:
           "bg-[var(--fill-3)] text-foreground hover:bg-[var(--fill-2)]",
         ghost:

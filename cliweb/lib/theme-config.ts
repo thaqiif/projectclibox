@@ -60,19 +60,19 @@ export interface ThemeOption {
 export const DARK_THEMES: ThemeOption[] = [
   {
     id: "deep",
-    label: "Deep Black",
-    description: "Premium true black",
+    label: "Default",
+    description: "Neutral near-black",
     icon: Moon,
     preview: {
-      background: "#0A0A0A",
+      background: "#111113",
       foreground: "#EBEBEB",
-      accent: "#3B82F6",
+      accent: "#AEA5EB",
     },
   },
   {
     id: "charcoal",
     label: "Charcoal",
-    description: "Soft dark, easy on eyes",
+    description: "Soft neutral dark",
     icon: Moon,
     preview: {
       background: "#161A1D",
@@ -83,7 +83,7 @@ export const DARK_THEMES: ThemeOption[] = [
   {
     id: "warm",
     label: "Warm",
-    description: "Cozy browns with amber",
+    description: "Warm dark brown",
     icon: Flame,
     preview: {
       background: "#1A1612",
@@ -94,7 +94,7 @@ export const DARK_THEMES: ThemeOption[] = [
   {
     id: "cool",
     label: "Cool",
-    description: "VS Code / GitHub style",
+    description: "Cool blue-gray",
     icon: Zap,
     preview: {
       background: "#0D1117",
@@ -105,7 +105,7 @@ export const DARK_THEMES: ThemeOption[] = [
   {
     id: "gray",
     label: "Gray",
-    description: "Balanced medium gray",
+    description: "Balanced dark gray",
     icon: Monitor,
     preview: {
       background: "#191919",
@@ -116,7 +116,7 @@ export const DARK_THEMES: ThemeOption[] = [
   {
     id: "midnight",
     label: "Midnight",
-    description: "Deep blue, nordic style",
+    description: "Deep blue-gray",
     icon: CloudMoon,
     preview: {
       background: "#0A0E1A",
@@ -127,7 +127,7 @@ export const DARK_THEMES: ThemeOption[] = [
   {
     id: "forest",
     label: "Forest",
-    description: "Dark green with emerald",
+    description: "Dark forest green",
     icon: Trees,
     preview: {
       background: "#0C1410",
@@ -138,7 +138,7 @@ export const DARK_THEMES: ThemeOption[] = [
   {
     id: "purple",
     label: "Purple",
-    description: "Deep purple, creative",
+    description: "Muted violet dark",
     icon: Sparkles,
     preview: {
       background: "#0F0A1A",
@@ -149,7 +149,7 @@ export const DARK_THEMES: ThemeOption[] = [
   {
     id: "ocean",
     label: "Ocean",
-    description: "Deep teal, serene",
+    description: "Deep blue-green",
     icon: Waves,
     preview: {
       background: "#0A1419",
@@ -160,7 +160,7 @@ export const DARK_THEMES: ThemeOption[] = [
   {
     id: "mocha",
     label: "Mocha",
-    description: "Rich brown, sophisticated",
+    description: "Muted dark brown",
     icon: Coffee,
     preview: {
       background: "#1C1612",
@@ -174,12 +174,12 @@ export const LIGHT_THEMES: ThemeOption[] = [
   {
     id: "default",
     label: "Default",
-    description: "Clean white",
+    description: "Neutral near-white",
     icon: Sun,
     preview: {
-      background: "#FFFFFF",
+      background: "#FCFCFC",
       foreground: "#111111",
-      accent: "#3B82F6",
+      accent: "#5A4FB9",
     },
   },
   {
