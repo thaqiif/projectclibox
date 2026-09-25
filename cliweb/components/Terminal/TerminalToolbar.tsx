@@ -508,7 +508,7 @@ export function TerminalToolbar({
         // Opaque for the same reason as the mobile header: this row sits on the
         // bottom viewport edge, under the home indicator in a saved-to-home-
         // screen iOS session.
-        className="terminal-toolbar glass-edge-top scrollbar-none relative z-10 flex items-stretch gap-1 overflow-x-auto bg-[var(--shell-bar)] px-1.5 py-1.5"
+        className="terminal-toolbar glass-edge-top scrollbar-none relative z-10 flex items-stretch gap-1 overflow-x-auto bg-[var(--shell-bar)] px-1.5 pt-1.5 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
         onTouchEnd={(e) => e.stopPropagation()}
       >
         {/* Mic button */}
