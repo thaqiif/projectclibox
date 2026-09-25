@@ -27,6 +27,7 @@ import {
 } from "./history-view";
 import { keepKeyboardInputInView } from "./keyboard-input";
 import { createNativePanes } from "./native-panes";
+import { closeNativeView } from "./native-view";
 import { setupTouchScroll } from "./touch-scroll";
 import { createWebSocketConnection } from "./websocket-connection";
 import { DEFAULT_FONT_SCALE } from "../../../lib/font-scale";
@@ -150,7 +151,10 @@ export function useTerminalConnection({
   const sendInput = useCallback((data: string) => {
     // Typing returns to the live screen, as in a native terminal.
     const element = terminalInstanceRef.current?.element;
-    if (element) closeHistoryView(element);
+    if (element) {
+      closeHistoryView(element);
+      closeNativeView(element);
+    }
     const prefix = copyModeExitRef.current?.prefixFor(data) ?? "";
     managerRef.current?.sendInput(prefix + data);
   }, []);
@@ -219,7 +223,10 @@ export function useTerminalConnection({
   );
   const sendCommand = useCallback((command: string) => {
     const element = terminalInstanceRef.current?.element;
-    if (element) closeHistoryView(element);
+    if (element) {
+      closeHistoryView(element);
+      closeNativeView(element);
+    }
     const prefix = copyModeExitRef.current?.prefixFor(command) ?? "";
     if (prefix) managerRef.current?.sendInput(prefix);
     managerRef.current?.sendCommand(command);
@@ -270,7 +277,10 @@ export function useTerminalConnection({
         onResize: (cols, rows) => {
           // A local history copy is laid out for the old size.
           const element = terminalInstanceRef.current?.element;
-          if (element) closeHistoryView(element);
+          if (element) {
+            closeHistoryView(element);
+            closeNativeView(element);
+          }
           managerRef.current?.sendResize(cols, rows);
         },
         onTitle: (title) => callbacksRef.current.onTitle?.(title),

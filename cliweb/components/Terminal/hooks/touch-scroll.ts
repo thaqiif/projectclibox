@@ -17,6 +17,12 @@ import {
 } from "./history-view";
 import type { NativePanes, NativeScrollTarget } from "./native-panes";
 import {
+  closeNativeView,
+  nativeViewFor,
+  openNativeView,
+  type NativeView,
+} from "./native-view";
+import {
   createVelocityTracker,
   MOMENTUM_STOP_VELOCITY,
   MOMENTUM_TIME_CONSTANT_MS,
@@ -65,12 +71,14 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
   let gestureActive = false;
   // normal: WTerm's own scrollback; pan: tmux or a TUI moves the text;
   // history: a local copy of the shell's scrollback; deciding: waiting to
-  // hear whether that copy is available.
-  let mode: "normal" | "pan" | "history" | "deciding" = "normal";
+  // hear whether that copy is available; native: an app's pane drawn
+  // locally from what it has shown (native-view.ts).
+  let mode: "normal" | "pan" | "history" | "deciding" | "native" = "normal";
   let decision = 0;
   let decidingDelta = 0;
   let decidingRelease: number | null = null;
   let history: HistoryView | null = null;
+  let nativeView: NativeView | null = null;
   let rowHeight = FALLBACK_ROW_HEIGHT;
   let scrollDirection: "vertical" | "horizontal" | null = null;
   let inertiaFrame: number | null = null;
@@ -107,6 +115,8 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
   const applyFingerDelta = (deltaY: number) => {
     if (mode === "history") {
       history?.move(deltaY);
+    } else if (mode === "native") {
+      nativeView?.move(deltaY);
     } else if (mode === "deciding") {
       decidingDelta += deltaY;
     } else if (mode === "pan") {
@@ -150,25 +160,31 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
   };
 
   /** The native pane under a screen point, if a TUI reported one there. */
+  const firstRow = () =>
+    element.querySelector<HTMLElement>(
+      ".term-grid > .term-row:not(.term-scrollback-row)"
+    );
+
+  const columnWidth = () => {
+    // WTerm keeps its measured cell width private; the row width over the
+    // column count is within a fraction of a cell of it.
+    const measured = (terminal as unknown as { _charWidth?: unknown })
+      ._charWidth;
+    if (typeof measured === "number" && measured > 0) return measured;
+    const width = firstRow()?.getBoundingClientRect().width ?? 0;
+    return width / Math.max(1, terminal.cols);
+  };
+
   const nativePaneAt = (
     clientX: number,
     clientY: number,
     rowHeight: number
   ): NativeScrollTarget | null => {
     if (!nativePanes) return null;
-    const row = element.querySelector<HTMLElement>(
-      ".term-grid > .term-row:not(.term-scrollback-row)"
-    );
+    const row = firstRow();
     if (!row) return null;
     const rect = row.getBoundingClientRect();
-    // WTerm keeps its measured cell width private; the row width over the
-    // column count is within a fraction of a cell of it.
-    const measured = (terminal as unknown as { _charWidth?: unknown })
-      ._charWidth;
-    const charWidth =
-      typeof measured === "number" && measured > 0
-        ? measured
-        : rect.width / Math.max(1, terminal.cols);
+    const charWidth = columnWidth() || 1;
     return nativePanes.paneAt(
       Math.floor((clientY - rect.top) / rowHeight),
       Math.floor((clientX - rect.left) / charWidth)
@@ -222,14 +238,25 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     scrollDirection = null;
     // A touch landing on a moving view catches it, like a native list.
     history = historyViewFor(element);
+    nativeView = nativeViewFor(element);
     if (history) {
       history.stop();
       mode = "history";
+    } else if (nativeView) {
+      nativeView.stop();
+      mode = "native";
     } else if (core.usingAltScreen()) {
       rowHeight = measureRowHeight();
       const native = nativePaneAt(startX, startY, rowHeight);
       const inCopyMode = readCopyModePosition(topRowText(element)) !== null;
-      if (!native && !inCopyMode && requestHistory) {
+      nativeView = native
+        ? openNativeView(element, native, rowHeight, {
+            columnWidth: columnWidth(),
+          })
+        : null;
+      if (nativeView) {
+        mode = "native";
+      } else if (!native && !inCopyMode && requestHistory) {
         beginDeciding();
       } else {
         mode = "pan";
@@ -362,6 +389,9 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
         : 0;
     if (mode === "history") {
       releaseHistory(release);
+    } else if (mode === "native") {
+      // Always called, even for taps: it also lands the view.
+      nativeView?.fling(release);
     } else if (mode === "deciding") {
       decidingRelease = release;
     } else if (mode === "pan") {
@@ -381,6 +411,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     pan.dispose();
     decision += 1;
     closeHistoryView(element);
+    closeNativeView(element);
     element.removeEventListener("touchstart", handleTouchStart);
     element.style.touchAction = "";
   };

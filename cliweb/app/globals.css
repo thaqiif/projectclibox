@@ -352,21 +352,25 @@ body {
   color: var(--term-fg);
 }
 
-/* Shell scrollback scrolled locally (components/Terminal/hooks/history-view.ts).
-   It sits exactly over the grid and inherits its font and colours. */
-.terminal-container > .wterm.wterm-cliweb .history-view {
+/* Shell scrollback scrolled locally (components/Terminal/hooks/history-view.ts),
+   and a native app pane drawn locally while it scrolls (native-view.ts).
+   They sit exactly over the grid and inherit its font and colours. */
+.terminal-container > .wterm.wterm-cliweb .history-view,
+.terminal-container > .wterm.wterm-cliweb .native-view {
   position: absolute;
   z-index: 2;
   overflow: hidden;
   background: var(--term-bg);
   contain: strict;
 }
-.terminal-container > .wterm.wterm-cliweb .history-rows {
+.terminal-container > .wterm.wterm-cliweb .history-rows,
+.terminal-container > .wterm.wterm-cliweb .native-rows {
   position: absolute;
   inset: 0 0 auto 0;
   will-change: transform;
 }
-.terminal-container > .wterm.wterm-cliweb .history-row {
+.terminal-container > .wterm.wterm-cliweb .history-row,
+.terminal-container > .wterm.wterm-cliweb .native-row {
   position: absolute;
   left: 0;
   right: 0;

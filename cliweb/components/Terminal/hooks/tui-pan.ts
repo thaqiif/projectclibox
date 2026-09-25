@@ -92,18 +92,24 @@ export function detectScrollShift(
  * read as a smaller scroll. Apps pin a few rows while their content scrolls
  * (jcode keeps the current question at the top of the chat), so up to
  * MAX_PINNED_TOP rows at the top and MAX_PINNED_BOTTOM at the bottom may be
- * left out; `top` and `bottom` say how many were.
+ * left out; `top` and `bottom` say how many were. With `pinned`, only that
+ * many are (a pane whose pinned rows are already known).
  */
 export function detectPaneShift(
   before: readonly string[],
   after: readonly string[],
-  direction: PanDirection
+  direction: PanDirection,
+  pinned?: { top: number; bottom: number }
 ): { rows: number; top: number; bottom: number } | null {
   const rows = Math.min(before.length, after.length);
   const counts = new Map<string, number>();
   for (const line of before) counts.set(line, (counts.get(line) ?? 0) + 1);
-  for (let top = 0; top <= MAX_PINNED_TOP; top += 1) {
-    for (let bottom = 0; bottom <= MAX_PINNED_BOTTOM; bottom += 1) {
+  const tops = pinned ? [pinned.top] : [0, 1, 2].slice(0, MAX_PINNED_TOP + 1);
+  const bottoms = pinned
+    ? [pinned.bottom]
+    : [0, 1].slice(0, MAX_PINNED_BOTTOM + 1);
+  for (const top of tops) {
+    for (const bottom of bottoms) {
       const end = rows - bottom;
       for (let k = 1; k < end - top - 2; k += 1) {
         let evidence = 0;
