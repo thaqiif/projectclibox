@@ -15,6 +15,10 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
 import { buildCliwebEnvironment } from "./runtime-environment";
+import {
+  NATIVE_SCROLL_SOCKET_ENV,
+  newNativeScrollSocketPath,
+} from "./native-scroll";
 
 const execFileAsync = promisify(execFile);
 
@@ -24,6 +28,13 @@ const execFileAsync = promisify(execFile);
  * literal two-character separator survives any locale.
  */
 const SEP = "%%";
+
+function tmuxEnvironment(): NodeJS.ProcessEnv {
+  const environment = buildCliwebEnvironment();
+  delete environment.TMUX;
+  delete environment.TMUX_PANE;
+  return environment;
+}
 
 export interface Terminal {
   /** tmux name; the terminal's identity. */
@@ -41,13 +52,121 @@ export interface Terminal {
 async function tmux(args: string[]): Promise<string> {
   try {
     const { stdout } = await execFileAsync("tmux", args, {
-      env: buildCliwebEnvironment(),
+      env: tmuxEnvironment(),
     });
     return stdout;
   } catch {
     // No server running, or the terminal vanished between calls. Both are
     // ordinary states, not errors.
     return "";
+  }
+}
+
+async function tmuxOrThrow(args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync("tmux", args, {
+    env: tmuxEnvironment(),
+  });
+  return stdout;
+}
+
+/**
+ * Touch and trackpad scrolling send one wheel report per line of finger
+ * travel. tmux's default copy-mode bindings scroll five lines per report,
+ * which makes scrolling jump in blocks, and its first wheel-up on the live
+ * screen only enters copy mode without moving, which leaves a dead step at
+ * the start of every scroll. Rebind both so each report is exactly one line.
+ * Apps that asked for the mouse (or a pane already in a mode) still receive
+ * the raw event, as with tmux's default binding.
+ *
+ * Bindings are server-wide, and applied on every attach so a tmux server
+ * started before this existed picks them up too. Failures (an older tmux
+ * without brace syntax) are ignored: the defaults still work, just coarser.
+ */
+export async function configureScrollBindings(): Promise<void> {
+  const bindings: string[][] = [];
+  for (const table of ["copy-mode", "copy-mode-vi"]) {
+    bindings.push(
+      [table, "WheelUpPane", "select-pane; send-keys -X -N 1 scroll-up"],
+      [table, "WheelDownPane", "select-pane; send-keys -X -N 1 scroll-down"]
+    );
+  }
+  bindings.push([
+    "root",
+    "WheelUpPane",
+    'if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" ' +
+      "{ send-keys -M } { copy-mode -e; send-keys -X -N 1 scroll-up }",
+  ]);
+  for (const [table, key, command] of bindings) {
+    await tmux(["bind-key", "-T", table, key, command]);
+  }
+}
+
+/**
+ * Terminal features tmux may use towards the browser. WTerm understands
+ * extended keys, and synchronized output (mode 2026): with `sync`, tmux
+ * wraps each redraw so WTerm paints whole frames. Without it a redraw that
+ * arrives in pieces is painted half old, half new, which tears scrolling
+ * TUIs (jcode, opencode) even when the app itself draws atomically.
+ *
+ * Features are read when a client attaches, and are appended only once so
+ * anything the operator configured is kept.
+ */
+export async function configureClientFeatures(): Promise<void> {
+  const features = (
+    await tmux(["show-option", "-gqv", "terminal-features"])
+  ).split(/[\s,]+/u);
+  for (const feature of ["xterm*:extkeys", "xterm*:sync"]) {
+    if (!features.includes(feature)) {
+      await tmux(["set-option", "-ga", "terminal-features", feature]);
+    }
+  }
+}
+
+async function configureManagedSession(name: string): Promise<void> {
+  const env = tmuxEnvironment();
+  await configureScrollBindings();
+  await execFileAsync("tmux", ["set-option", "-g", "extended-keys", "on"], {
+    env,
+  });
+
+  await configureClientFeatures();
+
+  // URL images are an explicit WTerm extension. tmux handles XTGETTCAP
+  // itself, so WTerm-aware clients read this session option inside tmux.
+  await execFileAsync(
+    "tmux",
+    ["set-option", "-t", name, "@cliweb_wterm_url_image", "1"],
+    { env }
+  );
+
+  const windowIds = (
+    await tmuxOrThrow(["list-windows", "-t", name, "-F", "#{window_id}"])
+  )
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  for (const windowId of windowIds) {
+    await execFileAsync(
+      "tmux",
+      ["set-window-option", "-t", windowId, "allow-passthrough", "on"],
+      { env }
+    );
+  }
+
+  const hooks = await tmux(["show-hooks", "-t", name]);
+  if (!hooks.includes("set-window-option allow-passthrough on")) {
+    await execFileAsync(
+      "tmux",
+      [
+        "set-hook",
+        "-a",
+        "-t",
+        name,
+        "after-new-window",
+        "set-window-option allow-passthrough on",
+      ],
+      { env }
+    );
   }
 }
 
@@ -150,7 +269,15 @@ export async function terminalExists(name: string): Promise<boolean> {
  */
 export async function createTerminal(cwd: string): Promise<Terminal> {
   const name = `term-${randomUUID()}`;
-  const environment = buildCliwebEnvironment();
+  return createTerminalWithName(name, cwd);
+}
+
+/** Create a named terminal from a trusted registry path when restarting it. */
+export async function createTerminalWithName(
+  name: string,
+  cwd: string
+): Promise<Terminal> {
+  const environment = tmuxEnvironment();
 
   await execFileAsync(
     "tmux",
@@ -158,6 +285,10 @@ export async function createTerminal(cwd: string): Promise<Terminal> {
       "new-session",
       "-d",
       ...tmuxSessionEnvironmentArgs(environment),
+      // TUIs that support native scrolling (jcode) find the browser here;
+      // see lib/native-scroll.ts.
+      "-e",
+      `${NATIVE_SCROLL_SOCKET_ENV}=${newNativeScrollSocketPath()}`,
       "-s",
       name,
       "-c",
@@ -169,6 +300,7 @@ export async function createTerminal(cwd: string): Promise<Terminal> {
   // Mouse mode makes tmux's own splits usable in the browser: scrolling,
   // pane focus and divider dragging all work without a prefix key.
   await tmux(["set-option", "-t", name, "mouse", "on"]);
+  await configureManagedSession(name);
 
   // The status bar duplicates what the workbench already shows, and eats a
   // row of the interactive program. Global, so hand-started terminals lose it too.

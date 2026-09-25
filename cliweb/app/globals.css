@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "../styles/themes.css";
-@import "../styles/liquid-glass.css";
+@import "../styles/shell.css";
 
 @plugin "@tailwindcss/typography";
 
@@ -48,12 +48,8 @@
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
-  /* SF Pro natively on Apple platforms — where the aesthetic is judged —
-     with the platform UI face as the cross-platform fallback so the metrics
-     stay close. */
   --font-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-    "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+    Inter, "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   --color-sidebar-ring: hsl(var(--sidebar-ring));
@@ -107,14 +103,12 @@
   --color-command-coral: #f5b6a6;
   --color-command-pink: #f3b5d2;
 
-  /* The iOS corner scale. The old 2-4px geometry read as an engineering
-     drawing; a material wants generous, continuous-feeling corners. */
-  --radius-xs: 6px;
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 18px;
-  --radius-2xl: 24px;
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 5px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
 
   /* Motion temperament: quick, precise, no bounce */
   --animate-status-pulse: status-pulse 1.6s ease-in-out infinite;
@@ -141,7 +135,7 @@
 }
 
 :root {
-  --radius: 8px;
+  --radius: 4px;
   /* Mobile viewport height - JS hook sets this dynamically for keyboard */
   --app-height: 100vh;
   --app-height: 100dvh;
@@ -150,6 +144,9 @@
 @layer base {
   * {
     @apply border-border;
+  }
+  html {
+    background-color: hsl(var(--background));
   }
   body {
     @apply bg-background text-foreground;
@@ -171,6 +168,12 @@
   }
 }
 
+/* The mobile header fills the notch area with the same solid theme color. */
+.mobile-top-bar {
+  background-color: hsl(var(--background));
+  padding-top: calc(0.5rem + env(safe-area-inset-top, 0px));
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    TEXT ROLES — the two voices the workbench needs beyond the type scale
    ═══════════════════════════════════════════════════════════════════════ */
@@ -179,10 +182,10 @@
    open tracking — not in mono, and not shouted. */
 @utility ui-label {
   font-size: 0.6875rem;
-  font-weight: 590;
-  letter-spacing: 0.045em;
+  font-weight: 600;
+  letter-spacing: 0;
   line-height: 1.2;
-  text-transform: uppercase;
+  text-transform: none;
   color: hsl(var(--muted-foreground));
 }
 
@@ -233,7 +236,7 @@ body {
   overscroll-behavior: none;
 }
 
-/* Prevent all scrolling on mobile - we control scroll via xterm only */
+/* Prevent page scrolling on mobile - the terminal owns its scroll surface. */
 @media (max-width: 767px) {
   html,
   body {
@@ -241,6 +244,11 @@ body {
     position: fixed;
     width: 100%;
     height: 100%;
+  }
+
+  /* Follow the visible area when iOS pans it for the keyboard. */
+  body {
+    top: var(--app-offset-top, 0px);
   }
 }
 
@@ -283,18 +291,18 @@ body {
   display: none;
 }
 
-/* Thin scrollbar for xterm on mobile */
+/* Thin scrollbar for the WTerm scrollback surface on mobile. */
 @media (max-width: 768px) {
-  .xterm-viewport {
+  .wterm.wterm-cliweb {
     scrollbar-width: thin;
   }
-  .xterm-viewport::-webkit-scrollbar {
+  .wterm.wterm-cliweb::-webkit-scrollbar {
     width: 4px;
   }
-  .xterm-viewport::-webkit-scrollbar-track {
+  .wterm.wterm-cliweb::-webkit-scrollbar-track {
     background: transparent;
   }
-  .xterm-viewport::-webkit-scrollbar-thumb {
+  .wterm.wterm-cliweb::-webkit-scrollbar-thumb {
     background: hsl(var(--muted-foreground) / 0.3);
     border-radius: 2px;
   }
@@ -303,6 +311,14 @@ body {
 /* Safe area padding utilities */
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+.terminal-toolbar {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+}
+
+html[data-mobile-keyboard="open"] .terminal-toolbar {
+  padding-bottom: 0.375rem;
 }
 
 /* Mobile keyboard viewport handling */
@@ -330,6 +346,104 @@ body {
    blurs behind glyphs. */
 .terminal-container {
   background: hsl(var(--background));
+}
+
+.terminal-container > .wterm.wterm-cliweb {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  touch-action: none;
+  background: var(--term-bg);
+  color: var(--term-fg);
+}
+
+/* Shell scrollback scrolled locally (components/Terminal/hooks/history-view.ts),
+   and a native app pane drawn locally while it scrolls (native-view.ts).
+   They sit exactly over the grid and inherit its font and colours. */
+.terminal-container > .wterm.wterm-cliweb .history-view,
+.terminal-container > .wterm.wterm-cliweb .native-view {
+  position: absolute;
+  z-index: 2;
+  overflow: hidden;
+  background: var(--term-bg);
+  contain: strict;
+}
+.terminal-container > .wterm.wterm-cliweb .history-rows,
+.terminal-container > .wterm.wterm-cliweb .native-rows {
+  position: absolute;
+  inset: 0 0 auto 0;
+  will-change: transform;
+}
+.terminal-container > .wterm.wterm-cliweb .history-row,
+.terminal-container > .wterm.wterm-cliweb .native-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--term-row-height);
+  line-height: var(--term-row-height);
+  white-space: pre;
+  overflow: hidden;
+}
+
+/* While a touch pan slides the grid between tmux line redraws, the shifted
+   grid must not become scrollable overflow of the host. */
+.terminal-container > .wterm.wterm-cliweb.touch-panning {
+  overflow: hidden;
+}
+
+.terminal-container > .wterm.wterm-cliweb .term-grid {
+  width: 100%;
+  min-width: 100%;
+}
+
+.terminal-container > .wterm.wterm-cliweb ::selection {
+  background: var(--term-selection, rgba(59, 130, 246, 0.35));
+}
+
+.terminal-container > .wterm.wterm-cliweb.cursor-shape-underline .term-cursor {
+  background: transparent !important;
+  box-shadow: inset 0 -2px var(--term-cursor);
+  outline: none !important;
+}
+
+.terminal-container > .wterm.wterm-cliweb.cursor-shape-bar .term-cursor {
+  background: transparent !important;
+  box-shadow: inset 2px 0 var(--term-cursor);
+  outline: none !important;
+}
+
+.terminal-container > .wterm.wterm-cliweb.cursor-shape-hollow .term-cursor {
+  background: transparent !important;
+  box-shadow: inset 0 0 0 1px var(--term-cursor);
+  outline: none !important;
+}
+
+.terminal-container
+  > .wterm.wterm-cliweb.focused.cursor-blink.cursor-shape-underline
+  .term-cursor,
+.terminal-container
+  > .wterm.wterm-cliweb.focused.cursor-blink.cursor-shape-bar
+  .term-cursor,
+.terminal-container
+  > .wterm.wterm-cliweb.focused.cursor-blink.cursor-shape-hollow
+  .term-cursor {
+  animation: cliweb-cursor-shape-blink 1s step-end infinite;
+}
+
+@keyframes cliweb-cursor-shape-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 /* Radix data-state transitions, on the token curves. Used by menus,

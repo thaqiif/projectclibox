@@ -60,7 +60,7 @@ export function FolderPicker({
           size="icon-sm"
           onClick={onClose}
           aria-label="Close picker"
-          className="rounded-full"
+          className="rounded-sm"
         >
           <X className="h-4 w-4" />
         </Button>
@@ -79,7 +79,7 @@ export function FolderPicker({
             placeholder="Search folders"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-9 rounded-full pl-9 text-[0.8125rem]"
+            className="h-9 rounded-sm pl-9 text-[0.8125rem]"
           />
         </div>
 
@@ -89,7 +89,7 @@ export function FolderPicker({
             size="icon-sm"
             onClick={navigateHome}
             aria-label="Home"
-            className="shrink-0 rounded-full"
+            className="shrink-0 rounded-sm"
           >
             <Home className="h-3.5 w-3.5" />
           </Button>
@@ -98,7 +98,7 @@ export function FolderPicker({
             size="icon-sm"
             onClick={navigateUp}
             aria-label="Go up"
-            className="shrink-0 rounded-full"
+            className="shrink-0 rounded-sm"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
           </Button>

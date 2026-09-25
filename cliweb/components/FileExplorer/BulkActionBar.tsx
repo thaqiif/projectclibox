@@ -114,7 +114,7 @@ export function BulkActionBar({
         aria-label="Bulk actions for selected files"
         // flex-wrap + max-w so the bar stays usable on narrow screens
         // (mobile) instead of overflowing horizontally.
-        className="absolute bottom-3 left-1/2 z-30 flex max-w-[calc(100vw-2rem)] flex-wrap-reverse justify-center -translate-x-1/2 items-center gap-2 rounded-2xl border border-border bg-background/95 px-3 py-1.5 shadow-lg backdrop-blur md:rounded-full md:flex-nowrap md:max-w-full"
+        className="absolute bottom-3 left-1/2 z-30 flex max-w-[calc(100vw-2rem)] flex-wrap-reverse justify-center -translate-x-1/2 items-center gap-2 rounded-sm border border-[var(--shell-line-strong)] bg-[var(--shell-raised)] px-3 py-1.5 md:max-w-full md:flex-nowrap"
       >
         {running ? (
           <span className="ui-meta flex items-center gap-1.5 px-1">

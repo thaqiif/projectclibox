@@ -29,11 +29,6 @@ import {
   DropdownMenuTrigger,
   DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -203,19 +198,12 @@ export function ADropdownMenu({
   const resolvedTrigger =
     trigger ??
     (Icon ? (
-      <Button variant="ghost" size="icon-sm">
+      <Button variant="ghost" size="icon-sm" aria-label={tooltip ?? "Open menu"} title={tooltip}>
         <Icon className="h-4 w-4" />
       </Button>
     ) : null);
 
-  const triggerElement = tooltip ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <DropdownMenuTrigger asChild>{resolvedTrigger}</DropdownMenuTrigger>
-      </TooltipTrigger>
-      <TooltipContent>{tooltip}</TooltipContent>
-    </Tooltip>
-  ) : (
+  const triggerElement = (
     <DropdownMenuTrigger asChild>{resolvedTrigger}</DropdownMenuTrigger>
   );
 

@@ -41,6 +41,12 @@ export function terminalRowExists(name: string): boolean {
   return rows.some((r) => r.name === name);
 }
 
+/** The last registered path, used only to restart a stopped named session. */
+export function registeredTerminalPath(name: string): string | null {
+  const rows = queries.getAllTerminals(getDb()).all() as TerminalRow[];
+  return rows.find((row) => row.name === name)?.working_directory ?? null;
+}
+
 /**
  * Every terminal: live tmux terminals first, then registry entries whose
  * process is gone.

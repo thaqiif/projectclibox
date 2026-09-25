@@ -119,10 +119,12 @@ export function TerminalCard({
       }}
       onClick={handleCardClick}
       className={cn(
-        "group press-sm relative flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2.5 py-2 text-left",
+        "group press-sm relative flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-sm px-2.5 py-2 text-left",
         "min-h-[44px] md:min-h-[32px]",
         "transition-colors duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
-        isActive ? "bg-primary/12 text-foreground" : "hover:bg-[var(--fill-4)]"
+        isActive
+          ? "text-foreground bg-[var(--shell-selected)]"
+          : "hover:bg-[var(--fill-4)]"
       )}
     >
       <div className="min-w-0 flex-1">
@@ -162,7 +164,7 @@ export function TerminalCard({
           {/* Split indicator: a terminal tmux has split into panes. */}
           {terminal.panes > 1 && (
             <span
-              className="text-muted-foreground flex-shrink-0 rounded-full bg-[var(--fill-2)] px-1.5 text-[0.625rem] leading-4 tabular-nums"
+              className="text-muted-foreground flex-shrink-0 rounded-sm bg-[var(--fill-2)] px-1.5 text-[0.625rem] leading-4 tabular-nums"
               title={terminal.panes + " tmux panes"}
             >
               {terminal.panes}
@@ -185,7 +187,7 @@ export function TerminalCard({
                   variant="ghost"
                   size="icon-sm"
                   aria-label="Terminal actions"
-                  className="inline-flex h-8 w-8 flex-shrink-0 rounded-full transition-opacity duration-200 md:absolute md:top-1/2 md:right-1 md:h-7 md:w-7 md:-translate-y-1/2 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                  className="inline-flex h-8 w-8 flex-shrink-0 rounded-sm transition-opacity duration-200 md:absolute md:top-1/2 md:right-1 md:h-7 md:w-7 md:-translate-y-1/2 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                 >
                   <MoreHorizontal className="h-3.5 w-3.5" />
                 </Button>

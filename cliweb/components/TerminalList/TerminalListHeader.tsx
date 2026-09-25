@@ -17,24 +17,28 @@ import {
   Trash2,
   Palette,
   Settings,
+  X,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface TerminalListHeaderProps {
   onNewProject: () => void;
   onOpenProject: () => void;
   onKillAll: () => void;
+  onCloseSidebar?: () => void;
 }
 
 export function TerminalListHeader({
   onNewProject,
   onOpenProject,
   onKillAll,
+  onCloseSidebar,
 }: TerminalListHeaderProps) {
   const [showThemeDialog, setShowThemeDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
 
   return (
-    <div className="px-3 pt-3 pb-2">
+    <div className="glass-edge-bottom px-3 py-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <Image
@@ -62,12 +66,26 @@ export function TerminalListHeader({
             icon={MoreHorizontal}
             tooltip="More options"
             items={[
-              menuItem("Settings…", () => setShowSettingsDialog(true), {
-                icon: Settings,
-              }),
-              menuItem("Theme…", () => setShowThemeDialog(true), {
-                icon: Palette,
-              }),
+              menuItem(
+                "Settings…",
+                () => {
+                  onCloseSidebar?.();
+                  setShowSettingsDialog(true);
+                },
+                {
+                  icon: Settings,
+                }
+              ),
+              menuItem(
+                "Theme…",
+                () => {
+                  onCloseSidebar?.();
+                  setShowThemeDialog(true);
+                },
+                {
+                  icon: Palette,
+                }
+              ),
               separator(),
               menuItem("Close all terminals", onKillAll, {
                 icon: Trash2,
@@ -75,6 +93,16 @@ export function TerminalListHeader({
               }),
             ]}
           />
+          {onCloseSidebar && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Close sidebar"
+              onClick={onCloseSidebar}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </div>
 

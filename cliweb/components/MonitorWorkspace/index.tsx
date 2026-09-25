@@ -15,7 +15,6 @@ import {
   TerminalSkeleton,
   FileExplorerSkeleton,
 } from "@/components/Pane/PaneSkeletons";
-import { tmuxAttachCommand } from "@/lib/tmux-attach";
 import type { TerminalHandle } from "@/components/Terminal";
 import type { TerminalRecord } from "@/lib/terminals";
 import type { Project } from "@/lib/db";
@@ -108,23 +107,79 @@ function MonitorTerminal({
   name,
   cwd,
   onRestarted,
+  onTitle,
+  restart = false,
+  isActive,
 }: {
   name: string;
   cwd?: string | null;
   onRestarted: () => Promise<void>;
+  onTitle: (title: string) => void;
+  restart?: boolean;
+  isActive: boolean;
 }) {
   const ref = useRef<TerminalHandle | null>(null);
-  const handleConnected = useCallback(() => {
-    const handle = ref.current;
-    if (!handle) return;
-    setTimeout(() => {
-      handle.sendCommand(tmuxAttachCommand(name, cwd));
-      handle.focus();
-      void onRestarted();
-    }, 100);
-  }, [name, cwd, onRestarted]);
+  const [retry, setRetry] = useState(0);
+  const requestKey = restart ? `${name}:${retry}` : "idle";
+  const [startupState, setStartupState] = useState<{
+    requestKey: string;
+    value: "restarting" | "ready" | "error";
+  }>({
+    requestKey,
+    value: restart ? "restarting" : "ready",
+  });
+  const startup =
+    startupState.requestKey === requestKey
+      ? startupState.value
+      : restart
+        ? "restarting"
+        : "ready";
+  useEffect(() => {
+    if (!restart) return;
+    let cancelled = false;
+    void fetch(`/api/terminals/${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Terminal restart failed");
+        if (cancelled) return;
+        await onRestarted();
+        if (!cancelled) setStartupState({ requestKey, value: "ready" });
+      })
+      .catch(() => {
+        if (!cancelled) setStartupState({ requestKey, value: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [name, onRestarted, requestKey, restart]);
 
-  return <Terminal ref={ref} onConnected={handleConnected} workingDirectory={cwd} />;
+  if (startup !== "ready") {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-sm font-medium">
+          {startup === "restarting" ? "Restarting terminal…" : "Terminal restart failed"}
+        </p>
+        {startup === "error" && (
+          <Button size="sm" onClick={() => setRetry((value) => value + 1)}>
+            Retry
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Terminal
+      ref={ref}
+      sessionName={name}
+      isActive={isActive}
+      onTitle={onTitle}
+      workingDirectory={cwd}
+    />
+  );
 }
 
 function MonitorPane({
@@ -135,6 +190,7 @@ function MonitorPane({
   canRemove,
   canInsert,
   mobile,
+  isActive,
   onAssign,
   onMove,
   onRemove,
@@ -147,6 +203,7 @@ function MonitorPane({
   canRemove: boolean;
   canInsert: boolean;
   mobile: boolean;
+  isActive: boolean;
   onAssign: (paneId: string, terminalId: string, side: MonitorDropSide) => void;
   onMove: (sourcePaneId: string, anchorPaneId: string, side: MonitorDropSide) => void;
   onRemove: (paneId: string) => void;
@@ -156,6 +213,11 @@ function MonitorPane({
   const [hoverSide, setHoverSide] = useState<MonitorDropSide | null>(null);
   const [hoverKind, setHoverKind] = useState<"terminal" | "pane" | null>(null);
   const [showFiles, setShowFiles] = useState(false);
+  const [terminalTitleState, setTerminalTitleState] = useState<{
+    terminalId: string | null;
+    restart: boolean;
+    title: string | null;
+  }>({ terminalId, restart, title: null });
   const fileEditor = useFileEditor();
   const { reset: resetFileEditor } = fileEditor;
   const empty = !terminalId && !restart;
@@ -184,7 +246,16 @@ function MonitorPane({
     }
   };
 
-  const title = terminal?.name ?? terminalId;
+  const terminalTitle =
+    terminalTitleState.terminalId === terminalId &&
+    terminalTitleState.restart === restart
+      ? terminalTitleState.title
+      : null;
+  const handleTerminalTitle = useCallback(
+    (title: string) => setTerminalTitleState({ terminalId, restart, title }),
+    [terminalId, restart]
+  );
+  const title = terminalTitle?.trim() || terminal?.name || terminalId;
 
   // A different terminal in the pane means a different working directory
   // for Files, and a torn-down tmux attachment for the editor state.
@@ -299,12 +370,18 @@ function MonitorPane({
             name={terminal.tmux_name}
             cwd={terminal.working_directory}
             onRestarted={onTerminalsChanged}
+            onTitle={handleTerminalTitle}
+            restart={restart}
+            isActive={isActive}
           />
         ) : restart && terminalId ? (
           <MonitorTerminal
             key={terminalId}
             name={terminalId}
             onRestarted={onTerminalsChanged}
+            onTitle={handleTerminalTitle}
+            restart
+            isActive={isActive}
           />
         ) : terminalId ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
@@ -472,12 +549,12 @@ export function MonitorWorkspace({
       )}
     >
       {mobile && (
-        <div className="bg-background glass-edge-bottom relative z-10 flex shrink-0 items-center gap-1 px-2 pb-2 pt-[calc(0.5rem+env(safe-area-inset-top))]">
+        <div className="mobile-top-bar glass-edge-bottom relative z-10 flex shrink-0 items-center gap-1 px-2 pb-2">
           <Button
             variant="ghost"
             size="icon"
             aria-label="Open sidebar"
-            className="h-11 w-11 shrink-0 rounded-full"
+            className="h-9 w-9 shrink-0 rounded-sm"
             onClick={onMenuClick}
           >
             <Menu className="h-[1.125rem] w-[1.125rem]" />
@@ -485,13 +562,16 @@ export function MonitorWorkspace({
           <div
             role="tablist"
             aria-label="Monitor terminals"
-            className="flex min-w-0 flex-1 items-center gap-0.5 rounded-full bg-[var(--fill-4)] p-0.5"
+            className="flex min-w-0 flex-1 items-center gap-0.5 rounded-sm border border-[var(--shell-line)] bg-[var(--shell-hover)] p-0.5"
           >
             {workspace.panes.map((pane, index) => {
               const terminal = terminals.find(
                 (candidate) => candidate.id === pane.terminalId
               );
               const label = terminal?.name ?? `Empty ${index + 1}`;
+              const projectName = terminal
+                ? (projectNameFor(terminal, projects) ?? "Uncategorized")
+                : null;
               const selected = pane.id === selectedPaneId;
 
               return (
@@ -503,17 +583,24 @@ export function MonitorWorkspace({
                   aria-selected={selected}
                   aria-controls={`monitor-panel-${index}`}
                   tabIndex={selected ? 0 : -1}
-                  title={label}
+                  title={projectName ? `${label} · ${projectName}` : label}
                   onClick={() => onSelectPane?.(pane.id)}
                   onKeyDown={(event) => handleTabKeyDown(event, index)}
                   className={cn(
-                    "press-sm focus-ring flex h-11 min-w-0 flex-1 items-center justify-center rounded-full px-1.5 text-[0.6875rem] font-medium transition-colors",
+                    "press-sm focus-ring flex h-9 min-w-0 flex-1 flex-col items-start justify-center rounded-sm px-1.5 text-left transition-colors",
                     selected
-                      ? "bg-[var(--fill-1)] text-foreground shadow-[var(--elev-1)]"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "bg-[var(--shell-selected)] text-foreground"
+                      : "text-muted-foreground hover:bg-[var(--shell-hover)] hover:text-foreground"
                   )}
                 >
-                  <span className="truncate">{label}</span>
+                  <span className="block w-full truncate text-[0.75rem] leading-4 font-medium">
+                    {label}
+                  </span>
+                  {projectName && (
+                    <span className="block w-full truncate text-[0.625rem] leading-3 opacity-70">
+                      {projectName}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -525,7 +612,7 @@ export function MonitorWorkspace({
                 size="icon"
                 aria-label="Add to monitor"
                 title="Add to monitor"
-                className="h-11 w-11 shrink-0 rounded-full"
+                className="h-9 w-9 shrink-0 rounded-sm"
               >
                 <ListPlus className="h-4 w-4" />
               </Button>
@@ -676,6 +763,7 @@ export function MonitorWorkspace({
                 canRemove={canRemove}
                 canInsert={canInsert}
                 mobile={mobile}
+                isActive={selected}
                 onAssign={onAssignTerminal}
                 onMove={onMovePane}
                 onRemove={onRemovePane}

@@ -48,11 +48,9 @@ export function DesktopView({
 
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Command strip. The left is identity — sidebar toggle and what is
-            attached — and the view controls own the right. It is glass, and
-            it is edge-lit rather than underlined: content dissolves beneath
-            the bar instead of stopping at a rule. */}
-        <header className="glass glass-edge-bottom relative z-10 flex h-13 shrink-0 items-center justify-between gap-3 px-3">
+        {/* The compact command strip shares the sidebar surface and a hairline
+            edge. The terminal remains the dominant content surface. */}
+        <header className="glass glass-edge-bottom relative z-10 flex h-11 shrink-0 items-center justify-between gap-3 px-3">
           <div className="flex min-w-0 items-center gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -61,7 +59,7 @@ export function DesktopView({
                   size="icon-sm"
                   aria-label="Toggle sidebar"
                   aria-pressed={isPinned}
-                  className="h-8 w-8 rounded-full"
+                  className="h-7 w-7 rounded-sm"
                   onClick={togglePin}
                 >
                   {isPinned ? (
@@ -77,7 +75,7 @@ export function DesktopView({
             </Tooltip>
 
             {activeTerminal && !monitor.workspace?.enabled && (
-              <div className="ml-1 flex min-w-0 items-center gap-1 rounded-full bg-[var(--fill-4)] py-1 pr-1 pl-3">
+              <div className="ml-2 flex min-w-0 items-center gap-1 border-l border-[var(--shell-line)] pl-3">
                 <WorkbenchTitle
                   name={activeTerminal.name}
                   onRename={renameTerminal}
@@ -88,7 +86,7 @@ export function DesktopView({
                       variant="ghost"
                       size="icon-sm"
                       aria-label="Close terminal"
-                      className="h-6 w-6 shrink-0 rounded-full"
+                      className="h-6 w-6 shrink-0 rounded-sm"
                       onClick={() => void handleCloseTerminal(activeTerminal.name)}
                     >
                       <X className="h-3.5 w-3.5" />
@@ -132,8 +130,7 @@ export function DesktopView({
           </div>
         </header>
 
-        {/* The terminal is content, not chrome: it stays opaque, and the
-            glass bar above it is what floats. */}
+        {/* Keep the terminal surface independent of the shell chrome. */}
         <div className="bg-background relative min-h-0 min-w-0 w-full flex-1">
           {monitor.workspace?.enabled ? (
             <MonitorWorkspace

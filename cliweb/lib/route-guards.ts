@@ -63,33 +63,74 @@ export function guardJsonContent(request: Request): NextResponse | null {
 export function guardSameOrigin(request: Request): NextResponse | null {
   const origin = request.headers.get("origin");
   if (!origin) return null;
-
-  let originHost: string;
-  try {
-    originHost = new URL(origin).host;
-  } catch {
-    return NextResponse.json(
-      { error: "Invalid Origin header" },
-      { status: 403 }
-    );
+  if (
+    isAllowedOrigin(
+      origin,
+      request.headers.get("host"),
+      request.headers.get("x-forwarded-host")
+    )
+  ) {
+    return null;
   }
-
-  const host = request.headers.get("host")?.toLowerCase();
-  if (host && originHost.toLowerCase() === host) return null;
-
-  // Proxy fallback: compare against the host the proxy says it forwarded
-  // for (first value wins; X-Forwarded-Host: a, b means the outermost hop).
-  const forwardedHost = request.headers
-    .get("x-forwarded-host")
-    ?.split(",")[0]
-    ?.trim()
-    .toLowerCase();
-  if (forwardedHost && originHost.toLowerCase() === forwardedHost) return null;
 
   return NextResponse.json(
     { error: "Origin does not match Host" },
     { status: 403 }
   );
+}
+
+/** Match a browser Origin against Host or the proxy's outer forwarded host. */
+export function isAllowedOrigin(
+  origin: string | null | undefined,
+  host: string | null | undefined,
+  forwardedHost: string | null | undefined
+): boolean {
+  if (!origin) return false;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== "/" ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    return false;
+  }
+
+  const originHost = parsed.host.toLowerCase();
+  const requestHost = host?.trim().toLowerCase();
+  if (requestHost && originHost === requestHost) return true;
+
+  // The first value is the outermost host set by the trusted edge proxy.
+  const outerForwardedHost = forwardedHost
+    ?.split(",")[0]
+    ?.trim()
+    .toLowerCase();
+  return Boolean(outerForwardedHost && originHost === outerForwardedHost);
+}
+
+/** Require Origin for capability-issuing POST routes. */
+export function guardRequiredSameOrigin(request: Request): NextResponse | null {
+  if (!request.headers.get("origin")) {
+    return NextResponse.json(
+      { error: "Origin header is required" },
+      { status: 403 }
+    );
+  }
+  return guardSameOrigin(request);
+}
+
+export function guardJsonRequiredSameOrigin(
+  request: Request
+): NextResponse | null {
+  return guardJsonContent(request) ?? guardRequiredSameOrigin(request);
 }
 
 /** Both guards: JSON content-type plus same-origin check. */

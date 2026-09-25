@@ -16,7 +16,6 @@ import {
   FileExplorerSkeleton,
 } from "./PaneSkeletons";
 import { Welcome } from "@/components/Welcome";
-import { tmuxAttachCommand } from "@/lib/tmux-attach";
 
 // Dynamic imports for client-only components with loading states
 const Terminal = dynamic(
@@ -89,19 +88,8 @@ export const Pane = memo(function Pane({
   const handleTerminalConnected = useCallback(() => {
     const handle = terminalRef.current;
     if (!handle) return;
-
     onRegisterTerminal(handle);
-
-    if (attachedTmux) {
-      const cwd = terminals.find(
-        (t) => t.tmux_name === attachedTmux
-      )?.working_directory;
-      setTimeout(() => {
-        handle.sendCommand(tmuxAttachCommand(attachedTmux, cwd));
-        handle.focus();
-      }, 100);
-    }
-  }, [attachedTmux, terminals, onRegisterTerminal]);
+  }, [onRegisterTerminal]);
 
   useEffect(() => {
     return () => onRegisterTerminal(null);
@@ -117,7 +105,10 @@ export const Pane = memo(function Pane({
 
   const terminal = (
     <Terminal
+      key={`${attachedTmux}:${currentTerminal?.alive ?? false}`}
       ref={setTerminalRef}
+      sessionName={attachedTmux ?? undefined}
+      isActive={viewMode === "terminal"}
       onConnected={handleTerminalConnected}
       workingDirectory={currentTerminal?.working_directory}
       onBeforeUnmount={(scrollState) => {

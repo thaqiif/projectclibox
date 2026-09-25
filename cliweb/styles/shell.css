@@ -1,0 +1,91 @@
+/* Shell design tokens. Theme colors are supplied by themes.css; the shell
+   uses the same material roles in every light and dark variant. */
+:root {
+  --shell-canvas: hsl(var(--background));
+  --shell-sidebar: hsl(var(--surface));
+  --shell-bar: hsl(var(--surface));
+  --shell-raised: hsl(var(--surface-raised));
+  --shell-line: hsl(var(--foreground) / 0.11);
+  --shell-line-strong: hsl(var(--foreground) / 0.18);
+  --shell-hover: hsl(var(--foreground) / 0.055);
+  --shell-selected: hsl(var(--foreground) / 0.09);
+  --shell-accent-tint: hsl(var(--primary) / 0.12);
+  --fill-1: var(--shell-selected);
+  --fill-2: var(--shell-line);
+  --fill-3: hsl(var(--foreground) / 0.07);
+  --fill-4: var(--shell-hover);
+  --elev-1: none;
+  --elev-2: none;
+  --elev-3: none;
+  --elev-4: none;
+  --elev-glass: none;
+}
+
+@layer base {
+  :root:not(.dark):not([data-theme-variant]) {
+    --background: 0 0% 99%;
+    --surface: 0 0% 96.5%;
+    --surface-raised: 0 0% 100%;
+    --border: 0 0% 89%;
+    --primary: 252 54% 47%;
+    --ring: 252 54% 47%;
+    --muted-foreground: 0 0% 42%;
+  }
+  :root.dark:not([data-theme-variant]) {
+    --background: 225 6% 6.5%;
+    --surface: 225 5% 9%;
+    --surface-raised: 225 5% 11%;
+    --border: 0 0% 19%;
+    --primary: 252 67% 72%;
+    --ring: 252 67% 72%;
+    --muted-foreground: 0 0% 62%;
+  }
+  body { font-family: var(--font-sans); font-size: 13px; }
+  :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+}
+
+@layer components {
+  /* Legacy class names remain as stable hooks for the existing components. */
+  .glass, .glass-thin, .glass-thick, .glass-ultrathin, .glass-refract {
+    background: var(--shell-bar);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+  .glass-thick, .glass-float { background: var(--shell-raised); box-shadow: none; }
+  .glass-edge-right { border-right: 1px solid var(--shell-line); }
+  .glass-edge-bottom { border-bottom: 1px solid var(--shell-line); }
+  .glass-edge-top { border-top: 1px solid var(--shell-line); }
+  .glass-float { border: 1px solid var(--shell-line-strong); }
+  .ambient-canvas { background: var(--shell-canvas); }
+  .edge-fade-top { border-top: 1px solid var(--shell-line); background: var(--shell-raised); }
+  .edge-fade-bottom { border-bottom: 1px solid var(--shell-line); background: var(--shell-raised); }
+  .press { transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out; }
+  .press:active:not(:disabled) { background-color: var(--shell-selected); }
+  .press-sm:active:not(:disabled) { background-color: var(--shell-selected); }
+  .focus-ring:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+  .materialize, .lift-in { animation: none; }
+  .shimmer { background: var(--fill-3); }
+  .shimmer::after { content: none; }
+  .type-headline { font-size: 13px; line-height: 1.4; font-weight: 600; letter-spacing: -0.01em; }
+  .type-title-3 { font-size: 15px; line-height: 1.4; font-weight: 600; letter-spacing: -0.015em; }
+  .type-title-2 { font-size: 18px; line-height: 1.35; font-weight: 600; letter-spacing: -0.02em; }
+  .type-subhead { font-size: 13px; line-height: 1.5; }
+  .terminal-toolbar button { border-radius: var(--radius-sm); }
+}
+
+@media (max-width: 767px) {
+  .welcome-panel {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding-inline: 0;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root { --shell-line: hsl(var(--foreground) / 0.45); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .press, .press-sm { transition: none; }
+}

@@ -15,19 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
-
-// ANSI escape sequences
-const SPECIAL_KEYS = {
-  UP: "\x1b[A",
-  DOWN: "\x1b[B",
-  LEFT: "\x1b[D",
-  RIGHT: "\x1b[C",
-  ESC: "\x1b",
-  TAB: "\t",
-  SHIFT_TAB: "\x1b[Z",
-  NEWLINE: "\x1b\r",
-  CTRL_C: "\x03",
-} as const;
+import { terminalKeySequence } from "./terminal-key-sequences";
 
 interface TerminalToolbarProps {
   onKeyPress: (key: string) => void;
@@ -134,11 +122,11 @@ function SnippetsModal({
 
   return (
     <div
-      className="animate-in fade-in-0 fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-[3px] duration-200"
+      className="animate-in fade-in-0 fixed inset-0 z-50 flex items-end justify-center bg-black/35 duration-200"
       onClick={onClose}
     >
       <div
-        className="glass-thick glass-float animate-in slide-in-from-bottom flex max-h-[70vh] w-full flex-col rounded-t-2xl duration-[400ms] ease-[cubic-bezier(0.32,0.72,0,1)]"
+        className="glass-thick glass-float animate-in slide-in-from-bottom flex max-h-[78dvh] w-full flex-col rounded-t-md rounded-b-none border-x-0 border-b-0 duration-200 sm:max-w-md sm:rounded-md sm:border"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -149,13 +137,13 @@ function SnippetsModal({
           <div className="flex items-center">
             <button
               onClick={() => setIsAdding(!isAdding)}
-              className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-full transition-colors hover:bg-[var(--fill-3)]"
+              className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-sm transition-colors hover:bg-[var(--fill-3)]"
             >
               <Plus className="h-4 w-4" />
             </button>
             <button
               onClick={onClose}
-              className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-full transition-colors hover:bg-[var(--fill-3)]"
+              className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-sm transition-colors hover:bg-[var(--fill-3)]"
             >
               <X className="h-4 w-4" />
             </button>
@@ -170,18 +158,18 @@ function SnippetsModal({
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Snippet name..."
-              className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 mb-2 w-full rounded-lg border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 text-[0.875rem] outline-none focus-visible:ring-[3px]"
+              className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 mb-2 w-full rounded-sm border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 text-[0.875rem] outline-none focus-visible:ring-[3px]"
             />
             <textarea
               value={newContent}
               onChange={(e) => setNewContent(e.target.value)}
               placeholder="Command or text..."
-              className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 h-20 w-full resize-none rounded-lg border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 font-mono text-[0.75rem] outline-none focus-visible:ring-[3px]"
+              className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 h-20 w-full resize-none rounded-sm border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 font-mono text-[0.75rem] outline-none focus-visible:ring-[3px]"
             />
             <button
               onClick={handleAdd}
               disabled={!newName.trim() || !newContent.trim()}
-              className="press focus-ring bg-primary text-primary-foreground hover:bg-primary/90 mt-2 w-full rounded-lg py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
+              className="press focus-ring bg-primary text-primary-foreground hover:bg-primary/90 mt-2 w-full rounded-sm py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
             >
               Save Snippet
             </button>
@@ -198,7 +186,7 @@ function SnippetsModal({
             snippets.map((snippet) => (
               <div
                 key={snippet.id}
-                className="flex items-center gap-2 rounded-lg px-3 py-2.5 transition-colors active:bg-[var(--fill-3)]"
+                className="flex items-center gap-2 rounded-sm px-3 py-2.5 transition-colors active:bg-[var(--fill-3)]"
               >
                 <button
                   onClick={() => handleInsert(snippet.content)}
@@ -213,7 +201,7 @@ function SnippetsModal({
                 </button>
                 <button
                   onClick={() => handleDelete(snippet.id)}
-                  className="press focus-ring text-muted-foreground hover:text-destructive hover:bg-destructive/16 flex size-8 items-center justify-center rounded-full transition-colors"
+                  className="press focus-ring text-muted-foreground hover:text-destructive hover:bg-destructive/16 flex size-8 items-center justify-center rounded-sm transition-colors"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -250,11 +238,11 @@ function PasteModal({
 
   return (
     <div
-      className="animate-in fade-in-0 fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[3px] duration-200"
+      className="animate-in fade-in-0 fixed inset-0 z-50 flex items-end justify-center bg-black/35 duration-200 sm:items-center"
       onClick={onClose}
     >
       <div
-        className="glass-thick glass-float lift-in w-[90%] max-w-md rounded-2xl p-5"
+        className="glass-thick glass-float lift-in w-full max-w-md rounded-t-md rounded-b-none border-x-0 border-b-0 p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:w-[90%] sm:rounded-md sm:border sm:pb-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
@@ -263,7 +251,7 @@ function PasteModal({
           </h2>
           <button
             onClick={onClose}
-            className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-full transition-colors hover:bg-[var(--fill-3)]"
+            className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-sm transition-colors hover:bg-[var(--fill-3)]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -281,12 +269,12 @@ function PasteModal({
           }}
           placeholder="Tap here, then long-press to paste..."
           autoFocus
-          className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 h-24 w-full resize-none rounded-lg border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 font-mono text-[0.75rem] outline-none focus-visible:ring-[3px]"
+          className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 h-24 w-full resize-none rounded-sm border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 font-mono text-[0.75rem] outline-none focus-visible:ring-[3px]"
         />
         <button
           onClick={handleSend}
           disabled={!text}
-          className="press focus-ring bg-primary text-primary-foreground hover:bg-primary/90 mt-3 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
+          className="press focus-ring bg-primary text-primary-foreground hover:bg-primary/90 mt-3 flex w-full items-center justify-center gap-2 rounded-sm py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
         >
           <Send className="h-3.5 w-3.5" />
           Send to Terminal
@@ -348,50 +336,77 @@ export function TerminalToolbar({
     }
   }, [onCopy]);
 
-  // Ctrl modifier: when armed, the next physical keystroke is sent as a
-  // control character (Ctrl+A..Z and @ [ \\ ] ^ _ ?). Captured at the window
-  // level so it works with the native keyboard; mobile soft keyboards may
-  // not emit keydown, which is why the on-screen ^C/^D buttons remain.
+  // Virtual modifiers also apply to the next native keyboard key. iOS soft
+  // keyboards may skip keydown for printable text, so cover beforeinput too.
   useEffect(() => {
-    if (!ctrlActive) return;
-    const handler = (e: KeyboardEvent) => {
-      const k = e.key;
-      if (k === "Control" || k === "Shift" || k === "Alt" || k === "Meta")
-        return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (k.length === 1) {
-        if (k === " ") onKeyPress("\x00");
-        else if (k === "?") onKeyPress("\x7f");
-        else {
-          const c = k.toUpperCase().charCodeAt(0);
-          if (c >= 64 && c <= 95) onKeyPress(String.fromCharCode(c & 0x1f));
-        }
-      }
+    if (!shiftActive && !ctrlActive && !altActive) return;
+    const modifiers = { shift: shiftActive, ctrl: ctrlActive, alt: altActive };
+    const clear = () => {
+      setShiftActive(false);
       setCtrlActive(false);
-    };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, [ctrlActive, onKeyPress]);
-
-  // Alt/Option modifier: when armed, the next physical key is sent ESC-
-  // prefixed (Meta). This supports Alt+Enter and word navigation in common
-  // shells and terminal applications. Same window-level capture as Ctrl.
-  useEffect(() => {
-    if (!altActive) return;
-    const handler = (e: KeyboardEvent) => {
-      const k = e.key;
-      if (k === "Control" || k === "Shift" || k === "Alt" || k === "Meta")
-        return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (k === "Enter") onKeyPress("\x1b\r");
-      else if (k.length === 1) onKeyPress("\x1b" + k);
       setAltActive(false);
     };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, [altActive, onKeyPress]);
+    const isTerminalInput = (target: EventTarget | null) =>
+      target instanceof HTMLTextAreaElement &&
+      target.parentElement?.classList.contains("wterm");
+    let handledPrintableKeyDown = false;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isTerminalInput(event.target) || event.isComposing) return;
+      if (["Shift", "Control", "Alt", "Meta"].includes(event.key)) return;
+      // The mobile Backspace bridge owns delete repeats and their input
+      // events; intercepting the first key here would send it twice.
+      if (event.key === "Backspace") {
+        clear();
+        return;
+      }
+      const sequence = terminalKeySequence(event.key, modifiers);
+      if (sequence === null) return;
+      handledPrintableKeyDown = event.key.length === 1;
+      event.preventDefault();
+      event.stopPropagation();
+      onKeyPress(sequence);
+      clear();
+    };
+    const onBeforeInput = (event: InputEvent) => {
+      if (
+        !isTerminalInput(event.target) ||
+        event.isComposing ||
+        event.inputType !== "insertText" ||
+        !event.data
+      )
+        return;
+      if (handledPrintableKeyDown) {
+        handledPrintableKeyDown = false;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      const sequence = terminalKeySequence(event.data, modifiers);
+      if (sequence === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onKeyPress(sequence);
+      clear();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("beforeinput", onBeforeInput, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("beforeinput", onBeforeInput, true);
+    };
+  }, [shiftActive, ctrlActive, altActive, onKeyPress]);
+
+  const modifiers = { shift: shiftActive, ctrl: ctrlActive, alt: altActive };
+  const clearModifiers = () => {
+    setShiftActive(false);
+    setCtrlActive(false);
+    setAltActive(false);
+  };
+  const pressToolbarKey = (key: string) => {
+    const sequence = terminalKeySequence(key, modifiers);
+    if (sequence) onKeyPress(sequence);
+    clearModifiers();
+  };
 
   // Keep taps as native clicks for keyboard/assistive-tech support. A
   // stationary pointer hold starts typematic repeat after 300ms; moving
@@ -481,15 +496,15 @@ export function TerminalToolbar({
   }, []);
 
   const buttons = [
-    { label: "Esc", key: SPECIAL_KEYS.ESC },
-    { label: "^C", key: SPECIAL_KEYS.CTRL_C, highlight: true },
-    { label: "Tab", key: SPECIAL_KEYS.TAB },
-    { label: "⇧Tab", key: SPECIAL_KEYS.SHIFT_TAB },
-    { label: "↵ NL", key: SPECIAL_KEYS.NEWLINE },
-    { label: "←", key: SPECIAL_KEYS.LEFT },
-    { label: "→", key: SPECIAL_KEYS.RIGHT },
-    { label: "↑", key: SPECIAL_KEYS.UP },
-    { label: "↓", key: SPECIAL_KEYS.DOWN },
+    { label: "Esc", key: "Escape" },
+    { label: "^C", key: "ControlC", highlight: true },
+    { label: "Tab", key: "Tab" },
+    { label: "⇧Tab", key: "ShiftTab" },
+    { label: "↵ NL", key: "Newline" },
+    { label: "←", key: "ArrowLeft" },
+    { label: "→", key: "ArrowRight" },
+    { label: "↑", key: "ArrowUp" },
+    { label: "↓", key: "ArrowDown" },
   ];
 
   return (
@@ -508,7 +523,7 @@ export function TerminalToolbar({
         // Opaque for the same reason as the mobile header: this row sits on the
         // bottom viewport edge, under the home indicator in a saved-to-home-
         // screen iOS session.
-        className="bg-background glass-edge-top scrollbar-none relative z-10 flex items-stretch gap-1 overflow-x-auto px-1.5 py-1.5"
+        className="terminal-toolbar glass-edge-top scrollbar-none relative z-10 flex items-stretch gap-1 overflow-x-auto bg-[var(--shell-bar)] px-1.5 pt-1.5"
         onTouchEnd={(e) => e.stopPropagation()}
       >
         {/* Mic button */}
@@ -661,9 +676,13 @@ export function TerminalToolbar({
           type="button"
           onPointerDown={(e) => {
             if (!e.isPrimary || e.button !== 0) return;
-            const key = shiftActive ? "\n" : "\r";
-            startKeyRepeat(key, e.pointerId, e.clientX, e.clientY, () =>
-              setShiftActive(false)
+            const key = terminalKeySequence("Enter", modifiers) ?? "\r";
+            startKeyRepeat(
+              key,
+              e.pointerId,
+              e.clientX,
+              e.clientY,
+              clearModifiers
             );
           }}
           onPointerMove={(e) => {
@@ -682,8 +701,7 @@ export function TerminalToolbar({
           onClick={(e) => {
             e.stopPropagation();
             if (e.detail !== 0 && consumeSuppressedClick()) return;
-            onKeyPress(shiftActive ? "\n" : "\r");
-            setShiftActive(false);
+            pressToolbarKey("Enter");
           }}
           className="press focus-ring text-muted-foreground hover:text-foreground active:text-foreground relative flex h-11 min-w-[3.25rem] shrink-0 items-center justify-center rounded-lg px-2 text-[0.9375rem] transition-colors duration-200 hover:bg-[var(--fill-3)]"
         >
@@ -697,7 +715,15 @@ export function TerminalToolbar({
             key={btn.label}
             onPointerDown={(e) => {
               if (!e.isPrimary || e.button !== 0) return;
-              startKeyRepeat(btn.key, e.pointerId, e.clientX, e.clientY);
+              const key = terminalKeySequence(btn.key, modifiers);
+              if (key)
+                startKeyRepeat(
+                  key,
+                  e.pointerId,
+                  e.clientX,
+                  e.clientY,
+                  clearModifiers
+                );
             }}
             onPointerMove={(e) => {
               trackKeyRepeatPointer(e.pointerId, e.clientX, e.clientY);
@@ -715,7 +741,7 @@ export function TerminalToolbar({
             onClick={(e) => {
               e.stopPropagation();
               if (e.detail !== 0 && consumeSuppressedClick()) return;
-              onKeyPress(btn.key);
+              pressToolbarKey(btn.key);
             }}
             className={cn(
               "press focus-ring relative flex h-11 min-w-[3.25rem] shrink-0 items-center justify-center rounded-lg px-2 text-[0.75rem] font-medium transition-colors duration-200",

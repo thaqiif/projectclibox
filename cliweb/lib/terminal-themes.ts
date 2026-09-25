@@ -1,6 +1,6 @@
 /**
- * Terminal theme definitions for xterm.js
- * Maps UI themes to terminal color palettes
+ * Terminal theme definitions shared with WTerm and Ghostty.
+ * Maps UI themes to terminal color palettes.
  */
 
 export interface TerminalTheme {

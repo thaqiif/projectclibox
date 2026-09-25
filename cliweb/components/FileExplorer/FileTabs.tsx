@@ -67,9 +67,9 @@ export function FileTabs({
               }
             }}
             className={cn(
-              "group relative flex cursor-pointer items-center gap-2 whitespace-nowrap border-r border-[var(--fill-2)] px-2.5 text-xs transition-colors",
+              "group relative flex cursor-pointer items-center gap-2 whitespace-nowrap border-r border-[var(--shell-line)] px-2.5 text-xs transition-colors",
               isActive
-                ? "bg-background text-foreground"
+                ? "bg-[var(--shell-raised)] text-foreground"
                 : "text-muted-foreground hover:bg-[var(--fill-4)] hover:text-foreground"
             )}
           >

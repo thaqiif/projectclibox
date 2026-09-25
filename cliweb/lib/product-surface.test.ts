@@ -288,10 +288,10 @@ test("nanobrew is installed into the persistent CLIWeb host directory", () => {
   );
   assert.ok(
     !compose.includes("cliweb-volume-init:") &&
-      compose.includes("create_host_path: true") &&
       !compose.match(/source:.*\$\{/) &&
+      !compose.includes("tailscale:") &&
       !envExample.includes("CLIWEB_HOME_DIR"),
-    "Coolify-safe host paths should be literal and created without an init service"
+    "deployment should use literal host paths without a volume init service or Tailscale sidecar"
   );
   assert.doesNotMatch(
     `${dockerfile}\n${compose}\n${entrypoint}\n${bootstrap}`,
@@ -478,10 +478,10 @@ test("monitor workspace adapts between desktop panes and mobile tabs", () => {
   assert.match(desktop, /handleCloseTerminal\(activeTerminal\.name\)/);
   assert.doesNotMatch(desktop, /aria-label="Remove monitor pane"/);
   assert.match(monitor, /TERMINAL_DRAG_TYPE/);
-  assert.match(monitor, /tmuxAttachCommand/);
+  assert.doesNotMatch(monitor, /tmuxAttachCommand/);
   assert.match(monitor, /key=\{terminal\.id\}/);
   assert.match(monitor, /key=\{terminalId\}/);
-  assert.match(monitor, /tmuxAttachCommand\(name, cwd\)/);
+  assert.match(monitor, /sessionName=\{name\}/);
   assert.match(monitor, /projectNameFor/);
   assert.match(monitor, /Remove monitor pane/);
   assert.match(monitor, /Drop a terminal here/);
@@ -559,8 +559,12 @@ test("mobile chrome is opaque and cannot switch terminals by gesture", () => {
   // the viewport, so a saved-to-home-screen iOS session runs them under the
   // status bar and the home indicator. A translucent material there frosts
   // the terminal scrolling beneath it, so both stay opaque.
-  assert.match(tabBar, /className="bg-background glass-edge-bottom/);
-  assert.match(toolbar, /className="bg-background glass-edge-top/);
+  assert.match(tabBar, /className="mobile-top-bar glass-edge-bottom/);
+  assert.match(
+    source("app/globals.css"),
+    /\.mobile-top-bar\s*\{\s*background-color:\s*hsl\(var\(--background\)\)/
+  );
+  assert.match(toolbar, /glass-edge-top[^\"]*bg-\[var\(--shell-bar\)\]/);
   assert.doesNotMatch(tabBar, /"glass glass-edge/);
   assert.doesNotMatch(toolbar, /"glass glass-edge/);
 });

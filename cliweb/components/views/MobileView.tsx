@@ -20,9 +20,9 @@ export function MobileView({
   monitor,
 }: ViewProps) {
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
-  const selectedPane = monitor.workspace?.panes.find(
-    (pane) => pane.id === selectedPaneId
-  ) ?? monitor.workspace?.panes[0];
+  const selectedPane =
+    monitor.workspace?.panes.find((pane) => pane.id === selectedPaneId) ??
+    monitor.workspace?.panes[0];
   const monitorEnabled = monitor.workspace?.enabled ?? false;
 
   return (
@@ -35,7 +35,7 @@ export function MobileView({
             <TerminalList
               activeTerminalId={
                 monitorEnabled
-                  ? selectedPane?.terminalId ?? undefined
+                  ? (selectedPane?.terminalId ?? undefined)
                   : activeTerminal?.id
               }
               onSelect={(id) => {
@@ -63,6 +63,7 @@ export function MobileView({
                 setSidebarOpen(false);
               }}
               onCloseTerminal={handleCloseTerminal}
+              onCloseSidebar={() => setSidebarOpen(false)}
             />
           </div>
         </div>
@@ -83,9 +84,7 @@ export function MobileView({
             activePaneId={selectedPane?.id}
             onSelectPane={setSelectedPaneId}
             onAddPane={monitor.addPane}
-            onCreateTerminal={(paneId) =>
-              handleNewTerminal(undefined, paneId)
-            }
+            onCreateTerminal={(paneId) => handleNewTerminal(undefined, paneId)}
             onToggleMonitor={monitor.toggle}
             onMenuClick={() => setSidebarOpen(true)}
           />

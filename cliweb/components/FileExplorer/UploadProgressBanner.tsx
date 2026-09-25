@@ -47,7 +47,7 @@ export function UploadProgressBanner({ className }: { className?: string }) {
       aria-live="polite"
       aria-label={`Uploading ${progress.filename}`}
       className={cn(
-        "glass rounded-md border border-border px-3 py-2 text-xs text-foreground shadow-sm",
+        "glass rounded-sm border border-[var(--shell-line)] px-3 py-2 text-xs text-foreground",
         className
       )}
     >

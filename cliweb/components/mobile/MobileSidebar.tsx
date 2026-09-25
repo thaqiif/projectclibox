@@ -118,13 +118,12 @@ export function MobileSidebar({
 
   return (
     <>
-      {/* The scrim blurs as well as dims, so the workbench recedes behind the
-          drawer rather than merely going dark. */}
+      {/* The workbench stays visible behind a quiet dimming scrim. */}
       <div
         ref={scrimRef}
         aria-hidden={!isOpen}
         style={{ opacity: 0, pointerEvents: "none" }}
-        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[3px] md:hidden"
+        className="fixed inset-0 z-40 bg-black/35 md:hidden"
         onClick={onClose}
       />
 
@@ -133,7 +132,7 @@ export function MobileSidebar({
         ref={panelRef}
         style={{ transform: "translate3d(-280px, 0, 0)" }}
         className={cn(
-          "glass-thick glass-float fixed top-0 bottom-0 left-0 z-50 w-[280px] md:hidden",
+          "fixed top-0 bottom-0 left-0 z-50 w-[min(280px,calc(100vw-48px))] border-r border-[var(--shell-line)] bg-[var(--shell-sidebar)] md:hidden",
           "flex flex-col will-change-transform"
         )}
       >

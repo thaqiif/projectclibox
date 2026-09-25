@@ -29,6 +29,7 @@ export function TerminalList({
   onCloseTerminal,
   enableTerminalDrag = false,
   onClosedAllTerminals,
+  onCloseSidebar,
 }: TerminalListProps) {
   const {
     data: terminalsData,
@@ -69,6 +70,7 @@ export function TerminalList({
         }}
         onOpenProject={() => setShowFolderPicker(true)}
         onKillAll={() => setShowKillAllConfirm(true)}
+        onCloseSidebar={onCloseSidebar}
       />
 
       {/* Kill All Confirmation */}

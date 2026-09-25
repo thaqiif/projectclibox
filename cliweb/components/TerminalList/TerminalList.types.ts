@@ -7,4 +7,5 @@ export interface TerminalListProps {
   onCloseTerminal?: (name: string) => void;
   enableTerminalDrag?: boolean;
   onClosedAllTerminals?: () => void;
+  onCloseSidebar?: () => void;
 }
