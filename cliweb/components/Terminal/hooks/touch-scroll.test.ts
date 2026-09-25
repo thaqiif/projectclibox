@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { WTerm } from "@wterm/dom";
 import type { GhosttyCore } from "@wterm/ghostty";
-import { setupTouchScroll } from "./touch-scroll";
+import {
+  ENABLE_SMOOTH_TOUCH_SCROLL,
+  setupSmoothTouchScroll,
+  setupTouchScroll,
+} from "./touch-scroll";
 
 class FakeTarget {
   listeners = new Map<string, (event: any) => void>();
@@ -98,7 +102,7 @@ function setup(
     focus: () => focusCount++,
   } as unknown as WTerm;
   const core = { usingAltScreen: () => true } as unknown as GhosttyCore;
-  const cleanup = setupTouchScroll({
+  const cleanup = setupSmoothTouchScroll({
     terminal,
     core,
     selectModeRef: { current: false },
@@ -107,6 +111,63 @@ function setup(
   });
   return { cleanup, focusCount: () => focusCount };
 }
+
+test("default mobile swipes send whole rows without transforms or momentum", () => {
+  withFakeBrowser((frames) => {
+    assert.equal(ENABLE_SMOOTH_TOUCH_SCROLL, false);
+    const element = new FakeTouchElement();
+    const cleanup = setupTouchScroll({
+      terminal: { element } as unknown as WTerm,
+      core: { usingAltScreen: () => true } as unknown as GhosttyCore,
+      selectModeRef: { current: false },
+      isMobile: true,
+    });
+    try {
+      element.listeners.get("touchstart")?.(touch(100));
+      element.listeners.get("touchmove")?.(touch(110)); // gesture slop
+      element.listeners.get("touchmove")?.(touch(125)); // under one row
+      assert.equal(element.wheelEvents.length, 0);
+      element.listeners.get("touchmove")?.(touch(135)); // first row
+      element.listeners.get("touchmove")?.(touch(176)); // two more rows
+      assert.deepEqual(
+        element.wheelEvents.map((event) => event.init.deltaY),
+        [-1, -1, -1]
+      );
+      assert.ok(
+        element.wheelEvents.every((event) => event.init.deltaMode === 1)
+      );
+      assert.equal(element.grid.style.transform, undefined);
+      assert.equal(element.classes.has("touch-panning"), false);
+      element.listeners.get("touchend")?.({});
+      assert.equal(frames.length, 0);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+test("default swipe continues when its starting row is replaced", () => {
+  withFakeBrowser(() => {
+    const element = new FakeTouchElement();
+    const cleanup = setupTouchScroll({
+      terminal: { element } as unknown as WTerm,
+      core: { usingAltScreen: () => true } as unknown as GhosttyCore,
+      selectModeRef: { current: false },
+      isMobile: true,
+    });
+    const span = new FakeTarget();
+    try {
+      element.listeners.get("touchstart")?.({ ...touch(100), target: span });
+      span.listeners.get("touchmove")?.(touch(110));
+      span.listeners.get("touchmove")?.(touch(135));
+      assert.equal(element.wheelEvents.length, 1);
+      span.listeners.get("touchend")?.({});
+      assert.equal(span.listeners.size, 0);
+    } finally {
+      cleanup();
+    }
+  });
+});
 
 test("mobile swipes pan TUIs pixel by pixel without opening the keyboard", () => {
   withFakeBrowser((frames) => {

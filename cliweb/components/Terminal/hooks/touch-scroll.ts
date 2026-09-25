@@ -50,7 +50,104 @@ const HISTORY_FULL = 5000;
 // Past this, the gesture scrolls through tmux as before.
 const HISTORY_DECISION_TIMEOUT_MS = 350;
 
+// Flip this to true to compare the pixel-panned history/native views again.
+// The default keeps mobile swipes on tmux/WTerm's row-based wheel path.
+export const ENABLE_SMOOTH_TOUCH_SCROLL = false;
+
 export function setupTouchScroll(config: TouchScrollConfig): () => void {
+  if (!config.isMobile) return () => {};
+  return ENABLE_SMOOTH_TOUCH_SCROLL
+    ? setupSmoothTouchScroll(config)
+    : setupSteppedTouchScroll(config);
+}
+
+function setupSteppedTouchScroll({
+  terminal,
+  selectModeRef,
+}: TouchScrollConfig) {
+  const element = terminal.element;
+  let target: EventTarget | null = null;
+  let startX = 0;
+  let startY = 0;
+  let lastY = 0;
+  let wheelX = 0;
+  let wheelY = 0;
+  let remainder = 0;
+  let rowHeight = FALLBACK_ROW_HEIGHT;
+  let direction: "vertical" | "horizontal" | null = null;
+
+  const stop = () => {
+    target?.removeEventListener("touchmove", move as EventListener);
+    target?.removeEventListener("touchend", stop);
+    target?.removeEventListener("touchcancel", stop);
+    target = null;
+  };
+
+  const move = (event: TouchEvent) => {
+    if (selectModeRef.current || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    if (direction === null) {
+      const deltaX = Math.abs(touch.clientX - startX);
+      const deltaY = Math.abs(touch.clientY - startY);
+      if (deltaX <= GESTURE_SLOP_PX && deltaY <= GESTURE_SLOP_PX) return;
+      direction = deltaX > deltaY ? "horizontal" : "vertical";
+      lastY = touch.clientY;
+      return;
+    }
+    if (direction !== "vertical") return;
+    if (event.cancelable) event.preventDefault();
+    event.stopPropagation();
+
+    remainder += touch.clientY - lastY;
+    lastY = touch.clientY;
+    const lines = Math.trunc(remainder / rowHeight);
+    remainder -= lines * rowHeight;
+    if (lines === 0) return;
+    clearWheelRemainder(terminal);
+    for (let i = 0; i < Math.abs(lines); i += 1) {
+      element.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaY: -Math.sign(lines),
+          deltaMode: WheelEvent.DOM_DELTA_LINE,
+          bubbles: true,
+          cancelable: true,
+          clientX: wheelX,
+          clientY: wheelY,
+        })
+      );
+    }
+  };
+
+  const start = (event: TouchEvent) => {
+    stop();
+    if (selectModeRef.current || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    startX = wheelX = touch.clientX;
+    startY = wheelY = lastY = touch.clientY;
+    remainder = 0;
+    rowHeight =
+      element
+        .querySelector<HTMLElement>(".term-row:not(.term-scrollback-row)")
+        ?.getBoundingClientRect().height || FALLBACK_ROW_HEIGHT;
+    direction = null;
+    // A redraw can detach the row that received touchstart. Continue on
+    // that original target until the finger lifts.
+    target = event.target ?? element;
+    target.addEventListener("touchmove", move as EventListener, {
+      passive: false,
+    });
+    target.addEventListener("touchend", stop);
+    target.addEventListener("touchcancel", stop);
+  };
+
+  element.addEventListener("touchstart", start, { passive: true });
+  return () => {
+    stop();
+    element.removeEventListener("touchstart", start);
+  };
+}
+
+export function setupSmoothTouchScroll(config: TouchScrollConfig): () => void {
   const {
     terminal,
     core,

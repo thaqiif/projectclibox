@@ -28,7 +28,7 @@ import {
 import { keepKeyboardInputInView } from "./keyboard-input";
 import { createNativePanes } from "./native-panes";
 import { closeNativeView } from "./native-view";
-import { setupTouchScroll } from "./touch-scroll";
+import { ENABLE_SMOOTH_TOUCH_SCROLL, setupTouchScroll } from "./touch-scroll";
 import { createWebSocketConnection } from "./websocket-connection";
 import { DEFAULT_FONT_SCALE } from "../../../lib/font-scale";
 import { Osc52Filter } from "../../../lib/osc52-filter";
@@ -201,7 +201,7 @@ export function useTerminalConnection({
   }, []);
   const noteOutput = useCallback(() => {
     outputSeqRef.current += 1;
-    if (!appearanceRef.current.isMobile) return;
+    if (!appearanceRef.current.isMobile || !ENABLE_SMOOTH_TOUCH_SCROLL) return;
     if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
     prefetchTimerRef.current = setTimeout(() => {
       prefetchTimerRef.current = null;
