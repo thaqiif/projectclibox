@@ -1,6 +1,6 @@
 export const MONITOR_WORKSPACE_SETTING_KEY = "desktopMonitorWorkspace";
 const MIN_MONITOR_PANES = 1;
-export const MAX_MONITOR_PANES = 3;
+export const MAX_MONITOR_PANES = 5;
 
 export interface MonitorPaneState {
   id: string;
@@ -42,7 +42,7 @@ export function normalizeMonitorWorkspace(
     candidate.panes.length < MIN_MONITOR_PANES ||
     candidate.panes.length > MAX_MONITOR_PANES
   ) {
-    throw new Error("Workspace must contain one to three panes");
+    throw new Error("Workspace must contain one to five panes");
   }
 
   const terminalIds = new Set<string>();
@@ -173,7 +173,7 @@ function insertMonitorPane(
   const panes = [...cleared.panes];
 
   // Reuse a reserved empty pane before creating another one. Besides keeping
-  // the three-pane cap accurate, this lets desktop layout size only panes
+  // the pane cap accurate, this lets desktop layout size only panes
   // that actually contain terminals while mobile keeps its empty tabs.
   const emptyIndex = panes.findIndex(
     (pane) => pane.id !== anchorPaneId && pane.terminalId === null

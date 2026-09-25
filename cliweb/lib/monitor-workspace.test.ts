@@ -9,7 +9,7 @@ import {
   removeMonitorPane,
 } from "./monitor-workspace";
 
-test("normalizes one to three ordered pane widths", () => {
+test("normalizes one to five ordered pane widths", () => {
   const state = normalizeMonitorWorkspace({
     enabled: true,
     panes: [
@@ -25,10 +25,35 @@ test("normalizes one to three ordered pane widths", () => {
     state.panes.map((pane) => pane.width),
     [0.5, 0.5]
   );
+  const five = normalizeMonitorWorkspace({
+    enabled: true,
+    panes: Array.from({ length: 5 }, (_, index) => ({
+      id: `pane-${index}`,
+      terminalId: `term-${index}`,
+      width: index + 1,
+    })),
+  });
+  assert.equal(five.panes.length, 5);
+  assert.deepEqual(
+    five.panes.map((pane) => pane.width),
+    Array(5).fill(0.2)
+  );
 });
 
 test("rejects invalid counts, widths, and duplicate identities", () => {
   assert.throws(() => normalizeMonitorWorkspace({ enabled: true, panes: [] }));
+  assert.throws(
+    () =>
+      normalizeMonitorWorkspace({
+        enabled: true,
+        panes: Array.from({ length: 6 }, (_, index) => ({
+          id: `pane-${index}`,
+          terminalId: null,
+          width: 1,
+        })),
+      }),
+    /one to five panes/
+  );
   assert.throws(() =>
     normalizeMonitorWorkspace({
       enabled: true,
@@ -142,20 +167,27 @@ test("center drop replaces and steals without adding a pane", () => {
   );
 });
 
-test("edge drop on a full workspace degrades to replace", () => {
+test("edge drop adds a fifth pane, then replaces when full", () => {
   const state = normalizeMonitorWorkspace({
     enabled: true,
     panes: [
       { id: "a", terminalId: "term-a", width: 1 },
       { id: "b", terminalId: "term-b", width: 1 },
       { id: "c", terminalId: "term-c", width: 1 },
+      { id: "d", terminalId: "term-d", width: 1 },
     ],
   });
-  const replaced = dropMonitorTerminal(state, "b", "term-d", "before");
-  assert.equal(replaced.panes.length, 3);
+  const expanded = dropMonitorTerminal(state, "b", "term-e", "before");
+  assert.equal(expanded.panes.length, 5);
+  assert.deepEqual(
+    expanded.panes.map((pane) => pane.width),
+    Array(5).fill(0.2)
+  );
+  const replaced = dropMonitorTerminal(expanded, "b", "term-f", "before");
+  assert.equal(replaced.panes.length, 5);
   assert.deepEqual(
     replaced.panes.map((pane) => pane.terminalId),
-    ["term-a", "term-d", "term-c"]
+    ["term-a", "term-e", "term-f", "term-c", "term-d"]
   );
 });
 
@@ -179,11 +211,15 @@ test("moveMonitorPane reorders and ignores a self drop", () => {
     ],
   });
   assert.deepEqual(
-    moveMonitorPane(state, "left", "right", "after").panes.map((pane) => pane.id),
+    moveMonitorPane(state, "left", "right", "after").panes.map(
+      (pane) => pane.id
+    ),
     ["middle", "right", "left"]
   );
   assert.deepEqual(
-    moveMonitorPane(state, "right", "left", "before").panes.map((pane) => pane.id),
+    moveMonitorPane(state, "right", "left", "before").panes.map(
+      (pane) => pane.id
+    ),
     ["right", "left", "middle"]
   );
   assert.equal(moveMonitorPane(state, "left", "left", "after"), state);

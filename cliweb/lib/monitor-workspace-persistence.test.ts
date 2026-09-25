@@ -29,9 +29,9 @@ async function getBody(): Promise<MonitorWorkspaceState> {
 }
 
 function readStoredRaw(): string | undefined {
-  const row = queries
-    .getSetting(getDb())
-    .get(MONITOR_WORKSPACE_SETTING_KEY) as { value: string } | undefined;
+  const row = queries.getSetting(getDb()).get(MONITOR_WORKSPACE_SETTING_KEY) as
+    | { value: string }
+    | undefined;
   return row?.value;
 }
 
@@ -57,6 +57,20 @@ const TWO_PANE_WORKSPACE = {
     { id: "monitor-right", terminalId: "term-beta", width: 3 },
   ],
 };
+
+test("PUT and GET preserve a five-pane monitor workspace", async () => {
+  resetSettings();
+  const panes = Array.from({ length: 5 }, (_, index) => ({
+    id: `monitor-${index}`,
+    terminalId: `term-${index}`,
+    width: 1,
+  }));
+  const response = await PUT(putRequest({ enabled: true, panes }));
+  assert.equal(response.status, 200);
+  const expected = normalizeMonitorWorkspace({ enabled: true, panes });
+  assert.deepEqual(await response.json(), expected);
+  assert.deepEqual(await getBody(), expected);
+});
 
 test("GET returns the default workspace when nothing is stored", async () => {
   resetSettings();
@@ -168,7 +182,7 @@ test("PUT rejects invalid workspaces with 400 without touching stored state", as
       },
     ],
     [
-      "four panes",
+      "six panes",
       {
         enabled: true,
         panes: [
@@ -176,6 +190,8 @@ test("PUT rejects invalid workspaces with 400 without touching stored state", as
           { id: "b", terminalId: null, width: 1 },
           { id: "c", terminalId: null, width: 1 },
           { id: "d", terminalId: null, width: 1 },
+          { id: "e", terminalId: null, width: 1 },
+          { id: "f", terminalId: null, width: 1 },
         ],
       },
     ],
@@ -289,7 +305,9 @@ test("a saved pane referencing an unavailable terminal is kept as-is by the mode
 
   // Re-normalizing the saved state with unavailable terminals present must
   // not remove, reorder, resize, or reassign any pane.
-  const normalized = normalizeMonitorWorkspace(JSON.parse(JSON.stringify(saved)));
+  const normalized = normalizeMonitorWorkspace(
+    JSON.parse(JSON.stringify(saved))
+  );
   assert.deepEqual(normalized.panes, saved.panes);
   const unavailablePane = normalized.panes.find(
     (pane) => !liveTerminalIds.has(pane.terminalId ?? "")
@@ -358,6 +376,9 @@ test("per-pane failure isolation is a component-level behavior, not a pure-model
 
 process.on("exit", () => {
   try {
-    rmSync(MONITOR_WORKSPACE_TEST_DB_DIRECTORY, { recursive: true, force: true });
+    rmSync(MONITOR_WORKSPACE_TEST_DB_DIRECTORY, {
+      recursive: true,
+      force: true,
+    });
   } catch {}
 });

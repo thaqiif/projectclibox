@@ -25,6 +25,7 @@ import { isAllowedOrigin } from "./lib/route-guards";
 import { isValidTerminalGrid } from "./lib/terminal-grid";
 import {
   decodeTerminalResourceFrame,
+  encodeTerminalOutputFrame,
   encodeTerminalResourceFrame,
   TERMINAL_RESOURCE_MAX_FRAME_BYTES,
   TERMINAL_RESOURCE_PROTOCOL_VERSION,
@@ -36,13 +37,15 @@ import {
 
 // Terminal output is held this long so one tmux redraw goes out whole.
 const OUTPUT_COALESCE_MS = 4;
-const OUTPUT_COALESCE_MAX_BYTES = 256 * 1024;
+// At most 64 Ki UTF-16 code units per batch (at most 256 KiB in UTF-8).
+const OUTPUT_COALESCE_MAX_CHARS = 64 * 1024;
+const MAX_SOCKET_BUFFER_BYTES = 4 * 1024 * 1024;
+const HEARTBEAT_MS = 30_000;
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "0.0.0.0";
 const MAX_RESOURCE_JOBS_PER_PTY = 4;
 const MAX_RESOURCE_JOBS_SERVER_WIDE = 8;
 const MAX_QUEUED_RESOURCE_BYTES = 64 * 1024 * 1024;
-const MAX_SOCKET_RESOURCE_BUFFER_BYTES = 8 * 1024 * 1024;
 let activeResourceJobs = 0;
 let queuedResourceBytes = 0;
 
@@ -109,10 +112,24 @@ app.prepare().then(() => {
   });
 
   terminalWss.on("connection", (ws: WebSocket) => {
+    let awaitingPong = false;
+    ws.on("pong", () => {
+      awaitingPong = false;
+    });
+    const heartbeat = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      if (awaitingPong) {
+        ws.terminate();
+        return;
+      }
+      awaitingPong = true;
+      ws.ping();
+    }, HEARTBEAT_MS);
     let ptyProcess: pty.IPty | null = null;
     let nativeScroll: NativeScrollBridge | null = null;
     let attachedCapability: TerminalCapability | null = null;
     let helloReceived = false;
+    let binaryOutput = false;
     const resourceJobs = new Map<number, AbortController>();
     let helloTimer: NodeJS.Timeout | null = null;
 
@@ -160,7 +177,7 @@ app.prepare().then(() => {
       }
 
       const backpressureDeadline = Date.now() + 5_000;
-      while (ws.bufferedAmount > MAX_SOCKET_RESOURCE_BUFFER_BYTES) {
+      while (ws.bufferedAmount + frame.byteLength > MAX_SOCKET_BUFFER_BYTES) {
         if (Date.now() > backpressureDeadline) {
           throw new Error("Terminal resource socket remained backpressured");
         }
@@ -302,6 +319,7 @@ app.prepare().then(() => {
           token?: unknown;
           cols?: unknown;
           rows?: unknown;
+          outputFormat?: unknown;
         };
         try {
           hello = JSON.parse(message.toString());
@@ -318,6 +336,7 @@ app.prepare().then(() => {
           rejectHello("Invalid terminal dimensions");
           return;
         }
+        binaryOutput = hello.outputFormat === "binary-v1";
 
         const capability = await consumeTerminalCapability(hello.token, grid);
         if (ws.readyState !== WebSocket.OPEN) {
@@ -385,22 +404,47 @@ app.prepare().then(() => {
         const flushOutput = () => {
           outputTimer = null;
           if (!pendingOutput || ws.readyState !== WebSocket.OPEN) return;
-          if (ws.bufferedAmount > 4 * 1024 * 1024) {
+          const data = pendingOutput;
+          pendingOutput = "";
+          const frame = binaryOutput
+            ? encodeTerminalOutputFrame(data)
+            : JSON.stringify({ type: "output", data });
+          const frameBytes =
+            typeof frame === "string"
+              ? Buffer.byteLength(frame)
+              : frame.byteLength;
+          if (ws.bufferedAmount + frameBytes > MAX_SOCKET_BUFFER_BYTES) {
             ws.close(1013, "Terminal output backpressure limit exceeded");
             ptyProcess?.kill();
             return;
           }
-          const data = pendingOutput;
-          pendingOutput = "";
-          ws.send(JSON.stringify({ type: "output", data }));
+          ws.send(frame);
         };
         ptyProcess.onData((data: string) => {
           if (ws.readyState !== WebSocket.OPEN) return;
-          pendingOutput += data;
-          if (pendingOutput.length >= OUTPUT_COALESCE_MAX_BYTES) {
-            if (outputTimer) clearTimeout(outputTimer);
-            flushOutput();
-          } else if (!outputTimer) {
+          for (
+            let offset = 0;
+            offset < data.length && ws.readyState === WebSocket.OPEN;
+          ) {
+            let end = Math.min(
+              data.length,
+              offset + OUTPUT_COALESCE_MAX_CHARS - pendingOutput.length
+            );
+            // Do not split a UTF-16 surrogate pair across binary frames.
+            if (end < data.length && /[\uD800-\uDBFF]/.test(data[end - 1]))
+              end--;
+            pendingOutput += data.slice(offset, end);
+            offset = end;
+            if (pendingOutput.length >= OUTPUT_COALESCE_MAX_CHARS - 1) {
+              if (outputTimer) clearTimeout(outputTimer);
+              flushOutput();
+            }
+          }
+          if (
+            pendingOutput &&
+            !outputTimer &&
+            ws.readyState === WebSocket.OPEN
+          ) {
             outputTimer = setTimeout(flushOutput, OUTPUT_COALESCE_MS);
           }
         });
@@ -465,6 +509,7 @@ app.prepare().then(() => {
     });
 
     ws.on("close", () => {
+      clearInterval(heartbeat);
       nativeScroll?.close();
       nativeScroll = null;
       releasePendingHello();
@@ -478,6 +523,7 @@ app.prepare().then(() => {
     });
 
     ws.on("error", (err) => {
+      clearInterval(heartbeat);
       console.error("WebSocket error:", err);
       nativeScroll?.close();
       nativeScroll = null;

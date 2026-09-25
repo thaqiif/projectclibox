@@ -476,6 +476,17 @@ export function MonitorWorkspace({
   const selectedPane = workspace.panes.find(
     (pane) => pane.id === selectedPaneId
   );
+  const selectedPaneIndex = workspace.panes.findIndex(
+    (pane) => pane.id === selectedPaneId
+  );
+  useEffect(() => {
+    if (mobile && selectedPaneIndex >= 0) {
+      document.getElementById(`monitor-tab-${selectedPaneIndex}`)?.scrollIntoView({
+        block: "nearest",
+        inline: "nearest",
+      });
+    }
+  }, [mobile, selectedPaneIndex]);
   const [terminalToAssign, setTerminalToAssign] = useState<TerminalRecord | null>(
     null
   );
@@ -562,7 +573,7 @@ export function MonitorWorkspace({
           <div
             role="tablist"
             aria-label="Monitor terminals"
-            className="flex min-w-0 flex-1 items-center gap-0.5 rounded-sm border border-[var(--shell-line)] bg-[var(--shell-hover)] p-0.5"
+            className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-sm border border-[var(--shell-line)] bg-[var(--shell-hover)] p-0.5"
           >
             {workspace.panes.map((pane, index) => {
               const terminal = terminals.find(
@@ -587,7 +598,7 @@ export function MonitorWorkspace({
                   onClick={() => onSelectPane?.(pane.id)}
                   onKeyDown={(event) => handleTabKeyDown(event, index)}
                   className={cn(
-                    "press-sm focus-ring flex h-9 min-w-0 flex-1 flex-col items-start justify-center rounded-sm px-1.5 text-left transition-colors",
+                    "press-sm focus-ring flex h-9 min-w-[5.5rem] flex-1 flex-col items-start justify-center rounded-sm px-1.5 text-left transition-colors",
                     selected
                       ? "bg-[var(--shell-selected)] text-foreground"
                       : "text-muted-foreground hover:bg-[var(--shell-hover)] hover:text-foreground"

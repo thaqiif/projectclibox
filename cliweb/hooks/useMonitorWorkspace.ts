@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DEFAULT_MONITOR_WORKSPACE,
+  MAX_MONITOR_PANES,
   dropMonitorTerminal,
   moveMonitorPane,
   removeMonitorPane,
@@ -123,7 +124,7 @@ export function useMonitorWorkspace() {
 
   const addPane = useCallback(() => {
     const current = latest.current;
-    if (!current || current.panes.length >= 3) return undefined;
+    if (!current || current.panes.length >= MAX_MONITOR_PANES) return undefined;
     const count = current.panes.length + 1;
     const paneId = `monitor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     commit({

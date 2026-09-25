@@ -20,6 +20,7 @@ import { useSidebarPinned } from "@/hooks/useSidebarPinned";
 import { useTerminalRename } from "@/hooks/useTerminalRename";
 import { WorkbenchTitle } from "./WorkbenchTitle";
 import { MonitorWorkspace } from "@/components/MonitorWorkspace";
+import { MAX_MONITOR_PANES } from "@/lib/monitor-workspace";
 
 export function DesktopView({
   terminals,
@@ -110,7 +111,7 @@ export function DesktopView({
                   variant="ghost"
                   size="icon-sm"
                   aria-label="Add monitor pane"
-                  disabled={monitor.workspace.panes.length >= 3}
+                  disabled={monitor.workspace.panes.length >= MAX_MONITOR_PANES}
                   onClick={monitor.addPane}
                 >
                   <Plus className="h-4 w-4" />

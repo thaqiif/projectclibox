@@ -136,3 +136,25 @@ test("a noncancelable iOS delete input does not reach WTerm", async () => {
     cleanup();
   }
 });
+
+test("another keydown between delete beforeinput and input cannot delete twice", () => {
+  const textarea = new EventTarget() as HTMLTextAreaElement;
+  textarea.value = "";
+  textarea.setSelectionRange = () => {};
+  const element = { querySelector: () => textarea } as unknown as HTMLElement;
+  let deletes = 0;
+  const cleanup = keepMobileBackspaceRepeating(element, () => deletes++);
+  try {
+    textarea.dispatchEvent(keyboardEvent("keydown", "Backspace"));
+    textarea.dispatchEvent(beforeInput("deleteContentBackward"));
+    textarea.dispatchEvent(keyboardEvent("keydown", "a"));
+    const input = new Event("input");
+    Object.defineProperty(input, "inputType", {
+      value: "deleteContentBackward",
+    });
+    textarea.dispatchEvent(input);
+    assert.equal(deletes, 1);
+  } finally {
+    cleanup();
+  }
+});
