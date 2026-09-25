@@ -7,7 +7,6 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "CLIWeb Workspace",
   description: "Persistent browser workspace for projects and terminals",
-  manifest: "/cliweb.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -40,6 +39,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Sent with credentials so the manifest (and so the install icon)
+            loads behind an auth proxy such as Cloudflare Access. */}
+        <link
+          rel="manifest"
+          href="/cliweb.webmanifest"
+          crossOrigin="use-credentials"
+        />
         {/* Theme initialization script - prevents flash of unstyled content */}
         <script
           dangerouslySetInnerHTML={{
