@@ -14,8 +14,9 @@ test("scales the mobile TUI font from its mobile base size", () => {
   assert.equal(getTerminalFontSize(true, 1.5), 21);
 });
 
-test("rows are tall enough for the font and its line height", () => {
-  assert.equal(getTerminalRowHeight(16, getTerminalLineHeight(false)), 20);
-  assert.equal(getTerminalRowHeight(14, getTerminalLineHeight(true)), 18);
+test("WTerm rows preserve the production spacing at the saved 1.1x scale", () => {
+  assert.equal(getTerminalRowHeight(17.6, getTerminalLineHeight(false)), 28);
+  assert.equal(getTerminalRowHeight(15.4, getTerminalLineHeight(true)), 23);
+  assert.equal(getTerminalRowHeight(14, getTerminalLineHeight(true)), 21);
   assert.equal(getTerminalRowHeight(16, 1.25), 20);
 });

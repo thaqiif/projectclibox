@@ -16,10 +16,11 @@ export function getTerminalFontSize(
   return baseSize * normalizeFontScale(fontScale);
 }
 
-const DESKTOP_LINE_HEIGHT = 1.2;
-// Phones read at arm's length with no zoom; a little more air between rows
-// keeps dense TUI output legible.
-const MOBILE_LINE_HEIGHT = 1.25;
+// WTerm sizes rows from CSS font-size. The previous xterm renderer sized them
+// from the measured JetBrains Mono glyph box, which is taller than font-size.
+// These ratios restore the production row rhythm without making glyphs smaller.
+const DESKTOP_LINE_HEIGHT = 1.55;
+const MOBILE_LINE_HEIGHT = 1.45;
 
 export function getTerminalLineHeight(isMobile: boolean): number {
   return isMobile ? MOBILE_LINE_HEIGHT : DESKTOP_LINE_HEIGHT;

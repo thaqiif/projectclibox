@@ -559,7 +559,11 @@ test("mobile chrome is opaque and cannot switch terminals by gesture", () => {
   // the viewport, so a saved-to-home-screen iOS session runs them under the
   // status bar and the home indicator. A translucent material there frosts
   // the terminal scrolling beneath it, so both stay opaque.
-  assert.match(tabBar, /className="bg-background glass-edge-bottom/);
+  assert.match(tabBar, /className="mobile-top-bar glass-edge-bottom/);
+  assert.match(
+    source("app/globals.css"),
+    /\.mobile-top-bar\s*\{\s*background-color:\s*hsl\(var\(--background\)\)/
+  );
   assert.match(toolbar, /className="bg-background glass-edge-top/);
   assert.doesNotMatch(tabBar, /"glass glass-edge/);
   assert.doesNotMatch(toolbar, /"glass glass-edge/);
