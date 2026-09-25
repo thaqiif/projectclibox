@@ -4,9 +4,18 @@ import type { WTerm } from "@wterm/dom";
 import type { GhosttyCore } from "@wterm/ghostty";
 import { setupTouchScroll } from "./touch-scroll";
 
-class FakeTouchElement {
-  style: Record<string, string> = {};
+class FakeTarget {
   listeners = new Map<string, (event: any) => void>();
+  addEventListener(name: string, listener: (event: any) => void) {
+    this.listeners.set(name, listener);
+  }
+  removeEventListener(name: string) {
+    this.listeners.delete(name);
+  }
+}
+
+class FakeTouchElement extends FakeTarget {
+  style: Record<string, string> = {};
   wheelEvents: any[] = [];
   scrollTop = 0;
   grid = {
@@ -20,14 +29,8 @@ class FakeTouchElement {
     contains: (name: string) => this.classes.has(name),
   };
 
-  addEventListener(name: string, listener: (event: any) => void) {
-    this.listeners.set(name, listener);
-  }
   querySelector(selector: string) {
     return selector === ".term-grid" ? this.grid : null;
-  }
-  removeEventListener(name: string) {
-    this.listeners.delete(name);
   }
   dispatchEvent(event: any) {
     this.wheelEvents.push(event);
@@ -35,7 +38,7 @@ class FakeTouchElement {
   }
 }
 
-test("mobile swipes pan TUIs pixel by pixel without opening the keyboard", () => {
+function withFakeBrowser(run: (frames: Array<(time: number) => void>) => void) {
   const originalWheelEvent = Object.getOwnPropertyDescriptor(
     globalThis,
     "WheelEvent"
@@ -52,73 +55,89 @@ test("mobile swipes pan TUIs pixel by pixel without opening the keyboard", () =>
     configurable: true,
     value: FakeWheelEvent,
   });
-
   const frames: Array<(time: number) => void> = [];
   const originalRaf = globalThis.requestAnimationFrame;
   const originalCaf = globalThis.cancelAnimationFrame;
   globalThis.requestAnimationFrame = ((cb: (time: number) => void) =>
     frames.push(cb)) as typeof requestAnimationFrame;
   globalThis.cancelAnimationFrame = () => {};
+  try {
+    run(frames);
+  } finally {
+    globalThis.requestAnimationFrame = originalRaf;
+    globalThis.cancelAnimationFrame = originalCaf;
+    if (originalWheelEvent)
+      Object.defineProperty(globalThis, "WheelEvent", originalWheelEvent);
+    else Reflect.deleteProperty(globalThis, "WheelEvent");
+  }
+}
 
-  let notifyRedraw = () => {};
-  const originalObserver = globalThis.MutationObserver;
-  globalThis.MutationObserver = class {
-    constructor(callback: () => void) {
-      notifyRedraw = callback;
-    }
-    observe() {}
-    disconnect() {}
-  } as unknown as typeof MutationObserver;
+const touch = (clientY: number) => ({
+  touches: [{ clientX: 80, clientY }],
+  cancelable: true,
+  preventDefault() {},
+  stopPropagation() {},
+});
 
-  const element = new FakeTouchElement();
+function setup(element: FakeTouchElement) {
   let focusCount = 0;
   const terminal = {
     element,
     focus: () => focusCount++,
   } as unknown as WTerm;
-  const core = {
-    usingAltScreen: () => true,
-  } as unknown as GhosttyCore;
+  const core = { usingAltScreen: () => true } as unknown as GhosttyCore;
   const cleanup = setupTouchScroll({
     terminal,
     core,
     selectModeRef: { current: false },
     isMobile: true,
   });
+  return { cleanup, focusCount: () => focusCount };
+}
 
-  try {
-    element.listeners.get("touchstart")?.({
-      touches: [{ clientX: 80, clientY: 100 }],
-    });
-    assert.equal(focusCount, 0);
+test("mobile swipes pan TUIs pixel by pixel without opening the keyboard", () => {
+  withFakeBrowser((frames) => {
+    const element = new FakeTouchElement();
+    const { cleanup, focusCount } = setup(element);
+    try {
+      element.listeners.get("touchstart")?.(touch(100));
+      element.listeners.get("touchmove")?.(touch(110)); // past the slop
+      element.listeners.get("touchmove")?.(touch(140));
+      assert.equal(focusCount(), 0);
+      // Moves are batched into the next animation frame.
+      assert.equal(element.wheelEvents.length, 0);
+      frames.shift()?.(16);
+      // 30px at the 20px fallback row height: one line-mode wheel event,
+      // and only one until the app shows how far a report scrolls.
+      assert.equal(element.wheelEvents.length, 1);
+      assert.equal(element.wheelEvents[0].init.deltaMode, 1);
+      assert.equal(element.wheelEvents[0].init.deltaY, -1);
+      // The grid follows the finger, a little, until the redraw lands.
+      assert.equal(element.grid.style.transform, "translate3d(0, 8px, 0)");
+      assert.ok(element.classes.has("touch-panning"));
+    } finally {
+      cleanup();
+    }
+  });
+});
 
-    element.listeners.get("touchmove")?.({
-      touches: [{ clientX: 80, clientY: 130 }],
-      preventDefault() {},
-      stopPropagation() {},
-    });
-    assert.equal(focusCount, 0);
-    // Moves are batched into the next animation frame.
-    assert.equal(element.wheelEvents.length, 0);
-    frames.shift()?.(16);
-    assert.equal(element.wheelEvents.length, 1);
-    // 30px at the 20px fallback row height asks tmux for two lines (each
-    // step is requested halfway through), and the grid follows the finger
-    // up to three quarters of a row until the redraw lands.
-    assert.equal(
-      element.wheelEvents[0].init.deltaMode,
-      FakeWheelEvent.DOM_DELTA_LINE
-    );
-    assert.equal(element.wheelEvents[0].init.deltaY, -2);
-    assert.equal(element.grid.style.transform, "translate3d(0, 15px, 0)");
-    assert.ok(element.classes.has("touch-panning"));
-  } finally {
-    cleanup();
-    globalThis.requestAnimationFrame = originalRaf;
-    globalThis.cancelAnimationFrame = originalCaf;
-    globalThis.MutationObserver = originalObserver;
-    if (originalWheelEvent)
-      Object.defineProperty(globalThis, "WheelEvent", originalWheelEvent);
-    else Reflect.deleteProperty(globalThis, "WheelEvent");
-  }
+test("a swipe keeps working after the touched text is redrawn away", () => {
+  withFakeBrowser((frames) => {
+    const element = new FakeTouchElement();
+    const { cleanup } = setup(element);
+    // The finger lands on a span that WTerm will replace on the next
+    // redraw. Its later events never bubble to the terminal again.
+    const span = new FakeTarget();
+    try {
+      element.listeners.get("touchstart")?.({ ...touch(100), target: span });
+      span.listeners.get("touchmove")?.(touch(110));
+      span.listeners.get("touchmove")?.(touch(140));
+      frames.shift()?.(16);
+      assert.equal(element.wheelEvents.length, 1);
+      span.listeners.get("touchend")?.({});
+      assert.equal(span.listeners.size, 0);
+    } finally {
+      cleanup();
+    }
+  });
 });

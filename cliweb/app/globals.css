@@ -242,6 +242,11 @@ body {
     width: 100%;
     height: 100%;
   }
+
+  /* Follow the visible area when iOS pans it for the keyboard. */
+  body {
+    top: var(--app-offset-top, 0px);
+  }
 }
 
 @media (max-width: 767px) {

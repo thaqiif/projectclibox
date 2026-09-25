@@ -14,6 +14,13 @@ import {
   restoreTerminalScroll,
   setTerminalScrollBottom,
 } from "./terminal-engine-adapter";
+import {
+  clearWheelRemainder,
+  createCopyModeExit,
+  createCopyModeWheel,
+  type CopyModeExit,
+} from "./copy-mode";
+import { keepKeyboardInputInView } from "./keyboard-input";
 import { setupTouchScroll } from "./touch-scroll";
 import { createWebSocketConnection } from "./websocket-connection";
 import { DEFAULT_FONT_SCALE } from "../../../lib/font-scale";
@@ -25,6 +32,14 @@ import {
 import { WS_RECONNECT_BASE_DELAY } from "../constants";
 
 export type { TerminalScrollState } from "./useTerminalConnection.types";
+
+function rowHeightOf(element: HTMLElement): number {
+  return (
+    element
+      .querySelector(".term-row:not(.term-scrollback-row)")
+      ?.getBoundingClientRect().height ?? 0
+  );
+}
 
 export function useTerminalConnection({
   terminalRef,
@@ -68,6 +83,8 @@ export function useTerminalConnection({
   const appearanceRef = useRef({ isMobile, theme, fontScale });
   const initialScrollTopRef = useRef(initialScrollState?.scrollTop);
   const touchCleanupRef = useRef<(() => void) | null>(null);
+  const copyModeExitRef = useRef<CopyModeExit | null>(null);
+  const keyboardInputCleanupRef = useRef<(() => void) | null>(null);
   const callbacksRef = useRef({
     onConnected,
     onDisconnected,
@@ -113,10 +130,15 @@ export function useTerminalConnection({
     return false;
   }, []);
 
+  // Typing after a scroll returns to the prompt instead of being read as
+  // tmux copy-mode commands (see copy-mode.ts).
   const sendInput = useCallback((data: string) => {
-    managerRef.current?.sendInput(data);
+    const prefix = copyModeExitRef.current?.prefixFor(data) ?? "";
+    managerRef.current?.sendInput(prefix + data);
   }, []);
   const sendCommand = useCallback((command: string) => {
+    const prefix = copyModeExitRef.current?.prefixFor(command) ?? "";
+    if (prefix) managerRef.current?.sendInput(prefix);
     managerRef.current?.sendCommand(command);
   }, []);
   const focus = useCallback(() => {
@@ -264,6 +286,17 @@ export function useTerminalConnection({
       adapter.terminal.element.addEventListener("scroll", onScroll, {
         passive: true,
       });
+      copyModeExitRef.current = createCopyModeExit(adapter.terminal.element);
+      const keyboardCleanup = keepKeyboardInputInView(adapter.terminal.element);
+      const wheelCleanup = createCopyModeWheel(
+        adapter.terminal.element,
+        () => rowHeightOf(adapter.terminal.element),
+        () => clearWheelRemainder(adapter.terminal)
+      );
+      keyboardInputCleanupRef.current = () => {
+        keyboardCleanup();
+        wheelCleanup();
+      };
       touchCleanupRef.current = setupTouchScroll({
         terminal: adapter.terminal,
         core: adapter.core,
@@ -361,6 +394,10 @@ export function useTerminalConnection({
       }
       touchCleanupRef.current?.();
       touchCleanupRef.current = null;
+      copyModeExitRef.current?.dispose();
+      copyModeExitRef.current = null;
+      keyboardInputCleanupRef.current?.();
+      keyboardInputCleanupRef.current = null;
       adapterRef.current?.dispose();
       osc52Filter.reset();
       adapterRef.current = null;

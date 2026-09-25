@@ -6,7 +6,8 @@ import { useEffect } from "react";
  * Hook to set CSS custom property for actual viewport height.
  * Handles iOS Safari's virtual keyboard by using visualViewport API.
  *
- * Sets --app-height CSS variable on document root that updates when:
+ * Sets --app-height (and --app-offset-top, how far iOS has panned the
+ * visible area down the page) on the document root, updated when:
  * - Window resizes
  * - Visual viewport changes (keyboard appears/disappears)
  * - Orientation changes
@@ -23,11 +24,16 @@ export function useViewportHeight() {
       const visibleHeight = viewport?.height ?? window.innerHeight;
       if (!Number.isFinite(visibleHeight) || visibleHeight <= 0) return;
       const height = `${Math.round(visibleHeight)}px`;
-      if (
-        document.documentElement.style.getPropertyValue("--app-height") !==
-        height
-      ) {
-        document.documentElement.style.setProperty("--app-height", height);
+      const root = document.documentElement.style;
+      if (root.getPropertyValue("--app-height") !== height) {
+        root.setProperty("--app-height", height);
+      }
+      // With the keyboard open, iOS pans the visible area down the page to
+      // reveal the focused field. The page is fixed, so without following
+      // that pan the app's top half slides out of view while typing.
+      const offsetTop = `${Math.max(0, Math.round(viewport?.offsetTop ?? 0))}px`;
+      if (root.getPropertyValue("--app-offset-top") !== offsetTop) {
+        root.setProperty("--app-offset-top", offsetTop);
       }
     };
 

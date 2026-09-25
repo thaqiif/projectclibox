@@ -6,6 +6,7 @@ import next from "next";
 import { WebSocketServer, WebSocket } from "ws";
 import * as pty from "node-pty";
 import { buildCliwebEnvironment } from "./lib/runtime-environment";
+import { configureScrollBindings } from "./lib/terminals";
 import {
   consumeTerminalCapability,
   releaseTerminalCapability,
@@ -325,6 +326,10 @@ app.prepare().then(() => {
             COLORTERM: "truecolor",
           };
 
+          // Sessions created before the scroll bindings existed (or by
+          // hand) get them on attach; they are server-wide. Not awaited:
+          // they only matter once the user scrolls.
+          void configureScrollBindings();
           ptyProcess = pty.spawn(
             "tmux",
             ["attach-session", "-t", capability.sessionId],

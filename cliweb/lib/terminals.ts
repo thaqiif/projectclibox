@@ -65,8 +65,41 @@ async function tmuxOrThrow(args: string[]): Promise<string> {
   return stdout;
 }
 
+/**
+ * Touch and trackpad scrolling send one wheel report per line of finger
+ * travel. tmux's default copy-mode bindings scroll five lines per report,
+ * which makes scrolling jump in blocks, and its first wheel-up on the live
+ * screen only enters copy mode without moving, which leaves a dead step at
+ * the start of every scroll. Rebind both so each report is exactly one line.
+ * Apps that asked for the mouse (or a pane already in a mode) still receive
+ * the raw event, as with tmux's default binding.
+ *
+ * Bindings are server-wide, and applied on every attach so a tmux server
+ * started before this existed picks them up too. Failures (an older tmux
+ * without brace syntax) are ignored: the defaults still work, just coarser.
+ */
+export async function configureScrollBindings(): Promise<void> {
+  const bindings: string[][] = [];
+  for (const table of ["copy-mode", "copy-mode-vi"]) {
+    bindings.push(
+      [table, "WheelUpPane", "select-pane; send-keys -X -N 1 scroll-up"],
+      [table, "WheelDownPane", "select-pane; send-keys -X -N 1 scroll-down"]
+    );
+  }
+  bindings.push([
+    "root",
+    "WheelUpPane",
+    'if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" ' +
+      "{ send-keys -M } { copy-mode -e; send-keys -X -N 1 scroll-up }",
+  ]);
+  for (const [table, key, command] of bindings) {
+    await tmux(["bind-key", "-T", table, key, command]);
+  }
+}
+
 async function configureManagedSession(name: string): Promise<void> {
   const env = tmuxEnvironment();
+  await configureScrollBindings();
   await execFileAsync("tmux", ["set-option", "-g", "extended-keys", "on"], {
     env,
   });
@@ -90,13 +123,12 @@ async function configureManagedSession(name: string): Promise<void> {
     { env }
   );
 
-  const windowIds = (await tmuxOrThrow([
-    "list-windows",
-    "-t",
-    name,
-    "-F",
-    "#{window_id}",
-  ])).trim().split("\n").filter(Boolean);
+  const windowIds = (
+    await tmuxOrThrow(["list-windows", "-t", name, "-F", "#{window_id}"])
+  )
+    .trim()
+    .split("\n")
+    .filter(Boolean);
   for (const windowId of windowIds) {
     await execFileAsync(
       "tmux",
