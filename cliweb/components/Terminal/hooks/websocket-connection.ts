@@ -6,6 +6,12 @@ import type { HistoryPage } from "./history-view";
 import type { NativePane, NativePaneKind } from "./native-panes";
 
 const HISTORY_TIMEOUT_MS = 3000;
+// Browsers cannot send protocol pings, and a socket on a dead network (Wi-Fi
+// to cellular, laptop wake) can sit "open" for minutes. The client probes
+// while visible and reconnects when nothing arrives in time.
+const LIVENESS_INTERVAL_MS = 15_000;
+const LIVENESS_TIMEOUT_MS = 10_000;
+const PING_MESSAGE = '{"type":"ping"}';
 import { isValidTerminalGrid } from "../../../lib/terminal-grid";
 import {
   decodeTerminalOutputFrame,
@@ -68,6 +74,32 @@ export function createWebSocketConnection(
   let generation = 0;
   let capabilityRequest: AbortController | null = null;
   let fatalError = false;
+  let livenessTimer: ReturnType<typeof setInterval> | null = null;
+  let pongDeadline: ReturnType<typeof setTimeout> | null = null;
+
+  const clearPongDeadline = () => {
+    if (pongDeadline) clearTimeout(pongDeadline);
+    pongDeadline = null;
+  };
+  const stopLiveness = () => {
+    if (livenessTimer) clearInterval(livenessTimer);
+    livenessTimer = null;
+    clearPongDeadline();
+  };
+  const probeLiveness = () => {
+    const ws = wsRef.current;
+    if (ws?.readyState !== WebSocket.OPEN || pongDeadline) return;
+    if (document.visibilityState !== "visible") return;
+    try {
+      ws.send(PING_MESSAGE);
+    } catch {
+      return;
+    }
+    pongDeadline = setTimeout(() => {
+      pongDeadline = null;
+      if (wsRef.current === ws) forceReconnect();
+    }, LIVENESS_TIMEOUT_MS);
+  };
 
   const sendResize = (cols: number, rows: number) => {
     if (!isValidTerminalGrid({ cols, rows })) return;
@@ -130,6 +162,7 @@ export function createWebSocketConnection(
   };
 
   const closeCurrent = () => {
+    stopLiveness();
     capabilityRequest?.abort();
     capabilityRequest = null;
     const old = wsRef.current;
@@ -250,6 +283,8 @@ export function createWebSocketConnection(
 
     ws.onmessage = (event) => {
       if (thisGeneration !== generation || wsRef.current !== ws) return;
+      // Any traffic proves the link is alive.
+      clearPongDeadline();
       if (typeof event.data !== "string") {
         try {
           if (isTerminalOutputFrame(event.data as ArrayBuffer)) {
@@ -273,7 +308,11 @@ export function createWebSocketConnection(
         return;
       }
 
-      if (message.type === "ready") {
+      if (message.type === "pong") {
+        return;
+      } else if (message.type === "ready") {
+        stopLiveness();
+        livenessTimer = setInterval(probeLiveness, LIVENESS_INTERVAL_MS);
         callbacks.onConnectionStateChange("connected");
         reconnectDelayRef.current = WS_RECONNECT_BASE_DELAY;
         callbacks.onConnected?.();
@@ -327,6 +366,7 @@ export function createWebSocketConnection(
     };
 
     ws.onclose = () => {
+      stopLiveness();
       if (wsRef.current === ws) wsRef.current = null;
       for (const id of [...historyWaiters.keys()]) settleHistory(id, null);
       callbacks.onNativeScroll?.([]);
@@ -376,9 +416,18 @@ export function createWebSocketConnection(
       (!ws && !capabilityRequest)
     ) {
       forceReconnect();
+    } else {
+      // Coming back from background: the socket may be a zombie.
+      probeLiveness();
     }
   };
+  const handleOnline = () => {
+    if (intentionalCloseRef.current || fatalError) return;
+    if (wsRef.current?.readyState === WebSocket.OPEN) probeLiveness();
+    else if (!capabilityRequest) forceReconnect();
+  };
   document.addEventListener("visibilitychange", handleVisibilityChange);
+  window.addEventListener("online", handleOnline);
   void connect(false);
 
   return {
@@ -410,6 +459,7 @@ export function createWebSocketConnection(
     cleanup: () => {
       disposed = true;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("online", handleOnline);
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;

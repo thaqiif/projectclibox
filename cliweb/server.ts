@@ -40,6 +40,11 @@ const OUTPUT_COALESCE_MS = 4;
 // At most 64 Ki UTF-16 code units per batch (at most 256 KiB in UTF-8).
 const OUTPUT_COALESCE_MAX_CHARS = 64 * 1024;
 const MAX_SOCKET_BUFFER_BYTES = 4 * 1024 * 1024;
+// Output flow control: the PTY (and so the program writing to it) is paused
+// while the socket holds more than HIGH bytes and resumed below LOW, so a
+// slow link throttles `cat hugefile` instead of dropping the terminal.
+const OUTPUT_HIGH_WATER_BYTES = 1024 * 1024;
+const OUTPUT_LOW_WATER_BYTES = 256 * 1024;
 const HEARTBEAT_MS = 30_000;
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "0.0.0.0";
@@ -303,6 +308,17 @@ app.prepare().then(() => {
     };
 
     ws.on("message", async (message, isBinary) => {
+      // Client liveness probe; answered before the hello so a stalled
+      // attach still proves the link is up. Checked by byte size first to
+      // keep the hot input path free of an extra parse.
+      if (
+        !isBinary &&
+        (message as Buffer).length === 15 &&
+        message.toString() === '{"type":"ping"}'
+      ) {
+        if (ws.readyState === WebSocket.OPEN) ws.send('{"type":"pong"}');
+        return;
+      }
       if (!ptyProcess) {
         if (helloReceived) {
           rejectHello("Only one terminal hello is allowed");
@@ -413,12 +429,22 @@ app.prepare().then(() => {
             typeof frame === "string"
               ? Buffer.byteLength(frame)
               : frame.byteLength;
-          if (ws.bufferedAmount + frameBytes > MAX_SOCKET_BUFFER_BYTES) {
-            ws.close(1013, "Terminal output backpressure limit exceeded");
-            ptyProcess?.kill();
-            return;
+          ws.send(frame, onOutputSent);
+          if (!outputPaused && ws.bufferedAmount > OUTPUT_HIGH_WATER_BYTES) {
+            outputPaused = true;
+            ptyProcess?.pause();
           }
-          ws.send(frame);
+        };
+        let outputPaused = false;
+        const onOutputSent = () => {
+          if (
+            outputPaused &&
+            ws.readyState === WebSocket.OPEN &&
+            ws.bufferedAmount <= OUTPUT_LOW_WATER_BYTES
+          ) {
+            outputPaused = false;
+            ptyProcess?.resume();
+          }
         };
         ptyProcess.onData((data: string) => {
           if (ws.readyState !== WebSocket.OPEN) return;
@@ -508,7 +534,10 @@ app.prepare().then(() => {
       }
     });
 
-    ws.on("close", () => {
+    let torndown = false;
+    const teardown = () => {
+      if (torndown) return;
+      torndown = true;
       clearInterval(heartbeat);
       nativeScroll?.close();
       nativeScroll = null;
@@ -520,20 +549,12 @@ app.prepare().then(() => {
       activeResourceJobs = Math.max(0, activeResourceJobs - jobCount);
       ptyProcess?.kill();
       releaseCapability();
-    });
+    };
 
+    ws.on("close", teardown);
     ws.on("error", (err) => {
-      clearInterval(heartbeat);
       console.error("WebSocket error:", err);
-      nativeScroll?.close();
-      nativeScroll = null;
-      releasePendingHello();
-      for (const controller of resourceJobs.values()) controller.abort();
-      const jobCount = resourceJobs.size;
-      resourceJobs.clear();
-      activeResourceJobs = Math.max(0, activeResourceJobs - jobCount);
-      ptyProcess?.kill();
-      releaseCapability();
+      teardown();
     });
   });
 
