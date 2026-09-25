@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   manifest: "/cliweb.webmanifest",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
     title: "CLIWeb",
   },
   icons: {
@@ -29,10 +29,7 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
-  ],
+  themeColor: "#0a0a0a",
 };
 
 export default function RootLayout({

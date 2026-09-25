@@ -151,6 +151,9 @@
   * {
     @apply border-border;
   }
+  html {
+    background-color: hsl(var(--background));
+  }
   body {
     @apply bg-background text-foreground;
   }
@@ -169,6 +172,12 @@
       transition-duration: 0.01ms !important;
     }
   }
+}
+
+/* The mobile header fills the notch area with the same solid theme color. */
+.mobile-top-bar {
+  background-color: hsl(var(--background));
+  padding-top: calc(0.5rem + env(safe-area-inset-top, 0px));
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

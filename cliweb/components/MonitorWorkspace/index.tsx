@@ -549,7 +549,7 @@ export function MonitorWorkspace({
       )}
     >
       {mobile && (
-        <div className="bg-background glass-edge-bottom relative z-10 flex shrink-0 items-center gap-1 px-2 pb-2 pt-[calc(0.5rem+env(safe-area-inset-top))]">
+        <div className="mobile-top-bar glass-edge-bottom relative z-10 flex shrink-0 items-center gap-1 px-2 pb-2">
           <Button
             variant="ghost"
             size="icon"
