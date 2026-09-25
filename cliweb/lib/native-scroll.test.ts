@@ -54,13 +54,16 @@ test("validates browser scroll requests", () => {
 import { parsePaneState } from "./tmux-history";
 
 test("only a plain, unsplit shell pane offers local history", () => {
-  assert.deepEqual(parsePaneState("0 0 1 120 30\n"), {
+  assert.deepEqual(parsePaneState("0 0 1 120 30 bash\n"), {
     shell: true,
     historySize: 120,
     height: 30,
   });
-  assert.equal(parsePaneState("1 0 1 120 30")?.shell, false); // vim, jcode
-  assert.equal(parsePaneState("0 1 1 120 30")?.shell, false); // copy mode
-  assert.equal(parsePaneState("0 0 2 120 30")?.shell, false); // split
+  assert.equal(parsePaneState("1 0 1 120 30 vim")?.shell, false);
+  assert.equal(parsePaneState("0 1 1 120 30 bash")?.shell, false);
+  assert.equal(parsePaneState("0 0 2 120 30 bash")?.shell, false);
+  assert.equal(parsePaneState("0 0 1 120 30 claude")?.shell, false);
+  assert.equal(parsePaneState("0 0 1 120 30 node")?.shell, false);
+  assert.equal(parsePaneState("0 0 1 120 30"), null);
   assert.equal(parsePaneState(null), null);
 });

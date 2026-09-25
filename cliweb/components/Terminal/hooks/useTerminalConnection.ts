@@ -183,6 +183,7 @@ export function useTerminalConnection({
     if (
       cached &&
       !cached.page &&
+      cached.seq === outputSeqRef.current &&
       Date.now() - cached.at < HISTORY_UNAVAILABLE_TTL_MS
     ) {
       return Promise.resolve<HistoryPage | null>(null);
@@ -191,6 +192,9 @@ export function useTerminalConnection({
     const request =
       managerRef.current?.requestHistory(count) ?? Promise.resolve(null);
     return request.then((page) => {
+      // An output chunk may have changed the screen while the server was
+      // capturing it. Never open that stale page over a live TUI redraw.
+      if (seq !== outputSeqRef.current) return null;
       historyCacheRef.current = { seq, at: Date.now(), page };
       return page;
     });
@@ -537,6 +541,14 @@ export function useTerminalConnection({
     if (!adapter) return;
     adapter.applyAppearance(isMobile, theme, fontScale);
   }, [isMobile, theme, fontScale]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    const fitToViewport = () => adapterRef.current?.fit();
+    window.addEventListener("cliweb:viewport-resize", fitToViewport);
+    return () =>
+      window.removeEventListener("cliweb:viewport-resize", fitToViewport);
+  }, [isMobile]);
 
   useEffect(() => {
     const adapter = adapterRef.current;

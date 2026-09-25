@@ -84,6 +84,34 @@ test("detects a chat band scrolling between fixed chrome", () => {
   });
 });
 
+test("several row mutation batches are read in one display frame", () => {
+  const previous = globalThis.MutationObserver;
+  let notify: MutationCallback | null = null;
+  globalThis.MutationObserver = class {
+    constructor(callback: MutationCallback) {
+      notify = callback;
+    }
+    observe() {}
+    disconnect() {}
+  } as unknown as typeof MutationObserver;
+
+  const screen = createScreen(view(20));
+  const { pan, frames, runFrames } = createPan(screen);
+  try {
+    pan.begin(ROW);
+    const trigger = notify as MutationCallback | null;
+    assert.ok(trigger);
+    trigger([], {} as MutationObserver);
+    trigger([], {} as MutationObserver);
+    assert.equal(frames.length, 1);
+    runFrames(0, 1);
+    assert.equal(frames.length, 0);
+  } finally {
+    pan.dispose();
+    globalThis.MutationObserver = previous;
+  }
+});
+
 test("repeated border lines are not mistaken for a scroll", () => {
   const box = ["│          │", "│          │", "│          │", "│          │"];
   assert.equal(detectScrollShift(box, box, 1), null);

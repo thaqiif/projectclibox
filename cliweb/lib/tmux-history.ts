@@ -18,6 +18,29 @@ const execFileAsync = promisify(execFile);
 
 export const MAX_HISTORY_LINES = 5000;
 
+// An inline TUI can leave tmux's alternate-screen flag off. Only a shell's
+// scrollback can be presented as a local history view; a command such as
+// Claude, less, or a REPL owns its current screen even when alternate_on=0.
+const SHELL_COMMANDS = new Set([
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
+  "dash",
+  "ash",
+  "ksh",
+  "mksh",
+  "csh",
+  "tcsh",
+  "nu",
+  "pwsh",
+  "powershell",
+  "elvish",
+  "xonsh",
+]);
+const PANE_STATE_FORMAT =
+  "#{alternate_on} #{pane_in_mode} #{window_panes} #{history_size} #{pane_height} #{pane_current_command}";
+
 export type PaneHistory =
   | { available: false }
   | {
@@ -55,14 +78,25 @@ export function parsePaneState(out: string | null): {
   height: number;
 } | null {
   if (!out) return null;
-  const [alternate, inMode, panes, history, height] = out.trim().split(" ");
+  const [alternate, inMode, panes, history, height, command] = out
+    .trim()
+    .split(/\s+/);
   const historySize = Number(history);
   const rows = Number(height);
-  if (!Number.isInteger(historySize) || !Number.isInteger(rows) || rows <= 0) {
+  if (
+    !Number.isInteger(historySize) ||
+    !Number.isInteger(rows) ||
+    rows <= 0 ||
+    !command
+  ) {
     return null;
   }
   return {
-    shell: alternate === "0" && inMode === "0" && panes === "1",
+    shell:
+      alternate === "0" &&
+      inMode === "0" &&
+      panes === "1" &&
+      SHELL_COMMANDS.has(command),
     historySize,
     height: rows,
   };
@@ -78,7 +112,7 @@ export async function capturePaneHistory(
       "-p",
       "-t",
       session,
-      "#{alternate_on} #{pane_in_mode} #{window_panes} #{history_size} #{pane_height}",
+      PANE_STATE_FORMAT,
     ])
   );
   if (!state?.shell) return { available: false };
@@ -101,6 +135,23 @@ export async function capturePaneHistory(
     String(state.height - 1),
   ]);
   if (out === null) return { available: false };
+  // A shell may launch a TUI while capture-pane is in flight. Returning that
+  // mixed screen as shell history makes the first swipe flash older content.
+  const after = parsePaneState(
+    await tmuxOutput([
+      "display-message",
+      "-p",
+      "-t",
+      session,
+      PANE_STATE_FORMAT,
+    ])
+  );
+  if (
+    !after?.shell ||
+    after.height !== state.height ||
+    after.historySize !== state.historySize
+  )
+    return { available: false };
   const lines = out.split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
   if (lines.length !== history + state.height) return { available: false };

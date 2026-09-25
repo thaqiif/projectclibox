@@ -15,17 +15,16 @@ import { useEffect } from "react";
 export function useViewportHeight() {
   useEffect(() => {
     const viewport = window.visualViewport;
-    let frame: number | null = null;
     let settleTimer: ReturnType<typeof setTimeout> | null = null;
 
     const setAppHeight = () => {
-      frame = null;
       // Use visualViewport if available (more accurate on mobile with keyboard).
       const visibleHeight = viewport?.height ?? window.innerHeight;
       if (!Number.isFinite(visibleHeight) || visibleHeight <= 0) return;
       const height = `${Math.round(visibleHeight)}px`;
       const root = document.documentElement.style;
-      if (root.getPropertyValue("--app-height") !== height) {
+      const heightChanged = root.getPropertyValue("--app-height") !== height;
+      if (heightChanged) {
         root.setProperty("--app-height", height);
       }
       // With the keyboard open, iOS pans the visible area down the page to
@@ -35,21 +34,22 @@ export function useViewportHeight() {
       if (root.getPropertyValue("--app-offset-top") !== offsetTop) {
         root.setProperty("--app-offset-top", offsetTop);
       }
-    };
-
-    const scheduleMeasurement = () => {
-      if (frame !== null) return;
-      frame = window.requestAnimationFrame(setAppHeight);
+      // The terminal must fit the new flex height in this same viewport
+      // update. Waiting for its ResizeObserver adds a visible extra frame
+      // while the iOS keyboard animates.
+      if (heightChanged) {
+        window.dispatchEvent(new Event("cliweb:viewport-resize"));
+      }
     };
 
     const scheduleSettledMeasurement = () => {
-      scheduleMeasurement();
+      setAppHeight();
       if (settleTimer !== null) clearTimeout(settleTimer);
       // Mobile browsers animate the keyboard and may report intermediate
       // viewport sizes. Re-read once the close/open animation has settled.
       settleTimer = setTimeout(() => {
         settleTimer = null;
-        scheduleMeasurement();
+        setAppHeight();
       }, 260);
     };
 
@@ -71,7 +71,7 @@ export function useViewportHeight() {
     // can also change its visible height in browsers that pan the viewport.
     if (viewport) {
       viewport.addEventListener("resize", scheduleSettledMeasurement);
-      viewport.addEventListener("scroll", scheduleMeasurement);
+      viewport.addEventListener("scroll", setAppHeight);
     }
 
     // Handle orientation changes
@@ -80,7 +80,6 @@ export function useViewportHeight() {
     }
 
     return () => {
-      if (frame !== null) window.cancelAnimationFrame(frame);
       if (settleTimer !== null) clearTimeout(settleTimer);
       window.removeEventListener("resize", scheduleSettledMeasurement);
       window.removeEventListener("pageshow", scheduleSettledMeasurement);
@@ -92,7 +91,7 @@ export function useViewportHeight() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (viewport) {
         viewport.removeEventListener("resize", scheduleSettledMeasurement);
-        viewport.removeEventListener("scroll", scheduleMeasurement);
+        viewport.removeEventListener("scroll", setAppHeight);
       }
       if ("orientation" in screen) {
         screen.orientation.removeEventListener(

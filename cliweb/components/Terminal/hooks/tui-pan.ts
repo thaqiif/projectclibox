@@ -232,6 +232,8 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
   // Rows the app keeps pinned at the pane's top and bottom, as last seen.
   let pinned = { top: 0, bottom: 0 };
   let resyncTimer: ReturnType<typeof setTimeout> | null = null;
+  let redrawFrame: number | null = null;
+  let observing = false;
 
   const rowElements = (): HTMLElement[] =>
     grid
@@ -243,10 +245,19 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
       : [];
   const readRows = () => rowElements().map((row) => row.textContent ?? "");
 
+  // WTerm replaces several row spans in one render and linkification can
+  // mutate them again immediately afterwards. Read one settled DOM snapshot
+  // per display frame instead of treating each mutation batch as a scroll.
   const observer =
     typeof MutationObserver === "undefined"
       ? null
-      : new MutationObserver(() => handleRedraw());
+      : new MutationObserver(() => {
+          if (redrawFrame !== null) return;
+          redrawFrame = requestFrame(() => {
+            redrawFrame = null;
+            handleRedraw();
+          });
+        });
 
   /** Whole rows the content can still move in `direction`. */
   const room = (direction: PanDirection): number => {
@@ -620,20 +631,24 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
     if (measuredRowHeight > 0) rowHeight = measuredRowHeight;
     const nextGrid = element.querySelector<HTMLElement>(".term-grid");
     if (nextGrid !== grid) {
+      if (redrawFrame !== null) cancelFrame(redrawFrame);
+      redrawFrame = null;
       clearStyles();
       observer?.disconnect();
+      observing = false;
       grid = nextGrid;
       band = null;
       active = false;
-      if (grid) {
-        observer?.observe(grid, {
-          childList: true,
-          subtree: true,
-          characterData: true,
-        });
-      }
     }
     if (!grid) return;
+    if (observer && !observing) {
+      observer.observe(grid, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+      observing = true;
+    }
     if (!active) {
       snapshot = readRows();
       copyMode = readCopyModePosition(snapshot[0]);
@@ -807,6 +822,10 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
       panTotal -= contentMoved * rowHeight;
       contentMoved = 0;
       active = false;
+      if (redrawFrame !== null) cancelFrame(redrawFrame);
+      redrawFrame = null;
+      observer?.disconnect();
+      observing = false;
       clearStyles();
       element.classList.remove("touch-panning");
     };
@@ -890,11 +909,14 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
   };
 
   const dispose = () => {
+    if (redrawFrame !== null) cancelFrame(redrawFrame);
+    redrawFrame = null;
     cancelResync();
     cancelFling();
     cancelSettle();
     clearEdgeTimer();
     observer?.disconnect();
+    observing = false;
     clearStyles();
     element.classList.remove("touch-panning");
   };

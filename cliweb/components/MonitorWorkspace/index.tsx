@@ -569,6 +569,9 @@ export function MonitorWorkspace({
                 (candidate) => candidate.id === pane.terminalId
               );
               const label = terminal?.name ?? `Empty ${index + 1}`;
+              const projectName = terminal
+                ? (projectNameFor(terminal, projects) ?? "Uncategorized")
+                : null;
               const selected = pane.id === selectedPaneId;
 
               return (
@@ -580,17 +583,24 @@ export function MonitorWorkspace({
                   aria-selected={selected}
                   aria-controls={`monitor-panel-${index}`}
                   tabIndex={selected ? 0 : -1}
-                  title={label}
+                  title={projectName ? `${label} · ${projectName}` : label}
                   onClick={() => onSelectPane?.(pane.id)}
                   onKeyDown={(event) => handleTabKeyDown(event, index)}
                   className={cn(
-                    "press-sm focus-ring flex h-9 min-w-0 flex-1 items-center justify-center rounded-sm px-1.5 text-[0.75rem] font-medium transition-colors",
+                    "press-sm focus-ring flex h-9 min-w-0 flex-1 flex-col items-start justify-center rounded-sm px-1.5 text-left transition-colors",
                     selected
                       ? "bg-[var(--shell-selected)] text-foreground"
                       : "text-muted-foreground hover:bg-[var(--shell-hover)] hover:text-foreground"
                   )}
                 >
-                  <span className="truncate">{label}</span>
+                  <span className="block w-full truncate text-[0.75rem] leading-4 font-medium">
+                    {label}
+                  </span>
+                  {projectName && (
+                    <span className="block w-full truncate text-[0.625rem] leading-3 opacity-70">
+                      {projectName}
+                    </span>
+                  )}
                 </button>
               );
             })}

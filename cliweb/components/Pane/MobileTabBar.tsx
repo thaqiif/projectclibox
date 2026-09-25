@@ -139,16 +139,13 @@ function MobileTerminalTitle({
       type="button"
       onDoubleClick={startEditing}
       title="Double-click to rename"
-      className="press focus-ring flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-sm px-2 text-left transition-colors hover:bg-[var(--shell-hover)]"
+      className="press focus-ring flex h-9 min-w-0 flex-1 flex-col justify-center rounded-sm px-2 text-left transition-colors hover:bg-[var(--shell-hover)]"
     >
-      <span className="truncate text-[0.8125rem] font-medium tracking-[-0.006em]">
+      <span className="block w-full truncate text-[0.8125rem] leading-4 font-medium tracking-[-0.006em]">
         {name}
-        {projectName && projectName !== "Uncategorized" && (
-          <span className="text-muted-foreground font-normal">
-            {" · "}
-            {projectName}
-          </span>
-        )}
+      </span>
+      <span className="text-muted-foreground block w-full truncate text-[0.625rem] leading-3">
+        {projectName || "Uncategorized"}
       </span>
     </button>
   );
