@@ -38,42 +38,41 @@ export function keepMobileBackspaceRepeating(
   const textarea =
     element.querySelector<HTMLTextAreaElement>(":scope > textarea");
   if (!textarea) return () => {};
-  let fallback: ReturnType<typeof setTimeout> | null = null;
+  let unmatchedKeydowns = 0;
+  let clearKeydownsTimer: ReturnType<typeof setTimeout> | null = null;
 
   const arm = () => {
     if (textarea.value !== "") return;
     textarea.value = " ";
     textarea.setSelectionRange(1, 1);
   };
-  const clearFallback = () => {
-    if (fallback !== null) clearTimeout(fallback);
-    fallback = null;
+  const clearKeydowns = () => {
+    if (clearKeydownsTimer !== null) clearTimeout(clearKeydownsTimer);
+    clearKeydownsTimer = null;
+    unmatchedKeydowns = 0;
   };
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "Backspace") return;
-    // Let the browser emit beforeinput, while keeping WTerm's keydown path
-    // from sending the same deletion a second time.
+    // A keydown deletes immediately. iOS can deliver its matching beforeinput
+    // in a later task, so a zero-delay fallback can delete the same cell twice.
     event.stopImmediatePropagation();
     arm();
-    clearFallback();
-    // Hardware keyboards that do not issue beforeinput still delete once
-    // per (possibly repeated) keydown.
-    fallback = setTimeout(() => {
-      fallback = null;
-      onBackspace();
-      arm();
-    }, 0);
+    onBackspace();
+    unmatchedKeydowns += 1;
+    if (clearKeydownsTimer !== null) clearTimeout(clearKeydownsTimer);
+    clearKeydownsTimer = setTimeout(clearKeydowns, 500);
   };
   const onKeyUp = (event: KeyboardEvent) => {
     if (event.key === "Backspace") event.stopImmediatePropagation();
   };
   const onBeforeInput = (event: InputEvent) => {
     if (event.inputType === "deleteContentBackward") {
-      clearFallback();
       if (event.cancelable) event.preventDefault();
-      onBackspace();
+      if (unmatchedKeydowns > 0) unmatchedKeydowns -= 1;
+      else onBackspace();
       queueMicrotask(arm);
     } else if (textarea.value === " ") {
+      clearKeydowns();
       // Let WTerm's input handler see only newly typed text.
       textarea.value = "";
     }
@@ -84,7 +83,7 @@ export function keepMobileBackspaceRepeating(
     }
   };
   const onBlur = () => {
-    clearFallback();
+    clearKeydowns();
     textarea.value = "";
   };
 
@@ -94,7 +93,7 @@ export function keepMobileBackspaceRepeating(
   textarea.addEventListener("input", onInput, true);
   textarea.addEventListener("blur", onBlur, true);
   return () => {
-    clearFallback();
+    clearKeydowns();
     textarea.removeEventListener("keydown", onKeyDown, true);
     textarea.removeEventListener("keyup", onKeyUp, true);
     textarea.removeEventListener("beforeinput", onBeforeInput, true);

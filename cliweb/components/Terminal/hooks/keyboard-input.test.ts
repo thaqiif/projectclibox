@@ -14,7 +14,7 @@ function beforeInput(inputType: string): InputEvent {
   return event as InputEvent;
 }
 
-test("held mobile Backspace sends every delete input once", async () => {
+test("mobile Backspace pairs a delayed beforeinput with its keydown", async () => {
   const textarea = new EventTarget() as HTMLTextAreaElement;
   textarea.value = "";
   textarea.setSelectionRange = () => {};
@@ -29,9 +29,12 @@ test("held mobile Backspace sends every delete input once", async () => {
   textarea.addEventListener("keydown", () => wtermKeydowns++);
   try {
     textarea.dispatchEvent(keyboardEvent("keydown", "Backspace"));
-    for (let i = 0; i < 3; i += 1) {
+    assert.deepEqual(sent, ["\x7f"]);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    textarea.dispatchEvent(beforeInput("deleteContentBackward"));
+    assert.deepEqual(sent, ["\x7f"]);
+    for (let i = 0; i < 2; i += 1)
       textarea.dispatchEvent(beforeInput("deleteContentBackward"));
-    }
     await new Promise((resolve) => setTimeout(resolve, 1));
     assert.deepEqual(sent, ["\x7f", "\x7f", "\x7f"]);
     assert.equal(wtermKeydowns, 0);
@@ -47,7 +50,7 @@ test("held mobile Backspace sends every delete input once", async () => {
   }
 });
 
-test("hardware Backspace keydown still sends one delete without beforeinput", async () => {
+test("hardware Backspace keydowns each send one delete without beforeinput", async () => {
   const textarea = new EventTarget() as HTMLTextAreaElement;
   textarea.value = "";
   textarea.setSelectionRange = () => {};
@@ -56,8 +59,9 @@ test("hardware Backspace keydown still sends one delete without beforeinput", as
   const cleanup = keepMobileBackspaceRepeating(element, () => count++);
   try {
     textarea.dispatchEvent(keyboardEvent("keydown", "Backspace"));
+    textarea.dispatchEvent(keyboardEvent("keydown", "Backspace"));
     await new Promise((resolve) => setTimeout(resolve, 1));
-    assert.equal(count, 1);
+    assert.equal(count, 2);
     assert.equal(textarea.value, " ");
   } finally {
     cleanup();
