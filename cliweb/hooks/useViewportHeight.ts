@@ -34,6 +34,22 @@ export function useViewportHeight() {
       if (root.getPropertyValue("--app-offset-top") !== offsetTop) {
         root.setProperty("--app-offset-top", offsetTop);
       }
+      // The home-indicator gap belongs below the toolbar only when the
+      // keyboard is hidden. iOS shrinks visualViewport while keeping the
+      // layout viewport tall; the screen-height check also covers browsers
+      // that resize both viewports with an editable field focused.
+      const editing =
+        document.activeElement?.matches("input, textarea, [contenteditable]") ??
+        false;
+      const keyboardOpen =
+        window.innerWidth < 768 &&
+        Math.max(
+          window.innerHeight - visibleHeight,
+          editing ? screen.height - visibleHeight : 0
+        ) > 150;
+      document.documentElement.dataset.mobileKeyboard = keyboardOpen
+        ? "open"
+        : "closed";
       // The terminal must fit the new flex height in this same viewport
       // update. Waiting for its ResizeObserver adds a visible extra frame
       // while the iOS keyboard animates.

@@ -15,19 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
-
-// ANSI escape sequences
-const SPECIAL_KEYS = {
-  UP: "\x1b[A",
-  DOWN: "\x1b[B",
-  LEFT: "\x1b[D",
-  RIGHT: "\x1b[C",
-  ESC: "\x1b",
-  TAB: "\t",
-  SHIFT_TAB: "\x1b[Z",
-  NEWLINE: "\x1b\r",
-  CTRL_C: "\x03",
-} as const;
+import { terminalKeySequence } from "./terminal-key-sequences";
 
 interface TerminalToolbarProps {
   onKeyPress: (key: string) => void;
@@ -348,50 +336,77 @@ export function TerminalToolbar({
     }
   }, [onCopy]);
 
-  // Ctrl modifier: when armed, the next physical keystroke is sent as a
-  // control character (Ctrl+A..Z and @ [ \\ ] ^ _ ?). Captured at the window
-  // level so it works with the native keyboard; mobile soft keyboards may
-  // not emit keydown, which is why the on-screen ^C/^D buttons remain.
+  // Virtual modifiers also apply to the next native keyboard key. iOS soft
+  // keyboards may skip keydown for printable text, so cover beforeinput too.
   useEffect(() => {
-    if (!ctrlActive) return;
-    const handler = (e: KeyboardEvent) => {
-      const k = e.key;
-      if (k === "Control" || k === "Shift" || k === "Alt" || k === "Meta")
-        return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (k.length === 1) {
-        if (k === " ") onKeyPress("\x00");
-        else if (k === "?") onKeyPress("\x7f");
-        else {
-          const c = k.toUpperCase().charCodeAt(0);
-          if (c >= 64 && c <= 95) onKeyPress(String.fromCharCode(c & 0x1f));
-        }
-      }
+    if (!shiftActive && !ctrlActive && !altActive) return;
+    const modifiers = { shift: shiftActive, ctrl: ctrlActive, alt: altActive };
+    const clear = () => {
+      setShiftActive(false);
       setCtrlActive(false);
-    };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, [ctrlActive, onKeyPress]);
-
-  // Alt/Option modifier: when armed, the next physical key is sent ESC-
-  // prefixed (Meta). This supports Alt+Enter and word navigation in common
-  // shells and terminal applications. Same window-level capture as Ctrl.
-  useEffect(() => {
-    if (!altActive) return;
-    const handler = (e: KeyboardEvent) => {
-      const k = e.key;
-      if (k === "Control" || k === "Shift" || k === "Alt" || k === "Meta")
-        return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (k === "Enter") onKeyPress("\x1b\r");
-      else if (k.length === 1) onKeyPress("\x1b" + k);
       setAltActive(false);
     };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, [altActive, onKeyPress]);
+    const isTerminalInput = (target: EventTarget | null) =>
+      target instanceof HTMLTextAreaElement &&
+      target.parentElement?.classList.contains("wterm");
+    let handledPrintableKeyDown = false;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isTerminalInput(event.target) || event.isComposing) return;
+      if (["Shift", "Control", "Alt", "Meta"].includes(event.key)) return;
+      // The mobile Backspace bridge owns delete repeats and their input
+      // events; intercepting the first key here would send it twice.
+      if (event.key === "Backspace") {
+        clear();
+        return;
+      }
+      const sequence = terminalKeySequence(event.key, modifiers);
+      if (sequence === null) return;
+      handledPrintableKeyDown = event.key.length === 1;
+      event.preventDefault();
+      event.stopPropagation();
+      onKeyPress(sequence);
+      clear();
+    };
+    const onBeforeInput = (event: InputEvent) => {
+      if (
+        !isTerminalInput(event.target) ||
+        event.isComposing ||
+        event.inputType !== "insertText" ||
+        !event.data
+      )
+        return;
+      if (handledPrintableKeyDown) {
+        handledPrintableKeyDown = false;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      const sequence = terminalKeySequence(event.data, modifiers);
+      if (sequence === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onKeyPress(sequence);
+      clear();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("beforeinput", onBeforeInput, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("beforeinput", onBeforeInput, true);
+    };
+  }, [shiftActive, ctrlActive, altActive, onKeyPress]);
+
+  const modifiers = { shift: shiftActive, ctrl: ctrlActive, alt: altActive };
+  const clearModifiers = () => {
+    setShiftActive(false);
+    setCtrlActive(false);
+    setAltActive(false);
+  };
+  const pressToolbarKey = (key: string) => {
+    const sequence = terminalKeySequence(key, modifiers);
+    if (sequence) onKeyPress(sequence);
+    clearModifiers();
+  };
 
   // Keep taps as native clicks for keyboard/assistive-tech support. A
   // stationary pointer hold starts typematic repeat after 300ms; moving
@@ -481,15 +496,15 @@ export function TerminalToolbar({
   }, []);
 
   const buttons = [
-    { label: "Esc", key: SPECIAL_KEYS.ESC },
-    { label: "^C", key: SPECIAL_KEYS.CTRL_C, highlight: true },
-    { label: "Tab", key: SPECIAL_KEYS.TAB },
-    { label: "⇧Tab", key: SPECIAL_KEYS.SHIFT_TAB },
-    { label: "↵ NL", key: SPECIAL_KEYS.NEWLINE },
-    { label: "←", key: SPECIAL_KEYS.LEFT },
-    { label: "→", key: SPECIAL_KEYS.RIGHT },
-    { label: "↑", key: SPECIAL_KEYS.UP },
-    { label: "↓", key: SPECIAL_KEYS.DOWN },
+    { label: "Esc", key: "Escape" },
+    { label: "^C", key: "ControlC", highlight: true },
+    { label: "Tab", key: "Tab" },
+    { label: "⇧Tab", key: "ShiftTab" },
+    { label: "↵ NL", key: "Newline" },
+    { label: "←", key: "ArrowLeft" },
+    { label: "→", key: "ArrowRight" },
+    { label: "↑", key: "ArrowUp" },
+    { label: "↓", key: "ArrowDown" },
   ];
 
   return (
@@ -508,7 +523,7 @@ export function TerminalToolbar({
         // Opaque for the same reason as the mobile header: this row sits on the
         // bottom viewport edge, under the home indicator in a saved-to-home-
         // screen iOS session.
-        className="terminal-toolbar glass-edge-top scrollbar-none relative z-10 flex items-stretch gap-1 overflow-x-auto bg-[var(--shell-bar)] px-1.5 pt-1.5 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
+        className="terminal-toolbar glass-edge-top scrollbar-none relative z-10 flex items-stretch gap-1 overflow-x-auto bg-[var(--shell-bar)] px-1.5 pt-1.5"
         onTouchEnd={(e) => e.stopPropagation()}
       >
         {/* Mic button */}
@@ -661,9 +676,13 @@ export function TerminalToolbar({
           type="button"
           onPointerDown={(e) => {
             if (!e.isPrimary || e.button !== 0) return;
-            const key = shiftActive ? "\n" : "\r";
-            startKeyRepeat(key, e.pointerId, e.clientX, e.clientY, () =>
-              setShiftActive(false)
+            const key = terminalKeySequence("Enter", modifiers) ?? "\r";
+            startKeyRepeat(
+              key,
+              e.pointerId,
+              e.clientX,
+              e.clientY,
+              clearModifiers
             );
           }}
           onPointerMove={(e) => {
@@ -682,8 +701,7 @@ export function TerminalToolbar({
           onClick={(e) => {
             e.stopPropagation();
             if (e.detail !== 0 && consumeSuppressedClick()) return;
-            onKeyPress(shiftActive ? "\n" : "\r");
-            setShiftActive(false);
+            pressToolbarKey("Enter");
           }}
           className="press focus-ring text-muted-foreground hover:text-foreground active:text-foreground relative flex h-11 min-w-[3.25rem] shrink-0 items-center justify-center rounded-lg px-2 text-[0.9375rem] transition-colors duration-200 hover:bg-[var(--fill-3)]"
         >
@@ -697,7 +715,15 @@ export function TerminalToolbar({
             key={btn.label}
             onPointerDown={(e) => {
               if (!e.isPrimary || e.button !== 0) return;
-              startKeyRepeat(btn.key, e.pointerId, e.clientX, e.clientY);
+              const key = terminalKeySequence(btn.key, modifiers);
+              if (key)
+                startKeyRepeat(
+                  key,
+                  e.pointerId,
+                  e.clientX,
+                  e.clientY,
+                  clearModifiers
+                );
             }}
             onPointerMove={(e) => {
               trackKeyRepeatPointer(e.pointerId, e.clientX, e.clientY);
@@ -715,7 +741,7 @@ export function TerminalToolbar({
             onClick={(e) => {
               e.stopPropagation();
               if (e.detail !== 0 && consumeSuppressedClick()) return;
-              onKeyPress(btn.key);
+              pressToolbarKey(btn.key);
             }}
             className={cn(
               "press focus-ring relative flex h-11 min-w-[3.25rem] shrink-0 items-center justify-center rounded-lg px-2 text-[0.75rem] font-medium transition-colors duration-200",

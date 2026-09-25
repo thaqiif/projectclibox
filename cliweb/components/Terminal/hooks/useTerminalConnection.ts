@@ -25,7 +25,10 @@ import {
   historyViewFor,
   type HistoryPage,
 } from "./history-view";
-import { keepKeyboardInputInView } from "./keyboard-input";
+import {
+  keepKeyboardInputInView,
+  keepMobileBackspaceRepeating,
+} from "./keyboard-input";
 import { createNativePanes } from "./native-panes";
 import { closeNativeView } from "./native-view";
 import { ENABLE_SMOOTH_TOUCH_SCROLL, setupTouchScroll } from "./touch-scroll";
@@ -101,6 +104,7 @@ export function useTerminalConnection({
   const touchCleanupRef = useRef<(() => void) | null>(null);
   const copyModeExitRef = useRef<CopyModeExit | null>(null);
   const keyboardInputCleanupRef = useRef<(() => void) | null>(null);
+  const mobileBackspaceCleanupRef = useRef<(() => void) | null>(null);
   const callbacksRef = useRef({
     onConnected,
     onDisconnected,
@@ -403,6 +407,12 @@ export function useTerminalConnection({
       });
       copyModeExitRef.current = createCopyModeExit(adapter.terminal.element);
       const keyboardCleanup = keepKeyboardInputInView(adapter.terminal.element);
+      if (appearanceRef.current.isMobile) {
+        mobileBackspaceCleanupRef.current = keepMobileBackspaceRepeating(
+          adapter.terminal.element,
+          () => sendInput("\x7f")
+        );
+      }
       const wheelCleanup = createCopyModeWheel(
         adapter.terminal.element,
         () => rowHeightOf(adapter.terminal.element),
@@ -518,6 +528,8 @@ export function useTerminalConnection({
       copyModeExitRef.current = null;
       keyboardInputCleanupRef.current?.();
       keyboardInputCleanupRef.current = null;
+      mobileBackspaceCleanupRef.current?.();
+      mobileBackspaceCleanupRef.current = null;
       adapterRef.current?.dispose();
       osc52Filter.reset();
       adapterRef.current = null;
@@ -541,6 +553,15 @@ export function useTerminalConnection({
     if (!adapter) return;
     adapter.applyAppearance(isMobile, theme, fontScale);
   }, [isMobile, theme, fontScale]);
+
+  useEffect(() => {
+    const element = terminalInstanceRef.current?.element;
+    if (!element) return;
+    mobileBackspaceCleanupRef.current?.();
+    mobileBackspaceCleanupRef.current = isMobile
+      ? keepMobileBackspaceRepeating(element, () => sendInput("\x7f"))
+      : null;
+  }, [isMobile, sendInput]);
 
   useEffect(() => {
     if (!isMobile) return;

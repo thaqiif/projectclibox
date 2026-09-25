@@ -313,6 +313,14 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+.terminal-toolbar {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+}
+
+html[data-mobile-keyboard="open"] .terminal-toolbar {
+  padding-bottom: 0.375rem;
+}
+
 /* Mobile keyboard viewport handling */
 /* h-app uses --app-height which is set dynamically by useViewportHeight hook */
 .h-app {
