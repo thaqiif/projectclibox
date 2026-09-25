@@ -1,6 +1,7 @@
 "use client";
 
 import { ansiLineToHtml } from "./ansi-html";
+import { MOMENTUM_STOP_VELOCITY, MOMENTUM_TIME_CONSTANT_MS } from "./momentum";
 
 /**
  * A shell's scrollback, scrolled entirely in the browser.
@@ -35,8 +36,6 @@ export interface HistoryView {
   close(): void;
 }
 
-const FLING_TIME_CONSTANT_MS = 325;
-const MIN_FLING_VELOCITY = 0.02;
 const views = new WeakMap<HTMLElement, HistoryView>();
 
 export function historyViewFor(element: HTMLElement): HistoryView | null {
@@ -139,7 +138,7 @@ export function openHistoryView(
     fling(velocity, onRest) {
       cancelFling();
       if (closed) return;
-      if (Math.abs(velocity) < MIN_FLING_VELOCITY) {
+      if (Math.abs(velocity) < MOMENTUM_STOP_VELOCITY) {
         onRest?.();
         return;
       }
@@ -150,9 +149,9 @@ export function openHistoryView(
         previous = time;
         const before = offset;
         setOffset(offset + v * elapsed);
-        v *= Math.exp(-elapsed / FLING_TIME_CONSTANT_MS);
+        v *= Math.exp(-elapsed / MOMENTUM_TIME_CONSTANT_MS);
         // Momentum stops dead at either end rather than bouncing.
-        if (Math.abs(v) < MIN_FLING_VELOCITY || offset === before) {
+        if (Math.abs(v) < MOMENTUM_STOP_VELOCITY || offset === before) {
           flingFrame = null;
           onRest?.();
           return;

@@ -16,7 +16,12 @@ import {
   type HistoryView,
 } from "./history-view";
 import type { NativePanes, NativeScrollTarget } from "./native-panes";
-import { createTuiPan, FLING_TIME_CONSTANT_MS } from "./tui-pan";
+import {
+  createVelocityTracker,
+  MOMENTUM_STOP_VELOCITY,
+  MOMENTUM_TIME_CONSTANT_MS,
+} from "./momentum";
+import { createTuiPan } from "./tui-pan";
 
 interface TouchScrollConfig {
   terminal: WTerm;
@@ -30,11 +35,8 @@ interface TouchScrollConfig {
 }
 
 const FALLBACK_ROW_HEIGHT = 20;
-const TOUCH_VELOCITY_SAMPLE_WEIGHT = 0.45;
-const MIN_INERTIA_VELOCITY = 0.015;
+
 const GESTURE_SLOP_PX = 8;
-// A finger that stopped before lifting should not fling.
-const RELEASE_STILL_MS = 60;
 // The first page of scrollback is small so it arrives quickly; the rest
 // follows in the background.
 const HISTORY_FIRST_PAGE = 300;
@@ -59,8 +61,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
   let startX = 0;
   let startY = 0;
   let lastY = 0;
-  let lastTouchTime = 0;
-  let velocityY = 0;
+  const velocity = createVelocityTracker();
   let gestureActive = false;
   // normal: WTerm's own scrollback; pan: tmux or a TUI moves the text;
   // history: a local copy of the shell's scrollback; deciding: waiting to
@@ -216,8 +217,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     startX = touch.clientX;
     startY = touch.clientY;
     lastY = touch.clientY;
-    lastTouchTime = performance.now();
-    velocityY = 0;
+    velocity.reset();
     gestureActive = true;
     scrollDirection = null;
     // A touch landing on a moving view catches it, like a native list.
@@ -254,7 +254,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
         scrollDirection = deltaX > deltaY ? "horizontal" : "vertical";
         // Start tracking from here so the slop does not jump the view.
         lastY = touch.clientY;
-        lastTouchTime = performance.now();
+        velocity.add(event.timeStamp, touch.clientY);
       }
       return;
     }
@@ -263,13 +263,9 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     if (event.cancelable) event.preventDefault();
     event.stopPropagation();
 
-    const now = performance.now();
     const deltaY = touch.clientY - lastY;
-    const elapsed = Math.max(1, now - lastTouchTime);
     lastY = touch.clientY;
-    lastTouchTime = now;
-    const sampleVelocity = deltaY / elapsed;
-    velocityY += (sampleVelocity - velocityY) * TOUCH_VELOCITY_SAMPLE_WEIGHT;
+    velocity.add(event.timeStamp, touch.clientY);
     pendingDeltaY += deltaY;
     if (moveFrame === null) moveFrame = requestAnimationFrame(flushMove);
   }
@@ -323,8 +319,9 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     });
   }
 
-  const startInertia = (velocity: number) => {
-    if (Math.abs(velocity) < MIN_INERTIA_VELOCITY) return;
+  const startInertia = (initial: number) => {
+    let velocity = initial;
+    if (velocity === 0) return;
 
     let previousFrameTime = 0;
     const animate = (time: number) => {
@@ -338,9 +335,9 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
       previousFrameTime = time;
       const deltaY = velocity * elapsed;
       if (Math.abs(deltaY) >= 0.1) applyFingerDelta(deltaY);
-      velocity *= Math.exp(-elapsed / FLING_TIME_CONSTANT_MS);
+      velocity *= Math.exp(-elapsed / MOMENTUM_TIME_CONSTANT_MS);
 
-      if (Math.abs(velocity) > MIN_INERTIA_VELOCITY) {
+      if (Math.abs(velocity) > MOMENTUM_STOP_VELOCITY) {
         inertiaFrame = requestAnimationFrame(animate);
       } else {
         inertiaFrame = null;
@@ -350,7 +347,7 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     inertiaFrame = requestAnimationFrame(animate);
   };
 
-  function handleTouchEnd() {
+  function handleTouchEnd(event?: Event) {
     unlistenTarget();
     if (!gestureActive) return;
     gestureActive = false;
@@ -358,20 +355,20 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
       cancelAnimationFrame(moveFrame);
       flushMove();
     }
-    const still = performance.now() - lastTouchTime > RELEASE_STILL_MS;
-    const velocity =
-      scrollDirection === "vertical" && !still && !selectModeRef.current
-        ? velocityY
+    // Only a real flick coasts (see momentum.ts).
+    const release =
+      scrollDirection === "vertical" && !selectModeRef.current
+        ? velocity.release(event?.timeStamp ?? performance.now())
         : 0;
     if (mode === "history") {
-      releaseHistory(velocity);
+      releaseHistory(release);
     } else if (mode === "deciding") {
-      decidingRelease = velocity;
+      decidingRelease = release;
     } else if (mode === "pan") {
       // Always called, even for taps: it also lets go of the pan.
-      pan.fling(velocity);
+      pan.fling(release);
     } else {
-      startInertia(velocity);
+      startInertia(release);
     }
   }
 

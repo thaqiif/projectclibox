@@ -1,6 +1,7 @@
 "use client";
 
 import { readCopyModePosition } from "./copy-mode";
+import { MOMENTUM_TIME_CONSTANT_MS } from "./momentum";
 import type { NativeScrollTarget } from "./native-panes";
 
 /**
@@ -133,8 +134,11 @@ interface TuiPanConfig {
   cancelFrame?: (handle: number) => void;
 }
 
-/** Momentum time constant; matches iOS's normal deceleration. */
-export const FLING_TIME_CONSTANT_MS = 325;
+// The glide onto a row after a flick decays like momentum, but never
+// slower than this (px/ms), so it lands instead of crawling the last pixels.
+const MIN_GLIDE_SPEED = 0.25;
+// A release without a flick settles onto the nearest row this quickly.
+const SNAP_TIME_CONSTANT_MS = 40;
 const MIN_EDGE_TIMEOUT_MS = 250;
 const SETTLE_MS = 160;
 const LATE_REDRAW_WINDOW_MS = 1200;
@@ -816,7 +820,7 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
     // Project where the momentum would come to rest, clamp it to the
     // history that exists, and round it to a whole step, so the view glides
     // straight onto a row instead of snapping after it stops.
-    let target = panTotal + velocity * FLING_TIME_CONSTANT_MS;
+    let target = panTotal + velocity * MOMENTUM_TIME_CONSTANT_MS;
     const up = room(1);
     const down = room(-1);
     if (Number.isFinite(up)) {
@@ -843,18 +847,27 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
       if (lastDirection === -1) target = Math.min(target, committed);
     }
 
-    const start = panTotal;
-    let startTime: number | null = null;
-    let previous = start;
+    const timeConstant =
+      velocity === 0 ? SNAP_TIME_CONSTANT_MS : MOMENTUM_TIME_CONSTANT_MS;
+    let position = panTotal;
+    let previousPosition = position;
+    let previousTime: number | null = null;
     const frame = (time: number) => {
-      if (startTime === null) startTime = time;
-      const elapsed = time - startTime;
-      const position =
-        target + (start - target) * Math.exp(-elapsed / FLING_TIME_CONSTANT_MS);
-      const done = Math.abs(target - position) < 0.5;
-      const next = done ? target : position;
-      const kept = move(next - previous);
-      previous = next;
+      const elapsed =
+        previousTime === null ? 16 : Math.min(32, time - previousTime);
+      previousTime = time;
+      const remaining = target - position;
+      const speed = Math.max(
+        Math.abs(remaining) / timeConstant,
+        MIN_GLIDE_SPEED
+      );
+      const step =
+        Math.sign(remaining) * Math.min(Math.abs(remaining), speed * elapsed);
+      position += step;
+      const done = Math.abs(target - position) < 0.01;
+      if (done) position = target;
+      const kept = move(position - previousPosition);
+      previousPosition = position;
       if (done || !kept) {
         flingFrame = null;
         finish();
