@@ -6,6 +6,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
@@ -27,7 +28,7 @@ interface ThemeDialogProps {
 function Swatch({ preview }: { preview: ThemeOption["preview"] }) {
   return (
     <span
-      className="flex h-5 w-8 shrink-0 items-center justify-center gap-0.5 rounded overflow-hidden border border-[var(--fill-2)]"
+      className="flex h-5 w-8 shrink-0 items-center justify-center gap-0.5 overflow-hidden rounded border border-[var(--fill-2)]"
       style={{ background: preview.background }}
     >
       <span
@@ -70,7 +71,7 @@ function ThemeRow({
       )}
       {preview ? <Swatch preview={preview} /> : <span className="w-8" />}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[0.8125rem] font-medium leading-tight">
+        <span className="block truncate text-[0.8125rem] leading-tight font-medium">
           {label}
         </span>
         {description && (
@@ -97,22 +98,21 @@ export function ThemeDialog({ open, onOpenChange }: ThemeDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        showCloseButton={false}
-        // No scrim, and parked against the right edge rather than centred:
-        // picking a theme is pointless if the thing it repaints is hidden
-        // behind the picker and dimmed to near-black.
-        overlayClassName="bg-transparent"
-        className="glass-thick glass-float top-4 bottom-4 left-auto right-4 grid-rows-[auto_1fr_auto] translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-md p-0 sm:max-w-xs"
+        // On phones, leave the workbench visible above the picker. On desktop
+        // the same panel stays at the right edge for live theme preview.
+        overlayClassName="bg-black/25 sm:bg-transparent"
+        className="glass-thick glass-float top-auto right-0 bottom-0 left-0 max-h-[78dvh] w-full max-w-none translate-x-0 translate-y-0 grid-rows-[auto_1fr_auto] gap-0 overflow-hidden rounded-t-md rounded-b-none border-x-0 border-b-0 p-0 sm:top-4 sm:right-4 sm:bottom-4 sm:left-auto sm:max-h-none sm:max-w-xs sm:rounded-md sm:border sm:border-[var(--shell-line-strong)]"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Theme</DialogTitle>
+          <DialogDescription>Choose the workbench color theme.</DialogDescription>
         </DialogHeader>
 
-        <div className="edge-fade-bottom flex h-10 shrink-0 items-center px-5 pt-4 pb-3">
+        <div className="edge-fade-bottom flex h-11 shrink-0 items-center px-5">
           <span className="type-headline">Theme</span>
         </div>
 
-        <div className="scrollbar-thin min-h-0 overflow-y-auto py-1">
+        <div className="scrollbar-thin min-h-0 overflow-y-auto py-1 pb-[env(safe-area-inset-bottom)]">
           <ThemeRow
             label="System"
             description="Follow the operating system"
@@ -153,7 +153,7 @@ export function ThemeDialog({ open, onOpenChange }: ThemeDialogProps) {
           ))}
         </div>
 
-        <div className="edge-fade-top flex items-center justify-between px-5 py-3">
+        <div className="edge-fade-top hidden items-center justify-between px-5 py-3 sm:flex">
           <span className="ui-meta">Press Esc or click outside to close</span>
         </div>
       </DialogContent>

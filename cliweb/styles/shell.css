@@ -71,6 +71,16 @@
   .type-title-3 { font-size: 15px; line-height: 1.4; font-weight: 600; letter-spacing: -0.015em; }
   .type-title-2 { font-size: 18px; line-height: 1.35; font-weight: 600; letter-spacing: -0.02em; }
   .type-subhead { font-size: 13px; line-height: 1.5; }
+  .terminal-toolbar button { border-radius: var(--radius-sm); }
+}
+
+@media (max-width: 767px) {
+  .welcome-panel {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding-inline: 0;
+  }
 }
 
 @media (prefers-contrast: more) {

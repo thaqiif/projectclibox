@@ -122,7 +122,9 @@ export function TerminalCard({
         "group press-sm relative flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-sm px-2.5 py-2 text-left",
         "min-h-[44px] md:min-h-[32px]",
         "transition-colors duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
-        isActive ? "bg-primary/12 text-foreground" : "hover:bg-[var(--fill-4)]"
+        isActive
+          ? "text-foreground bg-[var(--shell-selected)]"
+          : "hover:bg-[var(--fill-4)]"
       )}
     >
       <div className="min-w-0 flex-1">

@@ -6,6 +6,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
@@ -91,14 +92,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        overlayClassName="bg-transparent"
-        className="glass-thick glass-float max-h-[90vh] grid-rows-[auto_1fr_auto] gap-0 overflow-hidden rounded-md p-0 sm:top-4 sm:right-4 sm:bottom-4 sm:left-auto sm:max-w-sm sm:translate-x-0 sm:translate-y-0"
+        overlayClassName="bg-black/25 sm:bg-transparent"
+        className="glass-thick glass-float top-auto right-0 bottom-0 left-0 max-h-[78dvh] w-full max-w-none translate-x-0 translate-y-0 grid-rows-[auto_1fr_auto] gap-0 overflow-hidden rounded-t-md rounded-b-none border-x-0 border-b-0 p-0 sm:top-4 sm:right-4 sm:bottom-4 sm:left-auto sm:max-h-[90vh] sm:max-w-sm sm:translate-x-0 sm:translate-y-0 sm:rounded-md sm:border sm:border-[var(--shell-line-strong)]"
       >
-        <DialogHeader className="edge-fade-bottom flex h-10 shrink-0 flex-row items-center px-5 pt-4 pb-3">
+        <DialogHeader className="edge-fade-bottom flex h-11 shrink-0 flex-row items-center px-5">
           <DialogTitle className="type-headline">Settings</DialogTitle>
+          <DialogDescription className="sr-only">
+            Adjust workbench appearance settings.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="scrollbar-thin min-h-0 overflow-y-auto px-5 py-4">
+        <div className="scrollbar-thin min-h-0 overflow-y-auto px-5 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <section className="mb-6">
             <h3 className="ui-label mb-3">Appearance</h3>
 
@@ -153,7 +157,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </section>
         </div>
 
-        <div className="edge-fade-top flex items-center justify-between px-5 py-3">
+        <div className="edge-fade-top hidden items-center justify-between px-5 py-3 sm:flex">
           <span className="ui-meta">Press Esc or click outside to close</span>
         </div>
       </DialogContent>

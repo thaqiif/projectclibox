@@ -564,7 +564,7 @@ test("mobile chrome is opaque and cannot switch terminals by gesture", () => {
     source("app/globals.css"),
     /\.mobile-top-bar\s*\{\s*background-color:\s*hsl\(var\(--background\)\)/
   );
-  assert.match(toolbar, /className="bg-background glass-edge-top/);
+  assert.match(toolbar, /glass-edge-top[^\"]*bg-\[var\(--shell-bar\)\]/);
   assert.doesNotMatch(tabBar, /"glass glass-edge/);
   assert.doesNotMatch(toolbar, /"glass glass-edge/);
 });

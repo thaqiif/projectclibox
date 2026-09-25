@@ -20,7 +20,8 @@ const RECENT_LIMIT = 6;
  * typed into it vanished on refresh. Showing nothing at all is more honest,
  * and gives closing a terminal somewhere to land.
  *
- * A single raised panel gives an unattached workbench a clear next action.
+ * The empty workbench offers one clear next action. On narrow screens the
+ * content sits directly on the canvas, without a card around empty space.
  */
 export function Welcome({
   terminals,
@@ -33,11 +34,11 @@ export function Welcome({
     .slice(0, RECENT_LIMIT);
 
   return (
-    <div className="ambient-canvas flex h-full w-full items-center justify-center overflow-auto p-6">
-      <div className="glass-thick glass-float lift-in w-full max-w-sm rounded-md p-6">
+    <div className="ambient-canvas flex h-full w-full items-center justify-center overflow-auto p-5">
+      <div className="welcome-panel glass-thick glass-float lift-in w-full max-w-sm rounded-md p-6">
         <h1 className="type-title-2">CLIWeb Workspace</h1>
         <p className="text-muted-foreground mt-1 text-[0.8125rem]">
-          No terminal attached.
+          Create a terminal or open a recent one.
         </p>
 
         <div className="mt-5 flex flex-col gap-1">

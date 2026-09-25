@@ -554,7 +554,7 @@ export function MonitorWorkspace({
             variant="ghost"
             size="icon"
             aria-label="Open sidebar"
-            className="h-11 w-11 shrink-0 rounded-full"
+            className="h-9 w-9 shrink-0 rounded-sm"
             onClick={onMenuClick}
           >
             <Menu className="h-[1.125rem] w-[1.125rem]" />
@@ -562,7 +562,7 @@ export function MonitorWorkspace({
           <div
             role="tablist"
             aria-label="Monitor terminals"
-            className="flex min-w-0 flex-1 items-center gap-0.5 rounded-full bg-[var(--fill-4)] p-0.5"
+            className="flex min-w-0 flex-1 items-center gap-0.5 rounded-sm border border-[var(--shell-line)] bg-[var(--shell-hover)] p-0.5"
           >
             {workspace.panes.map((pane, index) => {
               const terminal = terminals.find(
@@ -584,10 +584,10 @@ export function MonitorWorkspace({
                   onClick={() => onSelectPane?.(pane.id)}
                   onKeyDown={(event) => handleTabKeyDown(event, index)}
                   className={cn(
-                    "press-sm focus-ring flex h-11 min-w-0 flex-1 items-center justify-center rounded-full px-1.5 text-[0.6875rem] font-medium transition-colors",
+                    "press-sm focus-ring flex h-9 min-w-0 flex-1 items-center justify-center rounded-sm px-1.5 text-[0.75rem] font-medium transition-colors",
                     selected
-                      ? "bg-[var(--fill-1)] text-foreground shadow-[var(--elev-1)]"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "bg-[var(--shell-selected)] text-foreground"
+                      : "text-muted-foreground hover:bg-[var(--shell-hover)] hover:text-foreground"
                   )}
                 >
                   <span className="truncate">{label}</span>
@@ -602,7 +602,7 @@ export function MonitorWorkspace({
                 size="icon"
                 aria-label="Add to monitor"
                 title="Add to monitor"
-                className="h-11 w-11 shrink-0 rounded-full"
+                className="h-9 w-9 shrink-0 rounded-sm"
               >
                 <ListPlus className="h-4 w-4" />
               </Button>

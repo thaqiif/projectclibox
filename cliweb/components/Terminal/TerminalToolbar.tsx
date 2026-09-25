@@ -134,11 +134,11 @@ function SnippetsModal({
 
   return (
     <div
-      className="animate-in fade-in-0 fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-[3px] duration-200"
+      className="animate-in fade-in-0 fixed inset-0 z-50 flex items-end justify-center bg-black/35 duration-200"
       onClick={onClose}
     >
       <div
-        className="glass-thick glass-float animate-in slide-in-from-bottom flex max-h-[70vh] w-full flex-col rounded-t-2xl duration-[400ms] ease-[cubic-bezier(0.32,0.72,0,1)]"
+        className="glass-thick glass-float animate-in slide-in-from-bottom flex max-h-[78dvh] w-full flex-col rounded-t-md rounded-b-none border-x-0 border-b-0 duration-200 sm:max-w-md sm:rounded-md sm:border"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -149,13 +149,13 @@ function SnippetsModal({
           <div className="flex items-center">
             <button
               onClick={() => setIsAdding(!isAdding)}
-              className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-full transition-colors hover:bg-[var(--fill-3)]"
+              className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-sm transition-colors hover:bg-[var(--fill-3)]"
             >
               <Plus className="h-4 w-4" />
             </button>
             <button
               onClick={onClose}
-              className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-full transition-colors hover:bg-[var(--fill-3)]"
+              className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-sm transition-colors hover:bg-[var(--fill-3)]"
             >
               <X className="h-4 w-4" />
             </button>
@@ -170,18 +170,18 @@ function SnippetsModal({
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Snippet name..."
-              className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 mb-2 w-full rounded-lg border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 text-[0.875rem] outline-none focus-visible:ring-[3px]"
+              className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 mb-2 w-full rounded-sm border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 text-[0.875rem] outline-none focus-visible:ring-[3px]"
             />
             <textarea
               value={newContent}
               onChange={(e) => setNewContent(e.target.value)}
               placeholder="Command or text..."
-              className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 h-20 w-full resize-none rounded-lg border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 font-mono text-[0.75rem] outline-none focus-visible:ring-[3px]"
+              className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 h-20 w-full resize-none rounded-sm border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 font-mono text-[0.75rem] outline-none focus-visible:ring-[3px]"
             />
             <button
               onClick={handleAdd}
               disabled={!newName.trim() || !newContent.trim()}
-              className="press focus-ring bg-primary text-primary-foreground hover:bg-primary/90 mt-2 w-full rounded-lg py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
+              className="press focus-ring bg-primary text-primary-foreground hover:bg-primary/90 mt-2 w-full rounded-sm py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
             >
               Save Snippet
             </button>
@@ -198,7 +198,7 @@ function SnippetsModal({
             snippets.map((snippet) => (
               <div
                 key={snippet.id}
-                className="flex items-center gap-2 rounded-lg px-3 py-2.5 transition-colors active:bg-[var(--fill-3)]"
+                className="flex items-center gap-2 rounded-sm px-3 py-2.5 transition-colors active:bg-[var(--fill-3)]"
               >
                 <button
                   onClick={() => handleInsert(snippet.content)}
@@ -213,7 +213,7 @@ function SnippetsModal({
                 </button>
                 <button
                   onClick={() => handleDelete(snippet.id)}
-                  className="press focus-ring text-muted-foreground hover:text-destructive hover:bg-destructive/16 flex size-8 items-center justify-center rounded-full transition-colors"
+                  className="press focus-ring text-muted-foreground hover:text-destructive hover:bg-destructive/16 flex size-8 items-center justify-center rounded-sm transition-colors"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -250,11 +250,11 @@ function PasteModal({
 
   return (
     <div
-      className="animate-in fade-in-0 fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[3px] duration-200"
+      className="animate-in fade-in-0 fixed inset-0 z-50 flex items-end justify-center bg-black/35 duration-200 sm:items-center"
       onClick={onClose}
     >
       <div
-        className="glass-thick glass-float lift-in w-[90%] max-w-md rounded-2xl p-5"
+        className="glass-thick glass-float lift-in w-full max-w-md rounded-t-md rounded-b-none border-x-0 border-b-0 p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:w-[90%] sm:rounded-md sm:border sm:pb-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
@@ -263,7 +263,7 @@ function PasteModal({
           </h2>
           <button
             onClick={onClose}
-            className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-full transition-colors hover:bg-[var(--fill-3)]"
+            className="press focus-ring text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-sm transition-colors hover:bg-[var(--fill-3)]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -281,12 +281,12 @@ function PasteModal({
           }}
           placeholder="Tap here, then long-press to paste..."
           autoFocus
-          className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 h-24 w-full resize-none rounded-lg border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 font-mono text-[0.75rem] outline-none focus-visible:ring-[3px]"
+          className="placeholder:text-muted-foreground/70 focus-visible:border-ring/70 focus-visible:ring-ring/25 h-24 w-full resize-none rounded-sm border border-[var(--fill-2)] bg-[var(--fill-4)] px-3 py-2 font-mono text-[0.75rem] outline-none focus-visible:ring-[3px]"
         />
         <button
           onClick={handleSend}
           disabled={!text}
-          className="press focus-ring bg-primary text-primary-foreground hover:bg-primary/90 mt-3 flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
+          className="press focus-ring bg-primary text-primary-foreground hover:bg-primary/90 mt-3 flex w-full items-center justify-center gap-2 rounded-sm py-2.5 text-[0.8125rem] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40"
         >
           <Send className="h-3.5 w-3.5" />
           Send to Terminal
@@ -508,7 +508,7 @@ export function TerminalToolbar({
         // Opaque for the same reason as the mobile header: this row sits on the
         // bottom viewport edge, under the home indicator in a saved-to-home-
         // screen iOS session.
-        className="bg-background glass-edge-top scrollbar-none relative z-10 flex items-stretch gap-1 overflow-x-auto px-1.5 py-1.5"
+        className="terminal-toolbar glass-edge-top scrollbar-none relative z-10 flex items-stretch gap-1 overflow-x-auto bg-[var(--shell-bar)] px-1.5 py-1.5"
         onTouchEnd={(e) => e.stopPropagation()}
       >
         {/* Mic button */}
