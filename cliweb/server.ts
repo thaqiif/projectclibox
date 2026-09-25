@@ -6,7 +6,15 @@ import next from "next";
 import { WebSocketServer, WebSocket } from "ws";
 import * as pty from "node-pty";
 import { buildCliwebEnvironment } from "./lib/runtime-environment";
-import { configureScrollBindings } from "./lib/terminals";
+import {
+  configureClientFeatures,
+  configureScrollBindings,
+} from "./lib/terminals";
+import {
+  attachNativeScroll,
+  parseScrollRequest,
+  type NativeScrollBridge,
+} from "./lib/native-scroll";
 import {
   consumeTerminalCapability,
   releaseTerminalCapability,
@@ -25,6 +33,9 @@ import {
   transferTerminalResource,
 } from "./lib/terminal-resource-server";
 
+// Terminal output is held this long so one tmux redraw goes out whole.
+const OUTPUT_COALESCE_MS = 4;
+const OUTPUT_COALESCE_MAX_BYTES = 256 * 1024;
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "0.0.0.0";
 const MAX_RESOURCE_JOBS_PER_PTY = 4;
@@ -98,6 +109,7 @@ app.prepare().then(() => {
 
   terminalWss.on("connection", (ws: WebSocket) => {
     let ptyProcess: pty.IPty | null = null;
+    let nativeScroll: NativeScrollBridge | null = null;
     let attachedCapability: TerminalCapability | null = null;
     let helloReceived = false;
     const resourceJobs = new Map<number, AbortController>();
@@ -330,6 +342,7 @@ app.prepare().then(() => {
           // hand) get them on attach; they are server-wide. Not awaited:
           // they only matter once the user scrolls.
           void configureScrollBindings();
+          void configureClientFeatures();
           ptyProcess = pty.spawn(
             "tmux",
             ["attach-session", "-t", capability.sessionId],
@@ -352,17 +365,48 @@ app.prepare().then(() => {
         releasePendingHello();
         ws.send(JSON.stringify({ type: "ready" }));
 
-        ptyProcess.onData((data: string) => {
-          if (ws.readyState !== WebSocket.OPEN) return;
+        // Exact pane geometry and scrolling for TUIs that support it.
+        void attachNativeScroll(capability.sessionId, (panes) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "native_scroll", panes }));
+          }
+        }).then((bridge) => {
+          if (ws.readyState === WebSocket.OPEN) nativeScroll = bridge;
+          else bridge?.close();
+        });
+
+        // tmux writes one screen update in several quick bursts. Sent as
+        // they come, the browser can paint between them and show a frame
+        // that is half old, half new (scrolling TUIs visibly tear). A few
+        // milliseconds of coalescing delivers each update whole.
+        let pendingOutput = "";
+        let outputTimer: ReturnType<typeof setTimeout> | null = null;
+        const flushOutput = () => {
+          outputTimer = null;
+          if (!pendingOutput || ws.readyState !== WebSocket.OPEN) return;
           if (ws.bufferedAmount > 4 * 1024 * 1024) {
             ws.close(1013, "Terminal output backpressure limit exceeded");
             ptyProcess?.kill();
             return;
           }
+          const data = pendingOutput;
+          pendingOutput = "";
           ws.send(JSON.stringify({ type: "output", data }));
+        };
+        ptyProcess.onData((data: string) => {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          pendingOutput += data;
+          if (pendingOutput.length >= OUTPUT_COALESCE_MAX_BYTES) {
+            if (outputTimer) clearTimeout(outputTimer);
+            flushOutput();
+          } else if (!outputTimer) {
+            outputTimer = setTimeout(flushOutput, OUTPUT_COALESCE_MS);
+          }
         });
 
         ptyProcess.onExit(({ exitCode }) => {
+          if (outputTimer) clearTimeout(outputTimer);
+          flushOutput();
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "exit", code: exitCode }));
             ws.close();
@@ -393,6 +437,11 @@ app.prepare().then(() => {
           case "command":
             if (typeof msg.data === "string") ptyProcess.write(msg.data + "\r");
             break;
+          case "native_scroll": {
+            const request = parseScrollRequest(msg);
+            if (request) nativeScroll?.scroll(request.pane, request.delta);
+            break;
+          }
         }
       } catch (err) {
         console.error("Error parsing terminal message:", err);
@@ -400,6 +449,8 @@ app.prepare().then(() => {
     });
 
     ws.on("close", () => {
+      nativeScroll?.close();
+      nativeScroll = null;
       releasePendingHello();
       if (helloTimer) clearTimeout(helloTimer);
       for (const controller of resourceJobs.values()) controller.abort();
@@ -412,6 +463,8 @@ app.prepare().then(() => {
 
     ws.on("error", (err) => {
       console.error("WebSocket error:", err);
+      nativeScroll?.close();
+      nativeScroll = null;
       releasePendingHello();
       for (const controller of resourceJobs.values()) controller.abort();
       const jobCount = resourceJobs.size;

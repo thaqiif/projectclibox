@@ -1,6 +1,7 @@
 "use client";
 
 import { readCopyModePosition } from "./copy-mode";
+import type { NativeScrollTarget } from "./native-panes";
 
 /**
  * Pixel-smooth touch panning over line-based TUIs.
@@ -83,6 +84,47 @@ export function detectScrollShift(
     : { rows: k, top: start, bottom: Math.min(rows - 1, end + k) };
 }
 
+/**
+ * How far a whole pane moved between two frames, or null. Unlike
+ * detectScrollShift, every row the two frames share must match: a frame
+ * that tmux delivered in pieces (half old, half new) is rejected rather than
+ * read as a smaller scroll. Apps pin a few rows while their content scrolls
+ * (jcode keeps the current question at the top of the chat), so up to
+ * MAX_PINNED_TOP rows at the top and MAX_PINNED_BOTTOM at the bottom may be
+ * left out; `top` and `bottom` say how many were.
+ */
+export function detectPaneShift(
+  before: readonly string[],
+  after: readonly string[],
+  direction: PanDirection
+): { rows: number; top: number; bottom: number } | null {
+  const rows = Math.min(before.length, after.length);
+  const counts = new Map<string, number>();
+  for (const line of before) counts.set(line, (counts.get(line) ?? 0) + 1);
+  for (let top = 0; top <= MAX_PINNED_TOP; top += 1) {
+    for (let bottom = 0; bottom <= MAX_PINNED_BOTTOM; bottom += 1) {
+      const end = rows - bottom;
+      for (let k = 1; k < end - top - 2; k += 1) {
+        let evidence = 0;
+        let matches = true;
+        for (let i = top; i < end - k && matches; i += 1) {
+          const from = direction === 1 ? i : i + k;
+          const to = direction === 1 ? i + k : i;
+          if (after[to] !== before[from]) matches = false;
+          else if (after[to].trim() !== "" && counts.get(after[to]) === 1) {
+            evidence += 1;
+          }
+        }
+        if (matches && evidence >= 2) return { rows: k, top, bottom };
+      }
+    }
+  }
+  return null;
+}
+
+const MAX_PINNED_TOP = 2;
+const MAX_PINNED_BOTTOM = 1;
+
 interface TuiPanConfig {
   element: HTMLElement;
   sendWheel: (lines: number) => void;
@@ -98,9 +140,21 @@ const SETTLE_MS = 160;
 const LATE_REDRAW_WINDOW_MS = 1200;
 const MIN_CHANGED_ROWS_FOR_UNKNOWN_SCROLL = 3;
 const MAX_REPORTS_PER_FRAME = 8;
+// jcode drops queued scroll beyond 30 rows; stay under it so every row
+// asked for is a row that arrives.
+const NATIVE_MAX_IN_FLIGHT = 24;
+// Requests the app has not acted on for this long are taken as dropped.
+const NATIVE_DROPPED_MS = 600;
+// A native pane is re-read from scratch once its redraws have been quiet
+// this long (the app has finished drawing).
+const NATIVE_RESYNC_QUIET_MS = 120;
 
 export interface TuiPan {
-  begin(rowHeight: number): void;
+  /**
+   * A touch landed. `native` is the app-reported pane under it, if the app
+   * speaks the native scroll protocol (see native-panes.ts).
+   */
+  begin(rowHeight: number, native?: NativeScrollTarget | null): void;
   move(fingerDeltaY: number): void;
   /** Finger lifted: glide with `velocity` (px/ms) to the nearest row. */
   fling(velocity: number): void;
@@ -148,6 +202,26 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
   let sentAt = 0;
   let latency = 120;
   let active = false;
+  // Direction of the latest finger (or glide) movement.
+  let lastDirection: 0 | PanDirection = 0;
+  // Pane reported by the app itself: exact rows, ends and one-row steps.
+  let native: NativeScrollTarget | null = null;
+  // Native bookkeeping, counted from native.mark() at the gesture's start,
+  // when the screen shows the app's position. Requests are paced in the
+  // app's own count: what it reports it has moved (native.moved()) taken
+  // from what was requested is what it still has queued, so a row is never
+  // asked for twice however the app paces its redraws. What the view shows
+  // comes from the screen; mid-animation the two can be a frame or two
+  // apart, but once the screen is quiet they agree (see resyncNative).
+  let nativeBase = 0; // contentMoved at mark()
+  let nativeRequested = 0;
+  // A redraw could not be read since the last one that was.
+  let nativeUnread = false;
+  let nativeMovedAt = 0;
+  let nativeLastMoved = 0;
+  // Rows the app keeps pinned at the pane's top and bottom, as last seen.
+  let pinned = { top: 0, bottom: 0 };
+  let resyncTimer: ReturnType<typeof setTimeout> | null = null;
 
   const rowElements = (): HTMLElement[] =>
     grid
@@ -166,6 +240,15 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
 
   /** Whole rows the content can still move in `direction`. */
   const room = (direction: PanDirection): number => {
+    if (native) {
+      // Exact, from the app: rows beyond the marked position, less the rows
+      // the screen has already moved.
+      const limits = native.limits();
+      if (!limits) return 0;
+      return direction === 1
+        ? Math.max(0, limits.older - (contentMoved - nativeBase))
+        : Math.max(0, limits.newer + (contentMoved - nativeBase));
+    }
     if (copyMode) {
       // Scrolling back to position 0 leaves copy mode (entered with -e).
       return direction === 1
@@ -208,6 +291,7 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
     // Moving back over rows already scrolled past is always safe.
     const proven =
       copyMode !== null ||
+      native !== null ||
       provenDirection === Math.sign(raw) ||
       Math.sign(raw) === -Math.sign(contentMoved);
     const limit = proven
@@ -288,6 +372,8 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
 
   const armEdgeTimer = () => {
     clearEdgeTimer();
+    // Native panes know their ends and queue exactly (see resyncNative).
+    if (native) return;
     const timeout = Math.max(MIN_EDGE_TIMEOUT_MS, latency * 2.5);
     if (copyMode) {
       // tmux reports its own ends through the indicator, so an unanswered
@@ -319,6 +405,48 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
     const after = readRows();
     const nextCopyMode = readCopyModePosition(after[0]);
     const direction = Math.sign(reportsPending) as 0 | PanDirection;
+
+    if (native) {
+      // Compare only the pane's own cells, leaving out its last column
+      // (the app's scrollbar, whose thumb moves as it scrolls). tmux can
+      // deliver a frame in pieces, so a frame that does not match is not
+      // trusted as a baseline either: once the screen has been quiet, it is
+      // re-read and the distance taken from the app's own position.
+      const pane = native;
+      const cells = (rows: string[]) =>
+        rows
+          .slice(pane.top, pane.bottom + 1)
+          .map((row) => row.slice(pane.left, pane.right));
+      if (direction !== 0) {
+        const shift = detectPaneShift(cells(snapshot), cells(after), direction);
+        if (shift === null) {
+          nativeUnread = true;
+          scheduleResync();
+          return;
+        }
+        // Native steps are exactly one row each; the app may animate a
+        // multi-row request over several redraws. Pinned rows stay still.
+        confirm(direction, shift.rows, shift.rows);
+        nativeMoved();
+        // Read against the last frame that was read, so it covers any
+        // unreadable ones in between.
+        nativeUnread = false;
+        syncNativePending();
+        pinned = { top: shift.top, bottom: shift.bottom };
+        band = {
+          rows: shift.rows,
+          top: pane.top + pinned.top,
+          bottom: pane.bottom - pinned.bottom,
+        };
+        snapshot = after;
+        // Only a screen that has gone quiet matches the app's own position.
+        scheduleResync();
+        if (active) render();
+        return;
+      }
+      scheduleResync();
+      return;
+    }
 
     if (copyMode || nextCopyMode) {
       // tmux says exactly where the view is. Leaving copy mode means the
@@ -413,6 +541,56 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
     // Otherwise a spinner or cursor tick: keep waiting for the scroll.
   }
 
+  const cancelResync = () => {
+    if (resyncTimer !== null) clearTimeout(resyncTimer);
+    resyncTimer = null;
+  };
+
+  function scheduleResync() {
+    cancelResync();
+    resyncTimer = setTimeout(resyncNative, NATIVE_RESYNC_QUIET_MS);
+  }
+
+  /** Rows the app has moved since mark(), noting when that last changed. */
+  function nativeMoved(): number | null {
+    const moved = native?.moved() ?? null;
+    if (moved !== null && moved !== nativeLastMoved) {
+      nativeLastMoved = moved;
+      nativeMovedAt = now();
+    }
+    return moved;
+  }
+
+  /** Rows requested that the screen has not shown yet. */
+  function syncNativePending() {
+    reportsPending = nativeBase + nativeRequested - contentMoved;
+  }
+
+  function resyncNative() {
+    resyncTimer = null;
+    if (!native || !grid) return;
+    const moved = nativeMoved();
+    if (moved === null) return;
+    // The screen has been quiet, so it shows what the app last drew. Frames
+    // that were read are exact; if some could not be (e.g. a jump bigger
+    // than the pane), the app's own position stands in for them.
+    snapshot = readRows();
+    if (nativeUnread) {
+      const before = contentMoved;
+      contentMoved = nativeBase + moved;
+      if (contentMoved !== before) {
+        provenDirection = Math.sign(contentMoved - before) as PanDirection;
+      }
+      nativeUnread = false;
+    }
+    // Requests the app has sat on for a while were dropped (it reached an
+    // end, or its queue was full): stop waiting for them.
+    if (now() - nativeMovedAt > NATIVE_DROPPED_MS) nativeRequested = moved;
+    syncNativePending();
+    clampPan();
+    if (active) render();
+  }
+
   const cancelFling = () => {
     if (flingFrame !== null) cancelFrame(flingFrame);
     flingFrame = null;
@@ -423,7 +601,10 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
     settleTimer = null;
   };
 
-  const begin = (measuredRowHeight: number) => {
+  const begin = (
+    measuredRowHeight: number,
+    nativeTarget: NativeScrollTarget | null = null
+  ) => {
     cancelFling();
     cancelSettle();
     if (measuredRowHeight > 0) rowHeight = measuredRowHeight;
@@ -447,6 +628,31 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
       snapshot = readRows();
       copyMode = readCopyModePosition(snapshot[0]);
       stepLearned = false;
+      if (native && !nativeTarget) band = null;
+      native = nativeTarget;
+      translating = true;
+      cancelResync();
+      if (native) {
+        native.mark();
+        nativeBase = contentMoved;
+        nativeRequested = 0;
+        nativeUnread = false;
+        nativeLastMoved = 0;
+        nativeMovedAt = now();
+        band = {
+          rows: 0,
+          top: native.top + pinned.top,
+          bottom: native.bottom - pinned.bottom,
+        };
+        copyMode = null;
+        linesPerReport = 1;
+        stepLearned = true;
+        blocked = 0;
+        // Sliding whole rows would drag a neighbouring pane along too, so a
+        // pane narrower than the screen steps by rows (still exact).
+        const width = snapshot[0]?.length ?? 0;
+        translating = native.right - native.left + 1 >= width - 2;
+      }
       if (band && band.bottom >= snapshot.length) band = null;
       panTotal = contentMoved * rowHeight;
     }
@@ -460,11 +666,12 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
   const move = (fingerDeltaY: number): boolean => {
     if (!active || fingerDeltaY === 0) return true;
     const direction = Math.sign(fingerDeltaY) as PanDirection;
+    lastDirection = direction;
     if (blocked !== 0 && blocked !== direction) {
       blocked = 0;
       probeTravel = 0;
     }
-    if (blocked === direction && !copyMode) {
+    if (blocked === direction && !copyMode && !native) {
       // An end learned only from silence may have moved (new output, or a
       // guess made too early). Probe once per step without moving the view;
       // a redraw that answers is absorbed as a late redraw.
@@ -481,11 +688,22 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
     panTotal += fingerDeltaY;
     clampPan();
     const followed = panTotal !== before;
+    const reports = requestSteps(direction);
+    render();
+    return followed || reports > 0;
+  };
 
+  /**
+   * Ask the app for the steps that bring the content up to the finger (or
+   * glide) position, in `direction`. Returns how many reports were sent.
+   */
+  function requestSteps(direction: PanDirection): number {
+    if (native) return requestNativeSteps(direction);
     // Ask for the next step halfway through it, so the gap at the leading
     // edge stays under half a step.
     const expected = contentMoved + reportsPending * linesPerReport;
     const ahead = panTotal / rowHeight - expected;
+    if (Math.sign(ahead) !== direction) return 0;
     const inFlight = Math.max(0, direction * reportsPending) * linesPerReport;
     const available = room(direction) - inFlight;
     let reports = Math.trunc(
@@ -499,18 +717,75 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
       // One report at a time until a redraw shows how far one moves.
       reports = reportsPending === 0 ? Math.min(reports, 1) : 0;
     }
-    if (reports > 0 && Math.sign(ahead) === direction) {
-      if (reportsPending === 0) sentAt = now();
-      reportsPending += direction * reports;
-      sendWheel(direction * reports);
-      armEdgeTimer();
-    }
-    render();
-    return followed || reports > 0;
-  };
+    if (reports <= 0) return 0;
+    if (reportsPending === 0) sentAt = now();
+    reportsPending += direction * reports;
+    sendWheel(direction * reports);
+    armEdgeTimer();
+    return reports;
+  }
+
+  /**
+   * Native panes: ask for the rows that bring the app's target (everything
+   * requested so far) up to the finger, never more than the app accepts
+   * queued, and never past either end.
+   */
+  function requestNativeSteps(direction: PanDirection): number {
+    const target = native;
+    const limits = target?.limits();
+    const moved = nativeMoved();
+    if (!target || !limits || moved === null) return 0;
+    // Where the screen will be once everything asked for has arrived.
+    const ahead = panTotal / rowHeight - (nativeBase + nativeRequested);
+    if (Math.sign(ahead) !== direction) return 0;
+    const queued = Math.max(0, direction * (nativeRequested - moved));
+    const toEdge =
+      direction === 1
+        ? limits.older - nativeRequested
+        : limits.newer + nativeRequested;
+    const rows = Math.min(
+      Math.trunc(Math.abs(ahead) + 0.5),
+      NATIVE_MAX_IN_FLIGHT - queued,
+      toEdge
+    );
+    if (rows <= 0) return 0;
+    if (reportsPending === 0) sentAt = now();
+    nativeRequested += direction * rows;
+    target.scroll(direction * rows);
+    syncNativePending();
+    return rows;
+  }
 
   const finish = () => {
     cancelSettle();
+    // A fast glide can end before the app has caught up (it scrolls at its
+    // own pace); keep asking until the content reaches where the view is.
+    const requested = native ? nativeBase + nativeRequested : contentMoved;
+    const gap = panTotal / rowHeight - requested;
+    // Only ever onwards: rows already asked for are never taken back.
+    if (
+      Math.abs(gap) >= linesPerReport / 2 &&
+      Math.sign(gap) === lastDirection
+    ) {
+      requestSteps(Math.sign(gap) as PanDirection);
+    }
+    if (native) {
+      // Wait until the app has done everything asked of it and the screen
+      // has gone quiet (resyncNative has run); an app that stopped
+      // answering altogether is let go.
+      const moved = nativeMoved();
+      const busy = moved !== null && moved !== nativeRequested;
+      if (
+        moved === null ||
+        (busy && now() - nativeMovedAt > NATIVE_DROPPED_MS)
+      ) {
+        if (moved !== null) nativeRequested = moved;
+      } else if (busy || resyncTimer !== null) {
+        settleTimer = setTimeout(finish, 40);
+        return;
+      }
+      reportsPending = 0;
+    }
     if (reportsPending !== 0) {
       // Let the last steps land (or time out) before letting go.
       settleTimer = setTimeout(finish, 40);
@@ -559,6 +834,14 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
     if (Number.isFinite(down)) {
       target = Math.max(target, (contentMoved - down) * rowHeight);
     }
+    if (native) {
+      // Rows are requested half a row early, so some may already be on
+      // their way past the rounded target: glide onto them rather than
+      // pulling the view back.
+      const committed = (nativeBase + nativeRequested) * rowHeight;
+      if (lastDirection === 1) target = Math.max(target, committed);
+      if (lastDirection === -1) target = Math.min(target, committed);
+    }
 
     const start = panTotal;
     let startTime: number | null = null;
@@ -588,6 +871,7 @@ export function createTuiPan(config: TuiPanConfig): TuiPan {
   };
 
   const dispose = () => {
+    cancelResync();
     cancelFling();
     cancelSettle();
     clearEdgeTimer();

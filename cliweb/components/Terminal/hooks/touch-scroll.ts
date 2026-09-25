@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 import type { WTerm } from "@wterm/dom";
 import type { GhosttyCore } from "@wterm/ghostty";
 import { clearWheelRemainder } from "./copy-mode";
+import type { NativePanes, NativeScrollTarget } from "./native-panes";
 import { createTuiPan, FLING_TIME_CONSTANT_MS } from "./tui-pan";
 
 interface TouchScrollConfig {
@@ -11,6 +12,8 @@ interface TouchScrollConfig {
   core: GhosttyCore;
   selectModeRef: RefObject<boolean>;
   isMobile: boolean;
+  /** Panes reported by TUIs that speak the native scroll protocol. */
+  nativePanes?: NativePanes;
 }
 
 const FALLBACK_ROW_HEIGHT = 20;
@@ -21,7 +24,7 @@ const GESTURE_SLOP_PX = 8;
 const RELEASE_STILL_MS = 60;
 
 export function setupTouchScroll(config: TouchScrollConfig): () => void {
-  const { terminal, core, selectModeRef, isMobile } = config;
+  const { terminal, core, selectModeRef, isMobile, nativePanes } = config;
   if (!isMobile) return () => {};
 
   const element = terminal.element;
@@ -107,6 +110,32 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     return Number.isFinite(height) && height > 0 ? height : FALLBACK_ROW_HEIGHT;
   };
 
+  /** The native pane under a screen point, if a TUI reported one there. */
+  const nativePaneAt = (
+    clientX: number,
+    clientY: number,
+    rowHeight: number
+  ): NativeScrollTarget | null => {
+    if (!nativePanes) return null;
+    const row = element.querySelector<HTMLElement>(
+      ".term-grid > .term-row:not(.term-scrollback-row)"
+    );
+    if (!row) return null;
+    const rect = row.getBoundingClientRect();
+    // WTerm keeps its measured cell width private; the row width over the
+    // column count is within a fraction of a cell of it.
+    const measured = (terminal as unknown as { _charWidth?: unknown })
+      ._charWidth;
+    const charWidth =
+      typeof measured === "number" && measured > 0
+        ? measured
+        : rect.width / Math.max(1, terminal.cols);
+    return nativePanes.paneAt(
+      Math.floor((clientY - rect.top) / rowHeight),
+      Math.floor((clientX - rect.left) / charWidth)
+    );
+  };
+
   // A touch keeps targeting the node it started on even after that node
   // leaves the document, and a detached node no longer bubbles to the
   // terminal. WTerm rebuilds a row's spans on every redraw, so a swipe that
@@ -155,7 +184,10 @@ export function setupTouchScroll(config: TouchScrollConfig): () => void {
     scrollDirection = null;
     // A touch landing on a moving view catches it, like a native list.
     panning = core.usingAltScreen();
-    if (panning) pan.begin(measureRowHeight());
+    if (panning) {
+      const rowHeight = measureRowHeight();
+      pan.begin(rowHeight, nativePaneAt(startX, startY, rowHeight));
+    }
     // Do not focus the hidden keyboard textarea here. A swipe is a scroll
     // gesture; tapping still focuses through the normal click handler.
   };

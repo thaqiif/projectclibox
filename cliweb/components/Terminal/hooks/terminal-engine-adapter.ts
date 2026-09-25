@@ -6,7 +6,11 @@ import { GhosttyCore } from "@wterm/ghostty";
 import { getTerminalThemeForApp } from "../constants";
 import { DEFAULT_FONT_SCALE } from "../../../lib/font-scale";
 import { clampTerminalGrid } from "../../../lib/terminal-grid";
-import { getTerminalFontSize } from "./terminal-font-size";
+import {
+  getTerminalFontSize,
+  getTerminalLineHeight,
+  getTerminalRowHeight,
+} from "./terminal-font-size";
 
 const SCROLLBACK_BYTES = 64 * 1024 * 1024;
 const IMAGE_STORAGE_BYTES = 32 * 1024 * 1024;
@@ -150,11 +154,17 @@ function setAppearance(
     "--term-font-family",
     '"JetBrains Mono", "Fira Code", Menlo, Monaco, "Courier New", monospace'
   );
-  element.style.setProperty(
-    "--term-font-size",
-    `${getTerminalFontSize(isMobile, fontScale || DEFAULT_FONT_SCALE)}px`
+  const fontSize = getTerminalFontSize(
+    isMobile,
+    fontScale || DEFAULT_FONT_SCALE
   );
-  element.style.setProperty("--term-line-height", isMobile ? "1.15" : "1.2");
+  const lineHeight = getTerminalLineHeight(isMobile);
+  element.style.setProperty("--term-font-size", `${fontSize}px`);
+  element.style.setProperty("--term-line-height", String(lineHeight));
+  element.style.setProperty(
+    "--term-row-height",
+    `${getTerminalRowHeight(fontSize, lineHeight)}px`
+  );
   ansi.forEach((color, index) => {
     element.style.setProperty(`--term-color-${index}`, color);
   });

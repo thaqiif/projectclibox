@@ -2,6 +2,7 @@
 
 import type { WTerm } from "@wterm/dom";
 import type { HostResourceRequest } from "@wterm/ghostty";
+import type { NativePane, NativePaneKind } from "./native-panes";
 import { isValidTerminalGrid } from "../../../lib/terminal-grid";
 import {
   decodeTerminalResourceFrame,
@@ -24,11 +25,13 @@ interface WebSocketCallbacks {
   onFatalError: (message: string) => void;
   onOutput: (data: string) => void;
   onResourceFrame: (header: Record<string, unknown>, bytes: Uint8Array) => void;
+  onNativeScroll?: (panes: NativePane[]) => void;
 }
 
 interface WebSocketManager {
   sendInput: (data: string) => void;
   sendCommand: (command: string) => void;
+  sendNativeScroll: (pane: NativePaneKind, delta: number) => void;
   sendResize: (cols: number, rows: number) => void;
   requestResource: (request: HostResourceRequest) => boolean;
   cancelResource: (id: number) => boolean;
@@ -70,6 +73,14 @@ export function createWebSocketConnection(
   const sendInput = (data: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "input", data }));
+    }
+  };
+
+  const sendNativeScroll = (pane: NativePaneKind, delta: number) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({ type: "native_scroll", pane, delta })
+      );
     }
   };
 
@@ -235,6 +246,13 @@ export function createWebSocketConnection(
         typeof message.data === "string"
       ) {
         callbacks.onOutput(message.data);
+      } else if (
+        message.type === "native_scroll" &&
+        Array.isArray((message as { panes?: unknown }).panes)
+      ) {
+        callbacks.onNativeScroll?.(
+          (message as unknown as { panes: NativePane[] }).panes
+        );
       } else if (message.type === "exit") {
         terminal.write("\r\n\x1b[33m[Terminal ended]\x1b[0m\r\n");
       } else if (message.type === "error") {
@@ -250,6 +268,7 @@ export function createWebSocketConnection(
 
     ws.onclose = () => {
       if (wsRef.current === ws) wsRef.current = null;
+      callbacks.onNativeScroll?.([]);
       callbacks.onDisconnected?.();
       if (
         disposed ||
@@ -313,6 +332,7 @@ export function createWebSocketConnection(
   return {
     sendInput,
     sendCommand,
+    sendNativeScroll,
     sendResize,
     requestResource: (request) =>
       sendResourceFrame({

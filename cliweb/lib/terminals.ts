@@ -15,6 +15,10 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
 import { buildCliwebEnvironment } from "./runtime-environment";
+import {
+  NATIVE_SCROLL_SOCKET_ENV,
+  newNativeScrollSocketPath,
+} from "./native-scroll";
 
 const execFileAsync = promisify(execFile);
 
@@ -97,6 +101,27 @@ export async function configureScrollBindings(): Promise<void> {
   }
 }
 
+/**
+ * Terminal features tmux may use towards the browser. WTerm understands
+ * extended keys, and synchronized output (mode 2026): with `sync`, tmux
+ * wraps each redraw so WTerm paints whole frames. Without it a redraw that
+ * arrives in pieces is painted half old, half new, which tears scrolling
+ * TUIs (jcode, opencode) even when the app itself draws atomically.
+ *
+ * Features are read when a client attaches, and are appended only once so
+ * anything the operator configured is kept.
+ */
+export async function configureClientFeatures(): Promise<void> {
+  const features = (
+    await tmux(["show-option", "-gqv", "terminal-features"])
+  ).split(/[\s,]+/u);
+  for (const feature of ["xterm*:extkeys", "xterm*:sync"]) {
+    if (!features.includes(feature)) {
+      await tmux(["set-option", "-ga", "terminal-features", feature]);
+    }
+  }
+}
+
 async function configureManagedSession(name: string): Promise<void> {
   const env = tmuxEnvironment();
   await configureScrollBindings();
@@ -104,16 +129,7 @@ async function configureManagedSession(name: string): Promise<void> {
     env,
   });
 
-  // Append the capability only once and preserve every feature installed by
-  // the operator or another application.
-  const features = await tmux(["show-option", "-gqv", "terminal-features"]);
-  if (!features.split(/[\s,]+/u).includes("xterm*:extkeys")) {
-    await execFileAsync(
-      "tmux",
-      ["set-option", "-ga", "terminal-features", "xterm*:extkeys"],
-      { env }
-    );
-  }
+  await configureClientFeatures();
 
   // URL images are an explicit WTerm extension. tmux handles XTGETTCAP
   // itself, so WTerm-aware clients read this session option inside tmux.
@@ -269,6 +285,10 @@ export async function createTerminalWithName(
       "new-session",
       "-d",
       ...tmuxSessionEnvironmentArgs(environment),
+      // TUIs that support native scrolling (jcode) find the browser here;
+      // see lib/native-scroll.ts.
+      "-e",
+      `${NATIVE_SCROLL_SOCKET_ENV}=${newNativeScrollSocketPath()}`,
       "-s",
       name,
       "-c",

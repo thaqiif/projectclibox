@@ -21,6 +21,7 @@ import {
   type CopyModeExit,
 } from "./copy-mode";
 import { keepKeyboardInputInView } from "./keyboard-input";
+import { createNativePanes } from "./native-panes";
 import { setupTouchScroll } from "./touch-scroll";
 import { createWebSocketConnection } from "./websocket-connection";
 import { DEFAULT_FONT_SCALE } from "../../../lib/font-scale";
@@ -136,6 +137,8 @@ export function useTerminalConnection({
     const prefix = copyModeExitRef.current?.prefixFor(data) ?? "";
     managerRef.current?.sendInput(prefix + data);
   }, []);
+  // Panes reported by TUIs that support native scrolling (jcode).
+  const [nativePanes] = useState(() => createNativePanes());
   const sendCommand = useCallback((command: string) => {
     const prefix = copyModeExitRef.current?.prefixFor(command) ?? "";
     if (prefix) managerRef.current?.sendInput(prefix);
@@ -159,6 +162,9 @@ export function useTerminalConnection({
     const element = terminalRef.current;
     if (!element) return;
     const osc52Filter = osc52FilterRef.current;
+    nativePanes.setSender((pane, delta) =>
+      managerRef.current?.sendNativeScroll(pane, delta)
+    );
 
     let cancelled = false;
     let onScroll: (() => void) | null = null;
@@ -190,6 +196,16 @@ export function useTerminalConnection({
       }
 
       adapterRef.current = adapter;
+      // The viewport is classified (mobile or not) a frame after mount, while
+      // the adapter was already loading with the first guess, and the
+      // appearance effect skipped it because it did not exist yet. Apply
+      // whatever is current now.
+      const appearance = appearanceRef.current;
+      adapter.applyAppearance(
+        appearance.isMobile,
+        appearance.theme,
+        appearance.fontScale
+      );
       terminalInstanceRef.current = adapter.terminal;
       coreRef.current = adapter.core;
 
@@ -302,6 +318,7 @@ export function useTerminalConnection({
         core: adapter.core,
         selectModeRef,
         isMobile: appearanceRef.current.isMobile,
+        nativePanes,
       });
 
       // Wait for WTerm's ResizeObserver to measure the real pane before the
@@ -331,6 +348,7 @@ export function useTerminalConnection({
           onConnectionStateChange: setConnectionState,
           onFatalError: setInitializationError,
           onResourceFrame: handleResourceFrame,
+          onNativeScroll: (panes) => nativePanes.update(panes),
           onOutput: (data) => {
             const result = osc52Filter.push(data);
             if (result.terminalData) {
@@ -405,7 +423,7 @@ export function useTerminalConnection({
       coreRef.current = null;
       reconnectDelayRef.current = WS_RECONNECT_BASE_DELAY;
     };
-  }, [sendInput, sessionName, terminalRef, retryGeneration]);
+  }, [sendInput, sessionName, terminalRef, retryGeneration, nativePanes]);
 
   useEffect(() => {
     const adapter = adapterRef.current;
@@ -422,12 +440,13 @@ export function useTerminalConnection({
       core: adapter.core,
       selectModeRef,
       isMobile,
+      nativePanes,
     });
     return () => {
       touchCleanupRef.current?.();
       touchCleanupRef.current = null;
     };
-  }, [isMobile]);
+  }, [isMobile, nativePanes]);
 
   useEffect(() => {
     const terminal = terminalInstanceRef.current;
