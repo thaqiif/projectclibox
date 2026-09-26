@@ -180,7 +180,8 @@ test("the application icon represents CLIBox", () => {
 
   assert.match(layout, /href="\/clibox\.webmanifest"\s+crossOrigin="use-credentials"/);
   assert.match(layout, /url: "\/branding\/clibox-terminal\.svg"/);
-  assert.match(layout, /apple: "\/branding\/clibox-terminal-192\.png"/);
+  assert.match(layout, /apple: "\/branding\/apple-touch-icon\.png"/);
+  assert.match(manifest, /"src": "\/branding\/clibox-maskable-512\.png"/);
   assert.match(manifest, /"src": "\/branding\/clibox-terminal-192\.png"/);
   assert.match(manifest, /"src": "\/branding\/clibox-terminal-512\.png"/);
 
@@ -287,8 +288,8 @@ test("nanobrew is installed into the persistent CLIBox host directory", () => {
     !compose.includes("clibox-volume-init:") &&
       !compose.match(/source:.*\$\{/) &&
       !compose.includes("tailscale:") &&
-      !envExample.includes("CLIBOX_HOME_DIR"),
-    "deployment should use literal host paths without a volume init service or Tailscale sidecar"
+      envExample.includes("CLIBOX_HOME_DIR=./data/home"),
+    "deployment should bind one host home directory, without a volume init service or Tailscale sidecar"
   );
   assert.doesNotMatch(
     `${dockerfile}\n${compose}\n${entrypoint}\n${bootstrap}`,

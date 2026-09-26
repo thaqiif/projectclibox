@@ -17,7 +17,7 @@ export const metadata: Metadata = {
       url: "/branding/clibox-terminal.svg",
       type: "image/svg+xml",
     },
-    apple: "/branding/clibox-terminal-192.png",
+    apple: "/branding/apple-touch-icon.png",
   },
 };
 
