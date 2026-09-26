@@ -1,6 +1,6 @@
-# CLIWeb Workspace
+# CLIBox Workspace
 
-A small, self-hosted browser workspace built from the CLIWeb UI. It gives you
+A small, self-hosted browser workspace built from the CLIBox UI. It gives you
 projects, a persistent web terminal, file browsing/editing, themes, font-scale
 controls, and PWA support—without bundling an AI coding CLI or exposing the
 host Docker daemon.
@@ -54,15 +54,15 @@ The image installs Debian's Chromium package and its sandbox helper with
 the fixed runtime path `/usr/bin/chromium`, then exports it as
 `CHROMIUM_PATH`. Debian resolves Chromium's runtime libraries as package
 dependencies, including the trixie `libglib2.0-0t64` transition package. The
-container's web process runs as the unprivileged `cliweb` user. Use the same
+container's web process runs as the unprivileged `clibox` user. Use the same
 user for ad-hoc commands instead of running Chromium as root:
 
 ```bash
 # Confirm the image contains the expected Chromium binary and version.
-docker compose exec --user cliweb cliweb sh -lc '"$CHROMIUM_PATH" --version'
+docker compose exec --user clibox clibox sh -lc '"$CHROMIUM_PATH" --version'
 
 # Render a page without a display and print its resulting HTML.
-docker compose exec --user cliweb cliweb sh -lc '"$CHROMIUM_PATH" --headless=new --disable-dev-shm-usage --dump-dom https://example.com'
+docker compose exec --user clibox clibox sh -lc '"$CHROMIUM_PATH" --headless=new --disable-dev-shm-usage --dump-dom https://example.com'
 ```
 
 `--headless=new` is required in this display-less container. CLI tools
@@ -70,7 +70,7 @@ should point at `$CHROMIUM_PATH` (or the `chromium` command on `PATH`) rather
 than downloading a second browser bundle.
 `--disable-dev-shm-usage` is useful for pages that exceed Docker's default
 shared-memory allocation. Keep the Chromium sandbox enabled: run it as the
-unprivileged `cliweb` user and do not add `--no-sandbox`. Rebuild the image
+unprivileged `clibox` user and do not add `--no-sandbox`. Rebuild the image
 after changing the Dockerfile:
 
 ```bash
@@ -86,7 +86,7 @@ instead of falling back to SwiftShader (CPU). Verify:
 
 ```bash
 # Should report RADV PHOENIX, not SwiftShader.
-docker compose exec --user cliweb cliweb sh -lc '
+docker compose exec --user clibox clibox sh -lc '
   tmp=$(mktemp -d)
   cat > "$tmp/p.html" <<HTML
 <html><body><script>
@@ -108,13 +108,13 @@ to SwiftShader, matching stock behaviour.
 
 ## Persistence
 
-The host directory `/home/cliweb` is bind-mounted at the same path in the
+The host directory `/home/clibox` is bind-mounted at the same path in the
 container. It stores the SQLite database, shell configuration, Git
 identity/credentials, npm global packages, pip user packages, Homebrew, and
 other user-local tools. These survive container restarts, redeployments, and
-image rebuilds as long as `/home/cliweb` is backed by persistent host storage.
+image rebuilds as long as `/home/clibox` is backed by persistent host storage.
 
-`npm -g` is configured to install under `/home/cliweb/.local`, so it works as a
+`npm -g` is configured to install under `/home/clibox/.local`, so it works as a
 non-root user and persists. Use `pip install --user ...` for Python packages.
 System-level `apt` installs are intentionally unavailable to the non-root
 terminal and are not part of the persistence contract; add them to the
@@ -129,12 +129,12 @@ sidebar and can be reopened in their previous folder.
 
 ## Test deployment
 
-`docker-compose.test.yml` runs a second, fully isolated copy alongside
+`compose.test.yml` runs a second, fully isolated copy alongside
 production (handy when the production app and a test app are deployed from
 the same repo, e.g. two Coolify applications). Differences from production:
 
-- Persisted home: `/home/cliweb-test` on the host (production uses
-  `/home/cliweb`), so settings, database, trash, and installed tools are
+- Persisted home: `/home/clibox-test` on the host (production uses
+  `/home/clibox`), so settings, database, trash, and installed tools are
   completely separate.
 - Workspaces: `./workspaces-test` (override with `TEST_WORKSPACE_DIR`), so
   project folders are separate too.
@@ -142,7 +142,7 @@ the same repo, e.g. two Coolify applications). Differences from production:
   `TEST_HOST_BIND`); production stays on `3011`. The `TEST_` prefix means a
   `.env` that sets `HOST_PORT=3011` for production cannot make the test
   stack collide with it.
-- `CLIWEB_PROFILE=test`, so app state lives under `~/.cliweb-test/` inside
+- `CLIBOX_PROFILE=test`, so app state lives under `~/.clibox-test/` inside
   its own home (redundant with the separate home, but harmless).
 
 No environment variables are required: test-specific defaults and `TEST_`
@@ -158,11 +158,11 @@ See [.env.example](.env.example) for the small set of supported settings:
 
 - `WORKSPACE_DIR` — host folder mounted as `/workspaces`.
 - `HOST_PORT` / `HOST_BIND` — web UI port and bind address.
-- `PUID` / `PGID` — host ownership for `/home/cliweb` and workspace files.
-- `CLIWEB_PROFILE` — optional data-namespace suffix. Set it to a different
+- `PUID` / `PGID` — host ownership for `/home/clibox` and workspace files.
+- `CLIBOX_PROFILE` — optional data-namespace suffix. Set it to a different
   value per deployment (for example `test`) when two deployments share the
   persisted home mount: all state (database, trash) goes under
-  `~/.cliweb-<profile>/` instead of `~/.cliweb/`, so they coexist without
+  `~/.clibox-<profile>/` instead of `~/.clibox/`, so they coexist without
   sharing data. Explicit `DB_PATH` still takes precedence if you need full
   manual control.
   Two deployments sharing the persisted home mount MUST also set identical
@@ -173,7 +173,7 @@ See [.env.example](.env.example) for the small set of supported settings:
   which is useful for API keys or project-specific configuration.
 
 `docker compose down -v` does not remove the persistent host bind mounts
-(`/home/cliweb`, the workspace, or nanobrew); this Compose file
+(`/home/clibox`, the workspace, or nanobrew); this Compose file
 has no named volumes. Stop the stack and remove the relevant host directories
 manually only when you intentionally want to discard saved state.
 
@@ -189,16 +189,16 @@ and the `kvm` module must be loaded.
 ls -l /dev/kvm          # must exist; crw-rw---- root:kvm on most hosts
 ```
 
-The entrypoint hands the device to the unprivileged `cliweb` user
+The entrypoint hands the device to the unprivileged `clibox` user
 automatically, so terminals can use it without extra setup:
 
 ```bash
-ls -l /dev/kvm          # inside the container: crw-rw---- cliweb
+ls -l /dev/kvm          # inside the container: crw-rw---- clibox
 ```
 
 > On hosts that do not export `/dev/kvm` (macOS/Windows Docker Desktop, or a
 > VM without nested VT-x/AMD-V) the container will not start with this mapping.
-> Remove the `/dev/kvm` line in `docker-compose.yml` for those hosts.
+> Remove the `/dev/kvm` line in `compose.yml` for those hosts.
 
 ## GPU support (Intel + AMD amdgpu)
 
@@ -209,7 +209,7 @@ Mesa userspace (`mesa-va-drivers`, `mesa-vdpau-drivers`,
 so web terminals can use hardware accel without `--privileged`:
 
 ```bash
-ls -l /dev/dri /dev/kfd           # inside: card*, renderD*, kfd — group cliweb
+ls -l /dev/dri /dev/kfd           # inside: card*, renderD*, kfd — group clibox
 vainfo --display drm --device /dev/dri/renderD128
 vainfo --display drm --device /dev/dri/renderD129   # second GPU, if present
 vulkaninfo --summary               # RADV on AMD, Intel Vulkan elsewhere
@@ -218,9 +218,9 @@ ffmpeg -hide_banner -hwaccels     # expect vaapi qsv drm vulkan opencl
 radeontop                          # AMD utilization monitor
 ```
 
-The entrypoint `chgrp cliweb` + `chmod 660` every DRI node
+The entrypoint `chgrp clibox` + `chmod 660` every DRI node
 (`/dev/dri/card*`, `/dev/dri/renderD*`) and `/dev/kfd` after the PUID/PGID
-remap, so the non-root `cliweb` user can open all GPUs even when host GIDs
+remap, so the non-root `clibox` user can open all GPUs even when host GIDs
 (`video:44`, `render:992`) differ from the container. `group_add` is
 intentionally not used — the final `setpriv --init-groups` would drop it.
 
@@ -246,7 +246,7 @@ H264/HEVC/VP9 decode; use `h264_qsv` / `h264_vaapi` (`hevc_qsv`,
 `hevc_vaapi`, VP9/AV1 encode list but fail on that GPU).
 
 > On hosts without `/dev/dri` remove the `/dev/dri` line in
-> `docker-compose.yml`; on hosts without an AMD GPU remove the `/dev/kfd`
+> `compose.yml`; on hosts without an AMD GPU remove the `/dev/kfd`
 > line. The entrypoint guards each node, but Docker fails the deploy if a
 > mapped host path is missing. If headless Chromium crashes on DRI, rerun
 > that job with `--disable-gpu`.
@@ -254,7 +254,7 @@ H264/HEVC/VP9 decode; use `h264_qsv` / `h264_vaapi` (`hevc_qsv`,
 ## Fresh database
 
 The database uses one baseline migration in
-`cliweb/lib/db/migrations.ts`. It creates the final workspace schema directly
+`web/lib/db/migrations.ts`. It creates the final workspace schema directly
 via `CREATE TABLE IF NOT EXISTS` plus `INSERT OR IGNORE`, so it is idempotent
 and safe against databases created by earlier images: a volume that already
 has the old (32b74ba-era) `projects` schema keeps its extra columns, which the
@@ -274,22 +274,22 @@ Coolify rebuild production. Read end to end before deploying.
 ```sh
 # On the Docker host, before deploying. SQLite's online backup includes data
 # that may still be in the live database's WAL file.
-sqlite3 /home/cliweb/.cliweb/cliweb.db \
-  ".backup '/home/cliweb/.cliweb/cliweb.db.bak'"
-sqlite3 /home/cliweb/.cliweb/cliweb.db.bak "PRAGMA integrity_check"
+sqlite3 /home/clibox/.clibox/clibox.db \
+  ".backup '/home/clibox/.clibox/clibox.db.bak'"
+sqlite3 /home/clibox/.clibox/clibox.db.bak "PRAGMA integrity_check"
 ```
 
 Rollback procedure: revert the Coolify application to the previous deploy
 (the previous image is kept), or redeploy the pre-merge master revision. The
 current migration is schema-compatible with the old image, so an image-only
 rollback can keep the live database. To restore the exact pre-deploy data,
-stop the application first, replace `cliweb.db` with `cliweb.db.bak`, remove
-stale `cliweb.db-wal` and `cliweb.db-shm` files, then start the old image.
+stop the application first, replace `clibox.db` with `clibox.db.bak`, remove
+stale `clibox.db-wal` and `clibox.db-shm` files, then start the old image.
 
 ### 2. Data and layout compatibility (verified)
 
-- Default DB path: new code resolves `HOME/.cliweb/cliweb.db`; with prod
-  `HOME=/home/cliweb` this is exactly `/home/cliweb/.cliweb/cliweb.db` — the
+- Default DB path: new code resolves `HOME/.clibox/clibox.db`; with prod
+  `HOME=/home/clibox` this is exactly `/home/clibox/.clibox/clibox.db` — the
   same file prod already uses. `DB_PATH` also remains explicitly supported
   if it is set anywhere.
 - First boot with the existing prod DB does not rewrite it: the baseline
@@ -303,12 +303,12 @@ stale `cliweb.db-wal` and `cliweb.db-shm` files, then start the old image.
 - `DB_PATH` was removed from the image's Dockerfile `ENV`, but the default
   matches the old setting byte-for-byte, and an explicitly set `DB_PATH`
   still wins over the default.
-- `CLIWEB_PROFILE` is optional; production sets nothing and keeps the
-  `~/.cliweb/` paths unchanged.
+- `CLIBOX_PROFILE` is optional; production sets nothing and keeps the
+  `~/.clibox/` paths unchanged.
 - The `.deployment-owner` ownership guard resolves against the production
-  home (`/home/cliweb/.cliweb/.deployment-owner`) and simply re-records
+  home (`/home/clibox/.clibox/.deployment-owner`) and simply re-records
   prod's `PUID:PGID` on first boot. The test deployment lives under
-  `/home/cliweb-test` (see "Test deployment"), so it can never write a
+  `/home/clibox-test` (see "Test deployment"), so it can never write a
   conflicting marker into prod's home.
 
 ### 4. HTTP same-origin guard behind the proxy
@@ -342,7 +342,7 @@ After Coolify redeploys, verify before declaring success:
   error and no migration traceback.
 - `GET /api/projects` and the UI load; create a terminal (POST path through
   the origin guard, proving the proxy/host contract works).
-- `sqlite3 /home/cliweb/.cliweb/cliweb.db "SELECT count(*) FROM projects"`
+- `sqlite3 /home/clibox/.clibox/clibox.db "SELECT count(*) FROM projects"`
   unchanged.
 
 If item 4 fails with 403s or item 2 shows an unexpected migration error,

@@ -3,27 +3,36 @@ set -euo pipefail
 
 # Start as root only long enough to align the runtime user with the host and
 # prepare the persisted home volume. The web server and all terminal shells are
-# then launched as the unprivileged `cliweb` user.
+# then launched as the unprivileged `clibox` user.
+# Deployments configured before the CLIWeb -> CLIBox rename set CLIWEB_*
+# variables. Each one stands in for its CLIBOX_* name unless that is set too.
+while IFS='=' read -r legacy_name _; do
+    current_name="CLIBOX_${legacy_name#CLIWEB_}"
+    if [ -z "${!current_name:-}" ]; then
+        export "${current_name}=${!legacy_name}"
+    fi
+done < <(env | grep -E '^CLIWEB_[A-Z0-9_]+=' || true)
+
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
-NANOBREW_ROOT="${CLIWEB_NANOBREW_ROOT:-/opt/nanobrew}"
-NANOBREW_BIN="${CLIWEB_NANOBREW_BIN:-/usr/local/bin/nb}"
+NANOBREW_ROOT="${CLIBOX_NANOBREW_ROOT:-/opt/nanobrew}"
+NANOBREW_BIN="${CLIBOX_NANOBREW_BIN:-/usr/local/bin/nb}"
 
 # Keep every shell entry point on the same persistent npm/nanobrew contract.
-. /usr/local/libexec/cliweb-persistent-env
+. /usr/local/libexec/clibox-persistent-env
 
-if [ "$(id -g cliweb)" != "${PGID}" ]; then
-    groupmod -o -g "${PGID}" cliweb
+if [ "$(id -g clibox)" != "${PGID}" ]; then
+    groupmod -o -g "${PGID}" clibox
 fi
-if [ "$(id -u cliweb)" != "${PUID}" ]; then
-    usermod -o -u "${PUID}" cliweb
+if [ "$(id -u clibox)" != "${PUID}" ]; then
+    usermod -o -u "${PUID}" clibox
 fi
 
-# When devices are passed in (see docker-compose.yml), make sure the
+# When devices are passed in (see compose.yml), make sure the
 # unprivileged runtime user can open them. Under runc the mapped nodes may
 # be 0666 root:root, but other runtimes preserve the host's 0660
 # root:kvm / root:video / root:render; either way, chgrping them to the
-# remapped cliweb group lets `cliweb` use hardware virtualization and every
+# remapped clibox group lets `clibox` use hardware virtualization and every
 # GPU (Intel, AMD amdgpu, virtio-gpu) while keeping other container processes
 # out. This sidesteps host GID mismatches (e.g. host render:992 vs Debian
 # container) and survives PUID/PGID remapping above, unlike group_add which
@@ -32,18 +41,34 @@ fi
 # compute). Each node is guarded so the container still starts on hosts
 # without KVM, DRI, or KFD.
 if [ -e /dev/kvm ]; then
-    chgrp cliweb /dev/kvm
+    chgrp clibox /dev/kvm
     chmod 660 /dev/kvm
 fi
 
 for dev in /dev/dri/card* /dev/dri/renderD* /dev/kfd; do
     [ -e "$dev" ] || continue
-    chgrp cliweb "$dev"
+    chgrp clibox "$dev"
     chmod 660 "$dev"
 done
 
+# Move pre-rename data (~/.cliweb*/cliweb.db) into place before anything
+# below creates the new, empty directories. Mirrors cliboxDataDir() in
+# lib/runtime-environment.ts, which does the same outside the container.
+for legacy_dir in "${HOME}"/.cliweb "${HOME}"/.cliweb-*; do
+    [ -d "${legacy_dir}" ] || continue
+    new_dir="${HOME}/.clibox${legacy_dir#"${HOME}"/.cliweb}"
+    [ -e "${new_dir}" ] && continue
+    mv "${legacy_dir}" "${new_dir}"
+    for ext in "" -wal -shm; do
+        if [ -e "${new_dir}/cliweb.db${ext}" ]; then
+            mv "${new_dir}/cliweb.db${ext}" "${new_dir}/clibox.db${ext}"
+        fi
+    done
+    echo "CLIBox: moved ${legacy_dir} to ${new_dir}"
+done
+
 mkdir -p \
-    "${HOME}/.cliweb" \
+    "${HOME}/.clibox" \
     "${HOME}/.config" \
     "${HOME}/.local/bin" \
     "${HOME}/.local/lib" \
@@ -52,16 +77,16 @@ mkdir -p \
     "${HOME}/.ssh" \
     "${NANOBREW_ROOT}"
 
-# Pre-create the profile data directory when CLIWEB_PROFILE is set so the
+# Pre-create the profile data directory when CLIBOX_PROFILE is set so the
 # app never has to self-bootstrap its DB folder (see lib/db/index.ts).
 PROFILE_SUFFIX=""
-if [ -n "${CLIWEB_PROFILE:-}" ]; then
-    # Match lib/runtime-environment.ts cliwebProfileSuffix(): slugify to
+if [ -n "${CLIBOX_PROFILE:-}" ]; then
+    # Match lib/runtime-environment.ts cliboxProfileSuffix(): slugify to
     # [a-z0-9_-] and collapse runs of other characters to a single dash.
-    slug=$(printf '%s' "${CLIWEB_PROFILE}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^[-._]+//; s/[-._]+$//')
+    slug=$(printf '%s' "${CLIBOX_PROFILE}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^[-._]+//; s/[-._]+$//')
     if [ -n "${slug}" ] && [ "${slug}" != "default" ]; then
         PROFILE_SUFFIX="-${slug}"
-        mkdir -p "${HOME}/.cliweb${PROFILE_SUFFIX}"
+        mkdir -p "${HOME}/.clibox${PROFILE_SUFFIX}"
     fi
 fi
 chmod 700 "${HOME}/.ssh"
@@ -80,7 +105,7 @@ chmod 700 "${HOME}/.ssh"
 # mismatch. A plain check-then-echo has a TOCTOU window in which two
 # simultaneously starting deployments (both seeing no marker) would each
 # proceed to chown -R.
-OWNER_MARKER="${HOME}/.cliweb/.deployment-owner"
+OWNER_MARKER="${HOME}/.clibox/.deployment-owner"
 WANT_OWNER="${PUID}:${PGID}"
 owner_claimed=0
 tries=0
@@ -106,7 +131,7 @@ if [ "${owner_claimed}" -ne 1 ]; then
     echo "Could not read the deployment owner marker after 5 attempts (empty or unreadable ${OWNER_MARKER})." >&2
     exit 1
 fi
-# Root owns the marker so the app-internal cliweb user cannot rewrite it.
+# Root owns the marker so the app-internal clibox user cannot rewrite it.
 chown root:root "${OWNER_MARKER}" 2>/dev/null || true
 chmod 644 "${OWNER_MARKER}"
 
@@ -117,8 +142,8 @@ chmod 644 "${OWNER_MARKER}"
 # already reset PATH to the system default by that point.
 for shell_rc in "${HOME}/.bashrc" "${HOME}/.profile" "${HOME}/.bash_profile"; do
     touch "${shell_rc}"
-    if ! grep -Fqx ". /usr/local/libexec/cliweb-persistent-env" "${shell_rc}"; then
-        printf '\n# CLIWeb persistent package paths\n. /usr/local/libexec/cliweb-persistent-env\n' >> "${shell_rc}"
+    if ! grep -Fqx ". /usr/local/libexec/clibox-persistent-env" "${shell_rc}"; then
+        printf '\n# CLIBox persistent package paths\n. /usr/local/libexec/clibox-persistent-env\n' >> "${shell_rc}"
     fi
 done
 
@@ -126,13 +151,13 @@ done
 # supported extension point for installing tools after the container starts.
 export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-${HOME}/.local}"
 export PYTHONUSERBASE="${PYTHONUSERBASE:-${HOME}/.local}"
-export USER=cliweb
-export LOGNAME=cliweb
+export USER=clibox
+export LOGNAME=clibox
 
 # Ensure the persisted volumes and the mounted workspace are usable by the
 # remapped user. /opt dependencies remain root-owned and read-only.
-chown -R cliweb:cliweb "${HOME}" "${NANOBREW_ROOT}" /workspaces
-# chown -R above resets the marker's ownership to cliweb; restore root so the
+chown -R clibox:clibox "${HOME}" "${NANOBREW_ROOT}" /workspaces
+# chown -R above resets the marker's ownership to clibox; restore root so the
 # runtime app user cannot tamper with the ownership guard (it is re-read as
 # root on every boot, so root ownership is what the guard requires).
 chown root:root "${OWNER_MARKER}" 2>/dev/null || true
@@ -141,23 +166,23 @@ chmod 644 "${OWNER_MARKER}" 2>/dev/null || true
 # nanobrew stores its package database, cache, Cellar, and command links below
 # its fixed /opt/nanobrew root. The root is a host bind mount, so nb init is
 # safe to repeat after container recreation and package installs persist.
-CLIWEB_NANOBREW_BIN="${NANOBREW_BIN}" \
-CLIWEB_NANOBREW_ROOT="${NANOBREW_ROOT}" \
-    /usr/local/libexec/cliweb-nanobrew-bootstrap
-chown -R cliweb:cliweb "${NANOBREW_ROOT}"
+CLIBOX_NANOBREW_BIN="${NANOBREW_BIN}" \
+CLIBOX_NANOBREW_ROOT="${NANOBREW_ROOT}" \
+    /usr/local/libexec/clibox-nanobrew-bootstrap
+chown -R clibox:clibox "${NANOBREW_ROOT}"
 
 # Re-source after bootstrap so a custom prefix is reflected in PATH, then
 # persist npm's global prefix in the mounted user config as well as the
-# process environment. This covers npm invocations that bypass CLIWeb's PTY.
-. /usr/local/libexec/cliweb-persistent-env
-gosu cliweb /usr/local/bin/npm config set prefix "${NPM_CONFIG_PREFIX}" --location=user
-mkdir -p "${CLIWEB_REPO:-/opt/cliweb}/.next/cache"
-chown -R cliweb:cliweb "${CLIWEB_REPO:-/opt/cliweb}/.next/cache"
+# process environment. This covers npm invocations that bypass CLIBox's PTY.
+. /usr/local/libexec/clibox-persistent-env
+gosu clibox /usr/local/bin/npm config set prefix "${NPM_CONFIG_PREFIX}" --location=user
+mkdir -p "${CLIBOX_REPO:-/opt/clibox}/.next/cache"
+chown -R clibox:clibox "${CLIBOX_REPO:-/opt/clibox}/.next/cache"
 
 # Keep Git identity and HTTPS credentials in the persisted home volume.
-gosu cliweb git config --global credential.helper \
+gosu clibox git config --global credential.helper \
     "store --file=${HOME}/.gitstate/credentials"
 
-export PORT="${CLIWEB_PORT:-3011}"
-cd "${CLIWEB_REPO:-/opt/cliweb}"
-exec setpriv --reuid=cliweb --regid=cliweb --init-groups -- npm start
+export PORT="${CLIBOX_PORT:-3011}"
+cd "${CLIBOX_REPO:-/opt/clibox}"
+exec setpriv --reuid=clibox --regid=clibox --init-groups -- npm start

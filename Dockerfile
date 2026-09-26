@@ -1,4 +1,4 @@
-# Minimal CLIWeb workspace image
+# Minimal CLIBox workspace image
 #
 # The image contains the web UI and a useful, non-root shell environment. It
 # deliberately does not install an AI coding CLI, harness, autopilot workflow,
@@ -66,7 +66,7 @@ RUN set -eu; \
 
 # nanobrew publishes verified architecture-specific Linux release tarballs.
 # Its Linux integration uses the fixed /opt/nanobrew data tree, which is
-# mounted from the persistent CLIWeb host directory below.
+# mounted from the persistent CLIBox host directory below.
 ARG NANOBREW_VERSION=0.1.208
 ARG TARGETARCH
 RUN set -eux; \
@@ -93,55 +93,55 @@ RUN set -eux; \
 
 # Build the UI into /opt so the persisted home volume never masks build
 # artifacts when the image is rebuilt.
-ENV CLIWEB_REPO=/opt/cliweb
-COPY cliweb/ "${CLIWEB_REPO}"/
+ENV CLIBOX_REPO=/opt/clibox
+COPY web/ "${CLIBOX_REPO}"/
 # npm ci + --include=dev: a plain `npm install` can drop devDependencies such
 # as @tailwindcss/postcss, which breaks `next build` with unresolved module
 # errors. ci is deterministic from the lockfile and include=dev guards against
 # production-flavored npm environments during the build.
-RUN cd "${CLIWEB_REPO}" \
+RUN cd "${CLIBOX_REPO}" \
     && npm ci --include=dev --legacy-peer-deps \
     && npm run build \
     && npm cache clean --force
 
 # Runtime user. The entrypoint remaps this user to PUID/PGID so files created
 # in a host-mounted workspace have the host user's ownership.
-RUN useradd --create-home --home-dir /home/cliweb --shell /bin/bash --uid 1001 cliweb \
+RUN useradd --create-home --home-dir /home/clibox --shell /bin/bash --uid 1001 clibox \
     && mkdir -p \
-        /home/cliweb/.cliweb \
-        /home/cliweb/.config \
-        /home/cliweb/.local/bin \
-        /home/cliweb/.local/lib \
-        /home/cliweb/.cache \
-        /home/cliweb/.gitstate \
-        /home/cliweb/.ssh \
+        /home/clibox/.clibox \
+        /home/clibox/.config \
+        /home/clibox/.local/bin \
+        /home/clibox/.local/lib \
+        /home/clibox/.cache \
+        /home/clibox/.gitstate \
+        /home/clibox/.ssh \
         /opt/nanobrew \
         /workspaces \
-    && chmod 700 /home/cliweb/.ssh \
-    && chown -R cliweb:cliweb /home/cliweb /opt/nanobrew
+    && chmod 700 /home/clibox/.ssh \
+    && chown -R clibox:clibox /home/clibox /opt/nanobrew
 
-ENV HOME=/home/cliweb \
+ENV HOME=/home/clibox \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    CLIWEB_HOME=/home/cliweb/.cliweb \
-    CLIWEB_PORT=3011 \
-    CLIWEB_NANOBREW_ROOT=/opt/nanobrew \
-    CLIWEB_NANOBREW_BIN=/usr/local/bin/nb \
+    CLIBOX_HOME=/home/clibox/.clibox \
+    CLIBOX_PORT=3011 \
+    CLIBOX_NANOBREW_ROOT=/opt/nanobrew \
+    CLIBOX_NANOBREW_BIN=/usr/local/bin/nb \
     CHROMIUM_PATH=/usr/bin/chromium \
     NANOBREW_NO_TELEMETRY=1 \
     NODE_ENV=production \
-    NPM_CONFIG_PREFIX=/home/cliweb/.local \
-    NPM_CONFIG_USERCONFIG=/home/cliweb/.npmrc \
+    NPM_CONFIG_PREFIX=/home/clibox/.local \
+    NPM_CONFIG_USERCONFIG=/home/clibox/.npmrc \
     PIP_USER=1 \
-    PYTHONUSERBASE=/home/cliweb/.local \
-    PATH=/opt/nanobrew/prefix/bin:/home/cliweb/.local/bin:/home/cliweb/.local/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
-    GIT_CONFIG_GLOBAL=/home/cliweb/.gitstate/config \
+    PYTHONUSERBASE=/home/clibox/.local \
+    PATH=/opt/nanobrew/prefix/bin:/home/clibox/.local/bin:/home/clibox/.local/sbin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
+    GIT_CONFIG_GLOBAL=/home/clibox/.gitstate/config \
     PUID=1000 \
     PGID=1000
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-COPY docker-nanobrew-bootstrap.sh /usr/local/libexec/cliweb-nanobrew-bootstrap
-COPY docker-cliweb-persistent-env.sh /usr/local/libexec/cliweb-persistent-env
+COPY docker-nanobrew-bootstrap.sh /usr/local/libexec/clibox-nanobrew-bootstrap
+COPY docker-persistent-env.sh /usr/local/libexec/clibox-persistent-env
 
 # Force Chromium onto the AMD GPU (RADV/Vulkan via ANGLE). Debian's
 # launcher sources /etc/chromium.d/* before exec, so dropping a file
@@ -153,9 +153,15 @@ COPY chromium-amd-gpu.conf /etc/chromium.d/amd-gpu
 RUN chmod +x \
     /usr/local/bin/nb \
     /usr/local/bin/docker-entrypoint.sh \
-    /usr/local/libexec/cliweb-nanobrew-bootstrap \
-    /usr/local/libexec/cliweb-persistent-env
+    /usr/local/libexec/clibox-nanobrew-bootstrap \
+    /usr/local/libexec/clibox-persistent-env
 
-WORKDIR /opt/cliweb
+# Homes persisted before the CLIWeb -> CLIBox rename have .bashrc lines
+# sourcing the old script path and configs (npm prefix, git) naming
+# /home/cliweb. Both old paths keep resolving to their new locations.
+RUN ln -s clibox-persistent-env /usr/local/libexec/cliweb-persistent-env \
+    && ln -s /home/clibox /home/cliweb
+
+WORKDIR /opt/clibox
 EXPOSE 3011
 ENTRYPOINT ["docker-entrypoint.sh"]
