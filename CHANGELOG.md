@@ -15,6 +15,7 @@ CLIWeb is now **CLIBox**, the first versioned, public release.
 
 - The monitor workspace is the only workbench; the Monitor toggle and the single-terminal view are gone. Clicking a terminal in the sidebar opens it in a free pane, or beside the others.
 - Renamed throughout: the app directory is `web/`, the container user is `clibox`, settings are `CLIBOX_*`, data lives in `~/.clibox/clibox.db`, and the host home is `CLIBOX_HOME_DIR` (default `./data/home`).
+- The monitor workspace layout syncs live: a change made on one device appears on every other open tab over a WebSocket, without reloading the app.
 - `compose.yml` maps no host devices by default, so it starts on any Docker host.
 - The README is now a product page; operational detail moved to `docs/hardware.md` and `docs/operations.md`.
 
