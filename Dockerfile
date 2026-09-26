@@ -15,8 +15,10 @@ FROM node:22-trixie-slim
 # compute on AMD hosts; the full ROCm stack itself is intentionally not baked
 # in — install it or use a ROCm-enabled tool (PyTorch ROCm, Ollama ROCm) when
 # needed.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN set -eu; \
+    for attempt in 1 2 3; do \
+        if apt-get -o Acquire::Retries=3 update \
+            && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
         bash \
         build-essential \
         ca-certificates \
@@ -51,8 +53,14 @@ RUN apt-get update \
         unzip \
         util-linux \
         vainfo \
-        vulkan-tools \
-    && test -x /usr/bin/chromium \
+        vulkan-tools; then \
+            break; \
+        fi; \
+        if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+        rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/partial/*; \
+        sleep "$((attempt * 10))"; \
+    done; \
+    test -x /usr/bin/chromium \
     && test -u /usr/lib/chromium/chrome-sandbox \
     && rm -rf /var/lib/apt/lists/*
 

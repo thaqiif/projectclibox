@@ -72,10 +72,8 @@ export function keepMobileBackspaceRepeating(
     if (!pending?.sent) onBackspace();
   };
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "Backspace") {
-      handledDeleteBeforeInput = false;
-      return;
-    }
+    // Another keydown may arrive before the paired delete input event.
+    if (event.key !== "Backspace") return;
     // beforeinput is the delete operation on iOS. A hardware keyboard may
     // deliver only keydown; keep its fallback paired with a late beforeinput.
     event.stopImmediatePropagation();

@@ -1,11 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  decodeTerminalOutputFrame,
   decodeTerminalResourceFrame,
+  encodeTerminalOutputFrame,
   encodeTerminalResourceFrame,
+  isTerminalOutputFrame,
   TERMINAL_RESOURCE_MAX_FRAME_BYTES,
   TERMINAL_RESOURCE_MAX_HEADER_BYTES,
 } from "./terminal-resource-protocol";
+
+test("output frames preserve UTF-8 and stay distinct from resource frames", () => {
+  const output = "\u001b[32mhello 🌍\n";
+  const frame = encodeTerminalOutputFrame(output);
+  assert.equal(isTerminalOutputFrame(frame), true);
+  assert.equal(decodeTerminalOutputFrame(frame), output);
+  assert.equal(new DataView(frame.buffer).getUint32(0, false), 0);
+  assert.throws(() => decodeTerminalResourceFrame(frame));
+
+  const resource = encodeTerminalResourceFrame({ version: 1, type: "chunk" });
+  assert.equal(isTerminalOutputFrame(resource), false);
+  assert.throws(() => decodeTerminalOutputFrame(resource));
+});
 
 test("resource frames encode a big-endian header length and payload", () => {
   const payload = new Uint8Array([1, 2, 3]);

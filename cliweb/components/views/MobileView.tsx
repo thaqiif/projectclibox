@@ -4,6 +4,7 @@ import { useState } from "react";
 import { TerminalList } from "@/components/TerminalList";
 import { MobileSidebar } from "@/components/mobile/MobileSidebar";
 import { MonitorWorkspace } from "@/components/MonitorWorkspace";
+import { MAX_MONITOR_PANES } from "@/lib/monitor-workspace";
 import type { ViewProps } from "./types";
 
 export function MobileView({
@@ -51,7 +52,8 @@ export function MobileView({
                 if (
                   monitorEnabled &&
                   selectedPane?.terminalId &&
-                  (monitor.workspace?.panes.length ?? 3) < 3
+                  (monitor.workspace?.panes.length ?? MAX_MONITOR_PANES) <
+                    MAX_MONITOR_PANES
                 ) {
                   targetPaneId = monitor.addPane() ?? targetPaneId;
                   if (targetPaneId) setSelectedPaneId(targetPaneId);

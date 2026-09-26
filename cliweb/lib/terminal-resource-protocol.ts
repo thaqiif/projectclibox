@@ -3,6 +3,47 @@ export const TERMINAL_RESOURCE_MAX_HEADER_BYTES = 4 * 1024;
 export const TERMINAL_RESOURCE_MAX_FRAME_BYTES = 256 * 1024;
 export const TERMINAL_RESOURCE_MAX_BYTES = 32 * 1024 * 1024;
 
+// Resource frames start with a nonzero 32-bit header length. Zero reserves a
+// cheap binary frame type for the terminal's high-volume UTF-8 output.
+const OUTPUT_FRAME_PREFIX_BYTES = 4;
+const outputEncoder = new TextEncoder();
+const outputDecoder = new TextDecoder("utf-8", { fatal: true });
+
+export function encodeTerminalOutputFrame(data: string): Uint8Array {
+  const payload = outputEncoder.encode(data);
+  const frame = new Uint8Array(OUTPUT_FRAME_PREFIX_BYTES + payload.byteLength);
+  frame.set(payload, OUTPUT_FRAME_PREFIX_BYTES);
+  return frame;
+}
+
+export function isTerminalOutputFrame(
+  input: ArrayBuffer | ArrayBufferView
+): boolean {
+  const frame =
+    input instanceof ArrayBuffer
+      ? new Uint8Array(input)
+      : new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+  return (
+    frame.byteLength >= OUTPUT_FRAME_PREFIX_BYTES &&
+    frame[0] === 0 &&
+    frame[1] === 0 &&
+    frame[2] === 0 &&
+    frame[3] === 0
+  );
+}
+
+export function decodeTerminalOutputFrame(
+  input: ArrayBuffer | ArrayBufferView
+): string {
+  if (!isTerminalOutputFrame(input))
+    throw new Error("Invalid terminal output frame");
+  const frame =
+    input instanceof ArrayBuffer
+      ? new Uint8Array(input)
+      : new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+  return outputDecoder.decode(frame.subarray(OUTPUT_FRAME_PREFIX_BYTES));
+}
+
 export interface TerminalResourceFrame {
   header: Record<string, unknown>;
   bytes: Uint8Array;
