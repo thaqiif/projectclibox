@@ -1,5 +1,8 @@
 services:
   clibox:
+    # The published image. `docker compose build` (or a PaaS that builds
+    # from the repository) builds the same image from this checkout instead.
+    image: ghcr.io/thaqiif/clibox:${CLIBOX_VERSION:-latest}
     build:
       context: .
     restart: unless-stopped
@@ -39,24 +42,6 @@ services:
       - ${CLIBOX_HOME_DIR:-./data/home}/nanobrew:/opt/nanobrew
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces
 
-    # Pass host devices through so web terminals can use hardware features.
-    # /dev/kvm: hardware virtualization (QEMU/KVM guests, Android emulators,
-    # microVMs, …). Requires /dev/kvm on the host; remove this line on hosts
-    # that lack it.
-    # /dev/dri: individual GPU nodes are mapped with paths swapped so the
-    # AMD amdgpu appears as card0/renderD128 (the "first" GPU) and the
-    # virtio-gpu as card1/renderD129. The host kernel assigns the original
-    # ordering; Docker device mapping lets us choose which node lands at
-    # which path inside the container. Remove any line whose host path is
-    # missing on your machine.
-    # /dev/kfd: AMD ROCm/OpenCL compute node (amdgpu hosts only). Requires
-    # /dev/kfd on the host; remove this line on hosts without an AMD GPU.
-    devices:
-      - /dev/kvm:/dev/kvm
-      # AMD amdgpu → card0 / renderD128 (primary)
-      - /dev/dri/card1:/dev/dri/card0
-      - /dev/dri/renderD129:/dev/dri/renderD128
-      # virtio-gpu → card1 / renderD129 (secondary)
-      - /dev/dri/card0:/dev/dri/card1
-      - /dev/dri/renderD128:/dev/dri/renderD129
-      - /dev/kfd:/dev/kfd
+    # No host devices by default, so this file runs on any Docker host.
+    # KVM and GPUs are opt-in overlays in hardware/, listed in COMPOSE_FILE
+    # in .env (./install.sh detects them and writes it for you).

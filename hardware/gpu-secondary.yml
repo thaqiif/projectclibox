@@ -1,0 +1,6 @@
+# A second DRM GPU, exposed as card1/renderD129 beside the one in gpu.yml.
+services:
+  clibox:
+    devices:
+      - ${CLIBOX_GPU2_CARD:-/dev/dri/card1}:/dev/dri/card1
+      - ${CLIBOX_GPU2_RENDER:-/dev/dri/renderD129}:/dev/dri/renderD129

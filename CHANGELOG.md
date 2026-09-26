@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.0.0 — 2026-09-26
+
+CLIWeb is now **CLIBox**, the first versioned, public release.
+
+### Added
+
+- `install.sh`: detects KVM and Intel/AMD/NVIDIA GPUs, writes `.env` (keeping lines you added) and starts CLIBox. Supports `--yes`, `--dry-run` and piping from curl.
+- Hardware overlays in `hardware/` (`kvm`, `gpu`, `gpu-secondary`, `amd-compute`, `nvidia`), enabled through `COMPOSE_FILE`.
+- Published images at `ghcr.io/thaqiif/clibox` for amd64 and arm64, built by a tag-triggered release workflow, plus CI for lint, typecheck, tests and the installer. Both run on self-hosted runners.
+- New box logo, maskable PWA icon and apple-touch icon.
+
+### Changed
+
+- The monitor workspace is the only workbench; the Monitor toggle and the single-terminal view are gone. Clicking a terminal in the sidebar opens it in a free pane, or beside the others.
+- Renamed throughout: the app directory is `web/`, the container user is `clibox`, settings are `CLIBOX_*`, data lives in `~/.clibox/clibox.db`, and the host home is `CLIBOX_HOME_DIR` (default `./data/home`).
+- `compose.yml` maps no host devices by default, so it starts on any Docker host.
+- The README is now a product page; operational detail moved to `docs/hardware.md` and `docs/operations.md`.
+
+### Upgrading from CLIWeb
+
+Set `CLIBOX_HOME_DIR` to your existing home (e.g. `/home/cliweb`) and choose hardware overlays. The first boot moves `~/.cliweb*` data into place; `CLIWEB_*` variables, `/home/cliweb` paths and saved browser settings keep working. See `docs/operations.md`.
+
 ## 2026-09-11
 
 ### Changed

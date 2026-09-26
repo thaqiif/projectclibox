@@ -7,7 +7,7 @@ test("the container exposes a stable non-root Chromium CLI", () => {
   const root = join(process.cwd(), "..");
   const dockerfile = readFileSync(join(root, "Dockerfile"), "utf8");
   const compose = readFileSync(join(root, "compose.yml"), "utf8");
-  const readme = readFileSync(join(root, "README.md"), "utf8");
+  const readme = readFileSync(join(root, "docs", "hardware.md"), "utf8");
   const aptInstall = dockerfile.slice(
     dockerfile.indexOf("apt-get install"),
     dockerfile.indexOf("&& rm -rf /var/lib/apt/lists/*")
@@ -51,21 +51,21 @@ test("the container exposes a stable non-root Chromium CLI", () => {
   assert.match(
     readme,
     /docker compose exec --user clibox clibox[\s\S]*--version/,
-    "the README should document a non-root Chromium version smoke test"
+    "the hardware docs should document a non-root Chromium version smoke test"
   );
   assert.match(
     readme,
     /--headless=new/,
-    "the README should show headless Chromium CLI usage"
+    "the hardware docs should show headless Chromium CLI usage"
   );
   assert.match(
     readme,
     /rather\s+than downloading a second browser bundle/i,
-    "the README should direct CLI tools to the image-provided browser"
+    "the hardware docs should direct CLI tools to the image-provided browser"
   );
   assert.match(
     readme,
     /non-root|unprivileged `clibox`/i,
-    "the README should explain the container's non-root runtime"
+    "the hardware docs should explain the container's non-root runtime"
   );
 });

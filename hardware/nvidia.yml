@@ -1,0 +1,15 @@
+# NVIDIA GPUs through the NVIDIA Container Toolkit, which must be installed
+# and registered with Docker on the host:
+# https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+services:
+  clibox:
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${CLIBOX_NVIDIA_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video,graphics
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

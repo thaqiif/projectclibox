@@ -55,15 +55,5 @@ services:
       # Test workspaces folder beside the repo checkout's default.
       - ${TEST_WORKSPACE_DIR:-./workspaces-test}:/workspaces
 
-    # Pass host devices through so web terminals can use hardware features.
-    # Mirror of production's mapping; remove lines for devices the host
-    # lacks (see compose.yml comments for what each one is for).
-    devices:
-      - /dev/kvm:/dev/kvm
-      # AMD amdgpu → card0 / renderD128 (primary)
-      - /dev/dri/card1:/dev/dri/card0
-      - /dev/dri/renderD129:/dev/dri/renderD128
-      # virtio-gpu → card1 / renderD129 (secondary)
-      - /dev/dri/card0:/dev/dri/card1
-      - /dev/dri/renderD128:/dev/dri/renderD129
-      - /dev/kfd:/dev/kfd
+    # Hardware overlays work here too, e.g.
+    # COMPOSE_FILE=compose.test.yml:hardware/kvm.yml:hardware/gpu.yml
