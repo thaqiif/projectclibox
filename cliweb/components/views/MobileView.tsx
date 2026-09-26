@@ -10,11 +10,8 @@ import type { ViewProps } from "./types";
 export function MobileView({
   sidebarOpen,
   setSidebarOpen,
-  activeTerminal,
-  attachToTerminal,
   handleNewTerminal,
   handleCloseTerminal,
-  renderPane,
   terminals,
   projects,
   fetchTerminals,
@@ -24,7 +21,6 @@ export function MobileView({
   const selectedPane =
     monitor.workspace?.panes.find((pane) => pane.id === selectedPaneId) ??
     monitor.workspace?.panes[0];
-  const monitorEnabled = monitor.workspace?.enabled ?? false;
 
   return (
     <main className="bg-background h-app flex flex-col overflow-hidden">
@@ -34,23 +30,14 @@ export function MobileView({
           {/* Terminal list */}
           <div className="min-h-0 flex-1 overflow-hidden">
             <TerminalList
-              activeTerminalId={
-                monitorEnabled
-                  ? (selectedPane?.terminalId ?? undefined)
-                  : activeTerminal?.id
-              }
+              activeTerminalId={selectedPane?.terminalId ?? undefined}
               onSelect={(id) => {
-                if (monitorEnabled && selectedPane) {
-                  monitor.assignTerminal(selectedPane.id, id);
-                } else {
-                  attachToTerminal(id);
-                }
+                if (selectedPane) monitor.assignTerminal(selectedPane.id, id);
                 setSidebarOpen(false);
               }}
               onNewTerminal={async (projectId) => {
                 let targetPaneId = selectedPane?.id;
                 if (
-                  monitorEnabled &&
                   selectedPane?.terminalId &&
                   (monitor.workspace?.panes.length ?? MAX_MONITOR_PANES) <
                     MAX_MONITOR_PANES
@@ -58,10 +45,7 @@ export function MobileView({
                   targetPaneId = monitor.addPane() ?? targetPaneId;
                   if (targetPaneId) setSelectedPaneId(targetPaneId);
                 }
-                await handleNewTerminal(
-                  projectId,
-                  monitorEnabled ? targetPaneId : undefined
-                );
+                await handleNewTerminal(projectId, targetPaneId);
                 setSidebarOpen(false);
               }}
               onCloseTerminal={handleCloseTerminal}
@@ -73,7 +57,7 @@ export function MobileView({
 
       {/* One monitor terminal fills the screen at mobile widths. */}
       <div className="min-h-0 w-full flex-1">
-        {monitorEnabled && monitor.workspace ? (
+        {monitor.workspace && (
           <MonitorWorkspace
             workspace={monitor.workspace}
             terminals={terminals}
@@ -87,11 +71,8 @@ export function MobileView({
             onSelectPane={setSelectedPaneId}
             onAddPane={monitor.addPane}
             onCreateTerminal={(paneId) => handleNewTerminal(undefined, paneId)}
-            onToggleMonitor={monitor.toggle}
             onMenuClick={() => setSidebarOpen(true)}
           />
-        ) : (
-          renderPane()
         )}
       </div>
     </main>

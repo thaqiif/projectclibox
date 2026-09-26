@@ -28,7 +28,6 @@ export function TerminalList({
   onNewTerminal,
   onCloseTerminal,
   enableTerminalDrag = false,
-  onClosedAllTerminals,
   onCloseSidebar,
 }: TerminalListProps) {
   const {
@@ -79,7 +78,6 @@ export function TerminalList({
           onCancel={() => setShowKillAllConfirm(false)}
           onComplete={() => {
             setShowKillAllConfirm(false);
-            onClosedAllTerminals?.();
           }}
         />
       )}

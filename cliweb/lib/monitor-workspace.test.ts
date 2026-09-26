@@ -6,12 +6,13 @@ import {
   dropSideFromRatio,
   moveMonitorPane,
   normalizeMonitorWorkspace,
+  openMonitorTerminal,
+  renameMonitorTerminal,
   removeMonitorPane,
 } from "./monitor-workspace";
 
 test("normalizes one to five ordered pane widths", () => {
   const state = normalizeMonitorWorkspace({
-    enabled: true,
     panes: [
       { id: "left", terminalId: "term-a", width: 25 },
       { id: "right", terminalId: "term-b", width: 75 },
@@ -26,7 +27,6 @@ test("normalizes one to five ordered pane widths", () => {
     [0.5, 0.5]
   );
   const five = normalizeMonitorWorkspace({
-    enabled: true,
     panes: Array.from({ length: 5 }, (_, index) => ({
       id: `pane-${index}`,
       terminalId: `term-${index}`,
@@ -41,11 +41,10 @@ test("normalizes one to five ordered pane widths", () => {
 });
 
 test("rejects invalid counts, widths, and duplicate identities", () => {
-  assert.throws(() => normalizeMonitorWorkspace({ enabled: true, panes: [] }));
+  assert.throws(() => normalizeMonitorWorkspace({ panes: [] }));
   assert.throws(
     () =>
       normalizeMonitorWorkspace({
-        enabled: true,
         panes: Array.from({ length: 6 }, (_, index) => ({
           id: `pane-${index}`,
           terminalId: null,
@@ -56,13 +55,11 @@ test("rejects invalid counts, widths, and duplicate identities", () => {
   );
   assert.throws(() =>
     normalizeMonitorWorkspace({
-      enabled: true,
       panes: [{ id: "a", terminalId: null, width: 0 }],
     })
   );
   assert.throws(() =>
     normalizeMonitorWorkspace({
-      enabled: true,
       panes: [
         { id: "a", terminalId: "same", width: 1 },
         { id: "b", terminalId: "same", width: 1 },
@@ -72,7 +69,6 @@ test("rejects invalid counts, widths, and duplicate identities", () => {
   assert.throws(
     () =>
       normalizeMonitorWorkspace({
-        enabled: true,
         panes: [
           { id: "dup", terminalId: "one", width: 1 },
           { id: "dup", terminalId: "two", width: 1 },
@@ -84,7 +80,6 @@ test("rejects invalid counts, widths, and duplicate identities", () => {
 
 test("duplicate assignment is prevented while replacement is allowed", () => {
   const state = normalizeMonitorWorkspace({
-    enabled: true,
     panes: [
       { id: "a", terminalId: "one", width: 1 },
       { id: "b", terminalId: null, width: 1 },
@@ -99,7 +94,6 @@ test("duplicate assignment is prevented while replacement is allowed", () => {
 
 test("removeMonitorPane drops a chosen pane and renormalizes remaining widths", () => {
   const state = normalizeMonitorWorkspace({
-    enabled: true,
     panes: [
       { id: "left", terminalId: "term-a", width: 1 },
       { id: "middle", terminalId: "term-b", width: 1 },
@@ -129,7 +123,6 @@ test("dropSideFromRatio maps the outer quarters to edges", () => {
 
 test("edge drop inserts beside an occupied pane and steals an already-monitored terminal", () => {
   const state = normalizeMonitorWorkspace({
-    enabled: true,
     panes: [
       { id: "left", terminalId: "term-a", width: 1 },
       { id: "right", terminalId: "term-b", width: 1 },
@@ -149,7 +142,6 @@ test("edge drop inserts beside an occupied pane and steals an already-monitored 
 
 test("center drop replaces and steals without adding a pane", () => {
   const state = normalizeMonitorWorkspace({
-    enabled: true,
     panes: [
       { id: "left", terminalId: "term-a", width: 1 },
       { id: "right", terminalId: "term-b", width: 1 },
@@ -169,7 +161,6 @@ test("center drop replaces and steals without adding a pane", () => {
 
 test("edge drop adds a fifth pane, then replaces when full", () => {
   const state = normalizeMonitorWorkspace({
-    enabled: true,
     panes: [
       { id: "a", terminalId: "term-a", width: 1 },
       { id: "b", terminalId: "term-b", width: 1 },
@@ -193,7 +184,6 @@ test("edge drop adds a fifth pane, then replaces when full", () => {
 
 test("empty pane drops assign that pane instead of inserting", () => {
   const state = normalizeMonitorWorkspace({
-    enabled: true,
     panes: [{ id: "only", terminalId: null, width: 1 }],
   });
   const assigned = dropMonitorTerminal(state, "only", "term-a", "before");
@@ -203,7 +193,6 @@ test("empty pane drops assign that pane instead of inserting", () => {
 
 test("moveMonitorPane reorders and ignores a self drop", () => {
   const state = normalizeMonitorWorkspace({
-    enabled: true,
     panes: [
       { id: "left", terminalId: "term-a", width: 1 },
       { id: "middle", terminalId: "term-b", width: 1 },
@@ -223,4 +212,42 @@ test("moveMonitorPane reorders and ignores a self drop", () => {
     ["right", "left", "middle"]
   );
   assert.equal(moveMonitorPane(state, "left", "left", "after"), state);
+});
+
+test("ignores the legacy enabled flag in stored layouts", () => {
+  const state = normalizeMonitorWorkspace({
+    enabled: false,
+    panes: [{ id: "only", terminalId: null, width: 1 }],
+  });
+  assert.deepEqual(state, {
+    panes: [{ id: "only", terminalId: null, width: 1 }],
+  });
+});
+
+test("opening a terminal reuses its pane, then an empty pane, then adds one", () => {
+  const shown = {
+    panes: [
+      { id: "a", terminalId: "t1", width: 0.5 },
+      { id: "b", terminalId: null, width: 0.5 },
+    ],
+  };
+  assert.equal(openMonitorTerminal(shown, "t1"), shown);
+  assert.equal(openMonitorTerminal(shown, "t2").panes[1].terminalId, "t2");
+
+  const full = openMonitorTerminal(openMonitorTerminal(shown, "t2"), "t3");
+  assert.deepEqual(
+    full.panes.map((pane) => pane.terminalId),
+    ["t1", "t2", "t3"]
+  );
+});
+
+test("a renamed terminal stays in its pane", () => {
+  const state = {
+    panes: [{ id: "a", terminalId: "old", width: 1 }],
+  };
+  assert.equal(
+    renameMonitorTerminal(state, "old", "new").panes[0].terminalId,
+    "new"
+  );
+  assert.equal(renameMonitorTerminal(state, "other", "new"), state);
 });

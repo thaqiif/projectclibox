@@ -51,7 +51,6 @@ test("persistence tests run against the isolated temp database", () => {
 });
 
 const TWO_PANE_WORKSPACE = {
-  enabled: true,
   panes: [
     { id: "monitor-left", terminalId: "term-alpha", width: 1 },
     { id: "monitor-right", terminalId: "term-beta", width: 3 },
@@ -65,9 +64,9 @@ test("PUT and GET preserve a five-pane monitor workspace", async () => {
     terminalId: `term-${index}`,
     width: 1,
   }));
-  const response = await PUT(putRequest({ enabled: true, panes }));
+  const response = await PUT(putRequest({ panes }));
   assert.equal(response.status, 200);
-  const expected = normalizeMonitorWorkspace({ enabled: true, panes });
+  const expected = normalizeMonitorWorkspace({ panes });
   assert.deepEqual(await response.json(), expected);
   assert.deepEqual(await getBody(), expected);
 });
@@ -78,18 +77,16 @@ test("GET returns the default workspace when nothing is stored", async () => {
   const state = await getBody();
 
   assert.deepEqual(state, DEFAULT_MONITOR_WORKSPACE);
-  assert.equal(state.enabled, false);
   assert.deepEqual(state.panes, [
     { id: "monitor-1", terminalId: null, width: 1 },
   ]);
 });
 
-test("PUT persists enabled flag, pane order, terminal identities, and equal pane widths", async () => {
+test("PUT persists pane order, terminal identities, and equal pane widths", async () => {
   resetSettings();
 
   const response = await PUT(
     putRequest({
-      enabled: true,
       panes: [
         { id: "monitor-left", terminalId: "term-alpha", width: 1 },
         { id: "monitor-right", terminalId: "term-beta", width: 3 },
@@ -98,7 +95,6 @@ test("PUT persists enabled flag, pane order, terminal identities, and equal pane
   );
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    enabled: true,
     panes: [
       { id: "monitor-left", terminalId: "term-alpha", width: 0.5 },
       { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
@@ -107,7 +103,6 @@ test("PUT persists enabled flag, pane order, terminal identities, and equal pane
 
   // Stored widths are equal shares, independent of the submitted 1:3 ratio.
   assert.deepEqual(JSON.parse(readStoredRaw()!), {
-    enabled: true,
     panes: [
       { id: "monitor-left", terminalId: "term-alpha", width: 0.5 },
       { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
@@ -116,7 +111,6 @@ test("PUT persists enabled flag, pane order, terminal identities, and equal pane
 
   // GET serves the persisted, equal-width state back.
   assert.deepEqual(await getBody(), {
-    enabled: true,
     panes: [
       { id: "monitor-left", terminalId: "term-alpha", width: 0.5 },
       { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
@@ -130,11 +124,10 @@ test("PUT rejects invalid workspaces with 400 without touching stored state", as
   const storedBefore = readStoredRaw();
 
   const invalidPayloads: Array<[string, unknown]> = [
-    ["empty panes array", { enabled: true, panes: [] }],
+    ["empty panes array", { panes: [] }],
     [
       "zero width",
       {
-        enabled: true,
         panes: [
           { id: "a", terminalId: "term-alpha", width: 0 },
           { id: "b", terminalId: null, width: 1 },
@@ -144,7 +137,6 @@ test("PUT rejects invalid workspaces with 400 without touching stored state", as
     [
       "negative width",
       {
-        enabled: true,
         panes: [
           { id: "a", terminalId: "term-alpha", width: -0.5 },
           { id: "b", terminalId: null, width: 1 },
@@ -154,7 +146,6 @@ test("PUT rejects invalid workspaces with 400 without touching stored state", as
     [
       "non-numeric width",
       {
-        enabled: true,
         panes: [
           { id: "a", terminalId: "term-alpha", width: "half" },
           { id: "b", terminalId: null, width: 1 },
@@ -164,7 +155,6 @@ test("PUT rejects invalid workspaces with 400 without touching stored state", as
     [
       "duplicate terminalId across panes",
       {
-        enabled: true,
         panes: [
           { id: "a", terminalId: "term-alpha", width: 1 },
           { id: "b", terminalId: "term-alpha", width: 1 },
@@ -174,7 +164,6 @@ test("PUT rejects invalid workspaces with 400 without touching stored state", as
     [
       "duplicate pane ids",
       {
-        enabled: true,
         panes: [
           { id: "monitor-left", terminalId: "term-alpha", width: 1 },
           { id: "monitor-left", terminalId: "term-beta", width: 1 },
@@ -184,7 +173,6 @@ test("PUT rejects invalid workspaces with 400 without touching stored state", as
     [
       "six panes",
       {
-        enabled: true,
         panes: [
           { id: "a", terminalId: null, width: 1 },
           { id: "b", terminalId: null, width: 1 },
@@ -214,7 +202,7 @@ test("PUT rejects invalid workspaces with 400 without touching stored state", as
   }
 });
 
-test("PUT with enabled false preserves pane assignments and widths", async () => {
+test("PUT accepts a legacy enabled flag and does not store it", async () => {
   resetSettings();
   await PUT(putRequest(TWO_PANE_WORKSPACE));
 
@@ -230,7 +218,7 @@ test("PUT with enabled false preserves pane assignments and widths", async () =>
   assert.equal(response.status, 200);
 
   const state = await getBody();
-  assert.equal(state.enabled, false);
+  assert.equal("enabled" in state, false);
   assert.deepEqual(state.panes, [
     { id: "monitor-left", terminalId: "term-alpha", width: 0.5 },
     { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
@@ -242,7 +230,6 @@ test("last write wins: the second of two valid PUTs is the canonical stored valu
 
   const first = await PUT(
     putRequest({
-      enabled: true,
       panes: [{ id: "monitor-1", terminalId: "term-alpha", width: 1 }],
     })
   );
@@ -250,7 +237,6 @@ test("last write wins: the second of two valid PUTs is the canonical stored valu
 
   const second = await PUT(
     putRequest({
-      enabled: false,
       panes: [
         { id: "monitor-a", terminalId: "term-beta", width: 2 },
         { id: "monitor-b", terminalId: null, width: 2 },
@@ -261,7 +247,6 @@ test("last write wins: the second of two valid PUTs is the canonical stored valu
 
   // GET serves the second write, not the first.
   assert.deepEqual(await getBody(), {
-    enabled: false,
     panes: [
       { id: "monitor-a", terminalId: "term-beta", width: 0.5 },
       { id: "monitor-b", terminalId: null, width: 0.5 },
@@ -269,7 +254,6 @@ test("last write wins: the second of two valid PUTs is the canonical stored valu
   });
   // And the stored row is exactly the second write.
   assert.deepEqual(JSON.parse(readStoredRaw()!), {
-    enabled: false,
     panes: [
       { id: "monitor-a", terminalId: "term-beta", width: 0.5 },
       { id: "monitor-b", terminalId: null, width: 0.5 },
@@ -279,9 +263,7 @@ test("last write wins: the second of two valid PUTs is the canonical stored valu
 
 test("GET falls back to the default workspace when the stored value is corrupt", async () => {
   resetSettings();
-  queries
-    .setSetting(getDb())
-    .run(MONITOR_WORKSPACE_SETTING_KEY, '{"enabled": true, "panes": [');
+  queries.setSetting(getDb()).run(MONITOR_WORKSPACE_SETTING_KEY, '{"panes": [');
 
   const response = await GET();
   assert.equal(response.status, 200);
@@ -293,7 +275,6 @@ test("GET falls back to the default workspace when the stored value is corrupt",
 
 test("a saved pane referencing an unavailable terminal is kept as-is by the model", () => {
   const saved: MonitorWorkspaceState = {
-    enabled: true,
     panes: [
       { id: "monitor-left", terminalId: "gone-terminal", width: 0.5 },
       { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
@@ -321,7 +302,6 @@ test("a saved pane referencing an unavailable terminal is kept as-is by the mode
 
 test("assignMonitorTerminal replaces an unavailable terminal's pane but still rejects duplicate assignment", () => {
   const saved: MonitorWorkspaceState = {
-    enabled: true,
     panes: [
       { id: "monitor-left", terminalId: "gone-terminal", width: 0.5 },
       { id: "monitor-right", terminalId: "term-beta", width: 0.5 },
@@ -359,7 +339,6 @@ test("per-pane failure isolation is a component-level behavior, not a pure-model
   assert.match(source, /key=\{terminalId\}/);
 
   const saved: MonitorWorkspaceState = {
-    enabled: true,
     panes: [
       { id: "monitor-left", terminalId: "gone-terminal", width: 0.5 },
       { id: "monitor-right", terminalId: "term-beta", width: 0.5 },

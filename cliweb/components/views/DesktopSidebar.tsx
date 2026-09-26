@@ -14,7 +14,6 @@ interface DesktopSidebarProps {
   onSelect: (name: string) => void;
   onNewTerminal: (projectId?: string) => void;
   onCloseTerminal: (projectId: string) => void;
-  onClosedAllTerminals?: () => void;
 }
 
 export function DesktopSidebar({
@@ -23,7 +22,6 @@ export function DesktopSidebar({
   onSelect,
   onNewTerminal,
   onCloseTerminal,
-  onClosedAllTerminals,
 }: DesktopSidebarProps) {
   // When unpinned, the sidebar floats and reveals on hover near the left edge
   const [revealed, setRevealed] = useState(false);
@@ -74,7 +72,6 @@ export function DesktopSidebar({
           onSelect={onSelect}
           onNewTerminal={onNewTerminal}
           onCloseTerminal={onCloseTerminal}
-          onClosedAllTerminals={onClosedAllTerminals}
         />
       </div>
     </div>

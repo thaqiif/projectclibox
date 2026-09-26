@@ -6,11 +6,12 @@ import {
   MAX_MONITOR_PANES,
   dropMonitorTerminal,
   moveMonitorPane,
+  openMonitorTerminal,
+  renameMonitorTerminal,
   removeMonitorPane,
   type MonitorDropSide,
   type MonitorWorkspaceState,
 } from "@/lib/monitor-workspace";
-import { TERMINAL_DRAG_TYPE } from "@/lib/drag-types";
 
 export function useMonitorWorkspace() {
   const [workspace, setWorkspace] = useState<MonitorWorkspaceState | null>(
@@ -23,10 +24,6 @@ export function useMonitorWorkspace() {
   // PUTs are chained: each one waits for the previous to settle, so they can
   // never arrive out of order and leave the server holding an older layout.
   const pendingWrite = useRef<Promise<void>>(Promise.resolve());
-  // Whether the current drag opened the workspace, and whether it landed in a
-  // pane. See the drag effect below.
-  const dragOpenedRef = useRef(false);
-  const dragLandedRef = useRef(false);
 
   const persistLatest = useCallback(() => {
     if (!loaded.current) return;
@@ -80,47 +77,21 @@ export function useMonitorWorkspace() {
     };
   }, []);
 
-  useEffect(() => {
-    // Lifting a terminal card is a request to put it in a monitor pane, so the
-    // workspace opens for the duration of the drag — otherwise the card is
-    // lifted with nothing on screen that can receive it. A drag that ends
-    // without a drop puts the workspace back the way it was, so a card nudged
-    // by accident does not leave the workbench in monitor mode.
-    const onDragStart = (event: DragEvent) => {
-      const types = Array.from(event.dataTransfer?.types ?? []);
-      if (!types.includes(TERMINAL_DRAG_TYPE)) return;
-
-      dragLandedRef.current = false;
+  const openTerminal = useCallback(
+    (terminalId: string) => {
       const current = latest.current;
-      if (!current || current.enabled) return;
+      if (current) commit(openMonitorTerminal(current, terminalId));
+    },
+    [commit]
+  );
 
-      dragOpenedRef.current = true;
-      commit({ ...current, enabled: true });
-    };
-
-    const onDragEnd = () => {
-      const opened = dragOpenedRef.current;
-      const landed = dragLandedRef.current;
-      dragOpenedRef.current = false;
-      dragLandedRef.current = false;
-      if (!opened || landed) return;
-
+  const renameTerminal = useCallback(
+    (from: string, to: string) => {
       const current = latest.current;
-      if (current?.enabled) commit({ ...current, enabled: false });
-    };
-
-    window.addEventListener("dragstart", onDragStart);
-    window.addEventListener("dragend", onDragEnd);
-    return () => {
-      window.removeEventListener("dragstart", onDragStart);
-      window.removeEventListener("dragend", onDragEnd);
-    };
-  }, [commit]);
-
-  const toggle = useCallback(() => {
-    const current = latest.current;
-    if (current) commit({ ...current, enabled: !current.enabled });
-  }, [commit]);
+      if (current) commit(renameMonitorTerminal(current, from, to));
+    },
+    [commit]
+  );
 
   const addPane = useCallback(() => {
     const current = latest.current;
@@ -149,7 +120,6 @@ export function useMonitorWorkspace() {
     (paneId: string, terminalId: string, side: MonitorDropSide = "center") => {
       const current = latest.current;
       if (!current) return;
-      dragLandedRef.current = true;
       commit(dropMonitorTerminal(current, paneId, terminalId, side));
     },
     [commit]
@@ -158,10 +128,19 @@ export function useMonitorWorkspace() {
   const movePane = useCallback(
     (sourcePaneId: string, anchorPaneId: string, side: MonitorDropSide) => {
       const current = latest.current;
-      if (current) commit(moveMonitorPane(current, sourcePaneId, anchorPaneId, side));
+      if (current)
+        commit(moveMonitorPane(current, sourcePaneId, anchorPaneId, side));
     },
     [commit]
   );
 
-  return { workspace, toggle, addPane, removePane, assignTerminal, movePane };
+  return {
+    workspace,
+    openTerminal,
+    renameTerminal,
+    addPane,
+    removePane,
+    assignTerminal,
+    movePane,
+  };
 }

@@ -11,10 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  TerminalSkeleton,
-  FileExplorerSkeleton,
-} from "@/components/Pane/PaneSkeletons";
+import { TerminalSkeleton, FileExplorerSkeleton } from "./Skeletons";
 import type { TerminalHandle } from "@/components/Terminal";
 import type { TerminalRecord } from "@/lib/terminals";
 import type { Project } from "@/lib/db";
@@ -27,7 +24,6 @@ import {
 } from "@/lib/monitor-workspace";
 import { PANE_DRAG_TYPE, TERMINAL_DRAG_TYPE } from "@/lib/drag-types";
 import {
-  Columns3,
   FolderOpen,
   ListPlus,
   Menu,
@@ -77,7 +73,6 @@ interface MonitorWorkspaceProps {
   onSelectPane?: (paneId: string) => void;
   onAddPane?: () => string | undefined;
   onCreateTerminal?: (paneId: string) => void | Promise<void>;
-  onToggleMonitor?: () => void;
   onMenuClick?: () => void;
 }
 
@@ -460,7 +455,6 @@ export function MonitorWorkspace({
   onSelectPane,
   onAddPane,
   onCreateTerminal,
-  onToggleMonitor,
   onMenuClick,
 }: MonitorWorkspaceProps) {
   const canRemove = workspace.panes.length > 1;
@@ -680,16 +674,6 @@ export function MonitorWorkspace({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Exit monitor view"
-            title="Exit monitor view"
-            className="h-11 w-11 shrink-0 rounded-full"
-            onClick={onToggleMonitor}
-          >
-            <Columns3 className="h-4 w-4" />
-          </Button>
           <Dialog
             open={terminalToAssign !== null}
             onOpenChange={(open) => {

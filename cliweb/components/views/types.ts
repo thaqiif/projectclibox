@@ -7,10 +7,8 @@ export interface ViewProps {
   projects: Project[];
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
-  activeTerminal: TerminalRecord | undefined;
   monitor: ReturnType<typeof useMonitorWorkspace>;
   // Handlers
-  attachToTerminal: (name: string) => void;
   /** Open a new terminal, optionally in a project's working directory. */
   handleNewTerminal: (
     projectId?: string,
@@ -18,9 +16,4 @@ export interface ViewProps {
   ) => Promise<void>;
   handleCloseTerminal: (name: string) => Promise<void>;
   fetchTerminals: () => Promise<void>;
-  /** Detach the workbench from the attached terminal, leaving it running. */
-  handleDetachTerminal: () => void;
-
-  // Pane
-  renderPane: () => React.ReactNode;
 }

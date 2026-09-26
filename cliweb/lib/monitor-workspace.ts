@@ -9,12 +9,10 @@ export interface MonitorPaneState {
 }
 
 export interface MonitorWorkspaceState {
-  enabled: boolean;
   panes: MonitorPaneState[];
 }
 
 export const DEFAULT_MONITOR_WORKSPACE: MonitorWorkspaceState = {
-  enabled: false,
   panes: [{ id: "monitor-1", terminalId: null, width: 1 }],
 };
 
@@ -31,12 +29,11 @@ export function normalizeMonitorWorkspace(
     throw new Error("Workspace must be an object");
   }
 
-  const candidate = input as { enabled?: unknown; panes?: unknown };
-  if (
-    typeof candidate.enabled !== "boolean" ||
-    !Array.isArray(candidate.panes)
-  ) {
-    throw new Error("Workspace requires enabled and panes");
+  // Stored layouts from before monitor became the only view also carry an
+  // `enabled` flag; it is ignored.
+  const candidate = input as { panes?: unknown };
+  if (!Array.isArray(candidate.panes)) {
+    throw new Error("Workspace requires panes");
   }
   if (
     candidate.panes.length < MIN_MONITOR_PANES ||
@@ -85,10 +82,7 @@ export function normalizeMonitorWorkspace(
     };
   });
 
-  return {
-    enabled: candidate.enabled,
-    panes: equalizeWidths(panes),
-  };
+  return { panes: equalizeWidths(panes) };
 }
 
 export function assignMonitorTerminal(
@@ -129,7 +123,6 @@ export function dropSideFromRatio(ratio: number): MonitorDropSide {
   if (ratio > 1 - MONITOR_EDGE_ZONE) return "after";
   return "center";
 }
-
 
 function newPaneId(): string {
   return `monitor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -181,8 +174,7 @@ function insertMonitorPane(
   if (emptyIndex >= 0) {
     const [emptyPane] = panes.splice(emptyIndex, 1);
     const nextAnchorIndex = panes.findIndex((pane) => pane.id === anchorPaneId);
-    const insertAt =
-      side === "before" ? nextAnchorIndex : nextAnchorIndex + 1;
+    const insertAt = side === "before" ? nextAnchorIndex : nextAnchorIndex + 1;
     panes.splice(insertAt, 0, { ...emptyPane, terminalId });
     return { ...cleared, panes: equalizeWidths(panes) };
   }
@@ -214,6 +206,37 @@ export function dropMonitorTerminal(
   return placeMonitorTerminal(workspace, paneId, terminalId);
 }
 
+/** Show a terminal: leave it where it is if a pane already holds it, else fill the first empty pane, else open it beside the last pane (replacing the last one at the pane cap). */
+export function openMonitorTerminal(
+  workspace: MonitorWorkspaceState,
+  terminalId: string
+): MonitorWorkspaceState {
+  if (workspace.panes.some((pane) => pane.terminalId === terminalId)) {
+    return workspace;
+  }
+  const empty = workspace.panes.find((pane) => pane.terminalId === null);
+  if (empty) return placeMonitorTerminal(workspace, empty.id, terminalId);
+  const last = workspace.panes[workspace.panes.length - 1];
+  return dropMonitorTerminal(workspace, last.id, terminalId, "after");
+}
+
+/** Follow a terminal rename: tmux names identify terminals, so a pane holding the old name would otherwise show nothing. */
+export function renameMonitorTerminal(
+  workspace: MonitorWorkspaceState,
+  from: string,
+  to: string
+): MonitorWorkspaceState {
+  if (!workspace.panes.some((pane) => pane.terminalId === from)) {
+    return workspace;
+  }
+  return {
+    ...workspace,
+    panes: workspace.panes.map((pane) =>
+      pane.terminalId === from ? { ...pane, terminalId: to } : pane
+    ),
+  };
+}
+
 export function moveMonitorPane(
   workspace: MonitorWorkspaceState,
   sourcePaneId: string,
@@ -233,7 +256,8 @@ export function moveMonitorPane(
   const [moved] = panes.splice(sourceIndex, 1);
   let insertAt = side === "before" ? anchorIndex : anchorIndex + 1;
   if (sourceIndex < insertAt) insertAt -= 1;
-  if (side === "center") insertAt = panes.findIndex((pane) => pane.id === anchorPaneId);
+  if (side === "center")
+    insertAt = panes.findIndex((pane) => pane.id === anchorPaneId);
   if (insertAt < 0) insertAt = 0;
   panes.splice(insertAt, 0, moved);
   return { ...workspace, panes: equalizeWidths(panes) };

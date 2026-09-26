@@ -62,11 +62,9 @@ test("obsolete project launch metadata is removed", () => {
 
 test("workbench controls contain no Git surface", () => {
   const files = [
-    "components/views/WorkbenchBar.tsx",
-    "components/Pane/MobileTabBar.tsx",
-    "components/Pane/index.tsx",
-    "contexts/PaneContext.tsx",
-    "lib/panes.ts",
+    "components/views/DesktopView.tsx",
+    "components/views/MobileView.tsx",
+    "components/MonitorWorkspace/index.tsx",
   ];
 
   for (const relativePath of files) {
@@ -107,7 +105,6 @@ test("project and terminal surfaces contain no Git or dev-server controls", () =
 test("the product is branded CLIWeb", () => {
   const brandedFiles = [
     "app/layout.tsx",
-    "app/page.tsx",
     "components/Welcome.tsx",
     "components/TerminalList/TerminalListHeader.tsx",
     "public/cliweb.webmanifest",
@@ -181,7 +178,7 @@ test("the application icon represents CLIWeb", () => {
   const layout = source("app/layout.tsx");
   const manifest = source("public/cliweb.webmanifest");
 
-  assert.match(layout, /manifest: "\/cliweb\.webmanifest"/);
+  assert.match(layout, /href="\/cliweb\.webmanifest"\s+crossOrigin="use-credentials"/);
   assert.match(layout, /url: "\/branding\/cliweb-terminal\.svg"/);
   assert.match(layout, /apple: "\/branding\/cliweb-terminal-192\.png"/);
   assert.match(manifest, /"src": "\/branding\/cliweb-terminal-192\.png"/);
@@ -470,12 +467,15 @@ test("monitor workspace adapts between desktop panes and mobile tabs", () => {
   const route = source("app/api/monitor-workspace/route.ts");
 
   assert.match(page, /if \(isMobile\)[\s\S]*?<MobileView[\s\S]*?<DesktopView/);
-  assert.match(page, /const monitor = useMonitorWorkspace\(\)/);
-  assert.match(desktop, /monitor\.workspace\?\.enabled/);
+  assert.match(page, /const monitor = useMonitor\(\)/);
+  // Monitor is the only workbench: nothing turns it off.
+  assert.doesNotMatch(desktop, /Toggle monitor workspace|renderPane/);
+  assert.doesNotMatch(mobile, /renderPane|onToggleMonitor/);
+  assert.doesNotMatch(monitor, /Exit monitor view/);
+  assert.doesNotMatch(hook, /toggle|enabled/);
+  assert.match(desktop, /onSelect=\{monitor\.openTerminal\}/);
   assert.match(monitor, /role="tablist"/);
   assert.match(monitor, /aria-label="Monitor terminals"/);
-  assert.match(desktop, /Toggle monitor workspace/);
-  assert.match(desktop, /handleCloseTerminal\(activeTerminal\.name\)/);
   assert.doesNotMatch(desktop, /aria-label="Remove monitor pane"/);
   assert.match(monitor, /TERMINAL_DRAG_TYPE/);
   assert.doesNotMatch(monitor, /tmuxAttachCommand/);
@@ -501,7 +501,6 @@ test("monitor workspace adapts between desktop panes and mobile tabs", () => {
     source("app/api/tmux/kill-all/route.ts"),
     /forgetTerminal\(terminal\.name\)/
   );
-  assert.match(page, /if \(attachedTmux === name\) detach\(\)/);
   assert.match(mobile, /<MonitorWorkspace/);
   assert.match(mobile, /onSelectPane=\{setSelectedPaneId\}/);
   assert.match(mobile, /monitor\.assignTerminal\(selectedPane\.id, id\)/);
@@ -543,8 +542,8 @@ test("drag payload types have a single definition", () => {
 });
 
 test("mobile chrome is opaque and cannot switch terminals by gesture", () => {
-  const pane = source("components/Pane/index.tsx");
-  const tabBar = source("components/Pane/MobileTabBar.tsx");
+  const pane = source("components/MonitorWorkspace/index.tsx");
+  const tabBar = pane;
   const toolbar = source("components/Terminal/TerminalToolbar.tsx");
 
   // Swiping used to move to the next terminal, decided only on how far the
@@ -588,6 +587,13 @@ test("unreachable surfaces are removed", () => {
     "app/api/exec/route.ts",
     // The terminal paperclip was its only entry point.
     "components/FilePicker.tsx",
+    // The single-terminal workbench, replaced by the always-on monitor.
+    "components/Pane/index.tsx",
+    "components/Pane/MobileTabBar.tsx",
+    "components/views/WorkbenchBar.tsx",
+    "components/views/WorkbenchTitle.tsx",
+    "contexts/PaneContext.tsx",
+    "lib/panes.ts",
   ];
 
   for (const relativePath of removedPaths) {
@@ -615,10 +621,7 @@ test("the terminal is the only surface a finger moves", () => {
     /pointerdown|pointermove|VelocityTracker|projectMomentum|rubberBand/
   );
 
-  // Lifting a terminal card opens the monitor workspace so there is somewhere
-  // to drop it, and a drag that lands nowhere puts the workspace back.
-  assert.match(monitor, /addEventListener\("dragstart"/);
-  assert.match(monitor, /addEventListener\("dragend"/);
-  assert.match(monitor, /TERMINAL_DRAG_TYPE/);
-  assert.match(monitor, /dragLandedRef/);
+  // The monitor is always on screen, so a lifted card always has somewhere
+  // to land; nothing opens or closes the workspace around a drag.
+  assert.doesNotMatch(monitor, /addEventListener\("dragstart"|dragLandedRef/);
 });
