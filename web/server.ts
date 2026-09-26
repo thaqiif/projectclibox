@@ -21,6 +21,11 @@ import {
   releaseTerminalCapability,
   type TerminalCapability,
 } from "./lib/terminal-capabilities";
+import { getDb, queries } from "./lib/db";
+import {
+  MONITOR_WORKSPACE_SETTING_KEY,
+  normalizeMonitorWorkspace,
+} from "./lib/monitor-workspace";
 import { isAllowedOrigin } from "./lib/route-guards";
 import { isValidTerminalGrid } from "./lib/terminal-grid";
 import {
@@ -74,9 +79,47 @@ function rejectUpgrade(socket: Duplex, status: number, text: string) {
 }
 
 app.prepare().then(() => {
+  // Pushes monitor workspace saves to every open tab, so a layout changed
+  // on one device shows up on the others without a reload.
+  const workspaceWss = new WebSocketServer({
+    noServer: true,
+    maxPayload: 1024,
+    perMessageDeflate: false,
+  });
+
+  // Route handlers run in their own module graph, so a saved layout is
+  // picked up here, as its PUT completes, and pushed to every open tab.
+  const broadcastMonitorWorkspace = (origin: string | null) => {
+    if (workspaceWss.clients.size === 0) return;
+    let workspace;
+    try {
+      const row = queries
+        .getSetting(getDb())
+        .get(MONITOR_WORKSPACE_SETTING_KEY) as { value: string } | undefined;
+      if (!row) return;
+      workspace = normalizeMonitorWorkspace(JSON.parse(row.value));
+    } catch (err) {
+      console.error("Failed to broadcast monitor workspace:", err);
+      return;
+    }
+    const frame = JSON.stringify({ type: "workspace", workspace, origin });
+    for (const client of workspaceWss.clients) {
+      if (client.readyState === WebSocket.OPEN) client.send(frame);
+    }
+  };
+
   const server = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url!, true);
+      if (
+        req.method === "PUT" &&
+        parsedUrl.pathname === "/api/monitor-workspace"
+      ) {
+        const origin = firstHeader(req.headers["x-clibox-client"]) ?? null;
+        res.on("finish", () => {
+          if (res.statusCode === 200) broadcastMonitorWorkspace(origin);
+        });
+      }
       await handle(req, res, parsedUrl);
     } catch (err) {
       console.error("Error occurred handling", req.url, err);
@@ -94,7 +137,8 @@ app.prepare().then(() => {
 
   server.on("upgrade", (request, socket, head) => {
     const { pathname } = parse(request.url || "");
-    if (pathname !== "/ws/terminal") return;
+    if (pathname !== "/ws/terminal" && pathname !== "/ws/monitor-workspace")
+      return;
 
     const allowed = isAllowedOrigin(
       firstHeader(request.headers.origin),
@@ -103,6 +147,16 @@ app.prepare().then(() => {
     );
     if (!allowed) {
       rejectUpgrade(socket, 403, "Forbidden");
+      return;
+    }
+    if (pathname === "/ws/monitor-workspace") {
+      if (workspaceWss.clients.size >= 64) {
+        rejectUpgrade(socket, 503, "Service Unavailable");
+        return;
+      }
+      workspaceWss.handleUpgrade(request, socket, head, (ws) => {
+        workspaceWss.emit("connection", ws, request);
+      });
       return;
     }
     if (pendingHello.size >= 32) {
@@ -114,6 +168,24 @@ app.prepare().then(() => {
       pendingHello.add(ws);
       terminalWss.emit("connection", ws, request);
     });
+  });
+
+  workspaceWss.on("connection", (ws: WebSocket) => {
+    let awaitingPong = false;
+    ws.on("pong", () => {
+      awaitingPong = false;
+    });
+    const heartbeat = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      if (awaitingPong) {
+        ws.terminate();
+        return;
+      }
+      awaitingPong = true;
+      ws.ping();
+    }, HEARTBEAT_MS);
+    ws.on("close", () => clearInterval(heartbeat));
+    ws.on("error", () => ws.terminate());
   });
 
   terminalWss.on("connection", (ws: WebSocket) => {

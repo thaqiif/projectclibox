@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { terminalKeys } from "@/data/terminals";
 import {
   DEFAULT_MONITOR_WORKSPACE,
   MAX_MONITOR_PANES,
@@ -13,7 +15,13 @@ import {
   type MonitorWorkspaceState,
 } from "@/lib/monitor-workspace";
 
+// Identifies this tab's saves, so the live update echoed back is skipped.
+const CLIENT_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+const RECONNECT_MIN_MS = 1_000;
+const RECONNECT_MAX_MS = 30_000;
+
 export function useMonitorWorkspace() {
+  const queryClient = useQueryClient();
   const [workspace, setWorkspace] = useState<MonitorWorkspaceState | null>(
     null
   );
@@ -32,7 +40,10 @@ export function useMonitorWorkspace() {
         if (!latest.current) return;
         await fetch("/api/monitor-workspace", {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Clibox-Client": CLIENT_ID,
+          },
           body: JSON.stringify(latest.current),
         });
       })
@@ -51,31 +62,108 @@ export function useMonitorWorkspace() {
     [persistLatest]
   );
 
+  // A layout saved by another device replaces the local one. The terminal
+  // list is refreshed with it, since the new layout may show terminals this
+  // tab has not seen yet.
+  const applyRemote = useCallback(
+    (state: MonitorWorkspaceState) => {
+      latest.current = state;
+      setWorkspace(state);
+      void queryClient.invalidateQueries({ queryKey: terminalKeys.all });
+    },
+    [queryClient]
+  );
+
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/monitor-workspace")
-      .then((response) => {
-        if (!response.ok) throw new Error("Failed to load monitor workspace");
-        return response.json() as Promise<MonitorWorkspaceState>;
-      })
-      .then((state) => {
-        if (!cancelled) {
-          loaded.current = true;
-          latest.current = state;
-          setWorkspace(state);
+    let socket: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelay = RECONNECT_MIN_MS;
+
+    const load = () =>
+      fetch("/api/monitor-workspace")
+        .then((response) => {
+          if (!response.ok) throw new Error("Failed to load monitor workspace");
+          return response.json() as Promise<MonitorWorkspaceState>;
+        })
+        .then((state) => {
+          if (cancelled) return;
+          if (loaded.current) applyRemote(state);
+          else {
+            loaded.current = true;
+            latest.current = state;
+            setWorkspace(state);
+          }
+        })
+        .catch(() => {
+          if (!cancelled && !loaded.current) {
+            loaded.current = true;
+            latest.current = DEFAULT_MONITOR_WORKSPACE;
+            setWorkspace(DEFAULT_MONITOR_WORKSPACE);
+          }
+        });
+
+    const connect = () => {
+      if (cancelled) return;
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(
+        `${protocol}//${window.location.host}/ws/monitor-workspace`
+      );
+      socket = ws;
+      ws.onopen = () => {
+        reconnectDelay = RECONNECT_MIN_MS;
+        // Catch up on anything saved while this tab was disconnected.
+        if (loaded.current) void load();
+      };
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(String(event.data));
+          if (msg?.type === "workspace" && msg.origin !== CLIENT_ID) {
+            applyRemote(msg.workspace as MonitorWorkspaceState);
+          }
+        } catch {
+          // Ignore malformed frames.
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          loaded.current = true;
-          latest.current = DEFAULT_MONITOR_WORKSPACE;
-          setWorkspace(DEFAULT_MONITOR_WORKSPACE);
-        }
-      });
+      };
+      ws.onclose = () => {
+        if (socket !== ws) return;
+        socket = null;
+        scheduleReconnect();
+      };
+    };
+
+    const scheduleReconnect = () => {
+      if (cancelled || reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
+    };
+
+    // Mobile browsers drop sockets in the background; reconnect right away
+    // when the app comes back instead of waiting out the backoff.
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (socket && socket.readyState <= WebSocket.OPEN) return;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      reconnectDelay = RECONNECT_MIN_MS;
+      connect();
+    };
+
+    void load();
+    connect();
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      const ws = socket;
+      socket = null;
+      ws?.close();
     };
-  }, []);
+  }, [applyRemote]);
 
   const openTerminal = useCallback(
     (terminalId: string) => {
