@@ -115,7 +115,7 @@ Coolify rebuild production. Read end to end before deploying.
 
 Coolify reads a single compose file and ignores the `hardware/` overlays, so
 point the application's Docker Compose Location at `/compose.coolify.yml`. It
-passes through KVM, the host's `card0`/`renderD128` GPU and `/dev/kfd`, and mounts `/home/cliweb` as the
+passes through KVM, both GPUs and `/dev/kfd`, and mounts `/home/cliweb` as the
 home unless `CLIBOX_HOME_DIR` is set. Remove any device the host lacks.
 
 ### 1. Back up first (rollback anchor)
