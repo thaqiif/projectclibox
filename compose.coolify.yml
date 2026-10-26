@@ -34,7 +34,8 @@ services:
       # Defaults to the CLIWeb-era home, so an upgraded deployment keeps its
       # data without extra configuration.
       - ${CLIBOX_HOME_DIR:-/home/cliweb}:/home/clibox
-      - ${CLIBOX_HOME_DIR:-/home/cliweb}/nanobrew:/opt/nanobrew
+      # Coolify mangles "${VAR:-default}/suffix", so nanobrew has its own variable.
+      - ${CLIBOX_NANOBREW_DIR:-/home/cliweb/nanobrew}:/opt/nanobrew
       - ${WORKSPACE_DIR:-./workspaces}:/workspaces
     devices:
       # Hardware virtualization (QEMU/KVM, Android emulators, microVMs).
