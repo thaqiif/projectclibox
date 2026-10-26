@@ -19,3 +19,6 @@ core.*
 
 # Rust build output (left by tools run inside web terminals)
 target/
+
+# Default persisted home (CLIBOX_HOME_DIR)
+/data/

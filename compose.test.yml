@@ -1,0 +1,59 @@
+# Test-deployment compose file.
+#
+# Same stack as compose.yml (production), with test-specific defaults
+# and override names so a second Coolify app can deploy from this branch/app
+# without touching production's state:
+#
+#   - persisted home:   $TEST_CLIBOX_HOME_DIR (container sees /home/clibox)
+#   - workspaces:       ./workspaces-test   (container sees /workspaces)
+#   - web port:         3012 on the host
+#   - CLIBOX_PROFILE=test, so app state lives in ~/.clibox-test inside the
+#     home volume (belt and braces; with a separate home this is redundant
+#     but harmless).
+#
+# Production keeps compose.yml unchanged.
+
+services:
+  clibox:
+    build:
+      context: .
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CLIBOX_PORT: 3011
+      CLIBOX_PROFILE: test
+      CLIBOX_NANOBREW_ROOT: /opt/nanobrew
+      CLIBOX_NANOBREW_BIN: /usr/local/bin/nb
+      CHROMIUM_PATH: /usr/bin/chromium
+      NANOBREW_NO_TELEMETRY: "1"
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      SHELL: /bin/bash
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      # User-local package installs and nanobrew state are written below the
+      # host bind mount and therefore survive container recreation and rebuilds.
+      NPM_CONFIG_PREFIX: /home/clibox/.local
+      NPM_CONFIG_USERCONFIG: /home/clibox/.npmrc
+      PIP_USER: "1"
+      PYTHONUSERBASE: /home/clibox/.local
+    ports:
+      # Test port: 3012 host-side, via TEST_* variables so a shared .env that
+      # already sets HOST_PORT=3011 for production cannot collide. Set
+      # TEST_HOST_BIND=0.0.0.0 only when the test UI should be reachable from
+      # other devices.
+      - "${TEST_HOST_BIND:-127.0.0.1}:${TEST_HOST_PORT:-3012}:3011"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Test home on the host; container path stays /home/clibox.
+      - ${TEST_CLIBOX_HOME_DIR:-./data/home-test}:/home/clibox
+      - ${TEST_CLIBOX_HOME_DIR:-./data/home-test}/nanobrew:/opt/nanobrew
+      # Test workspaces folder beside the repo checkout's default.
+      - ${TEST_WORKSPACE_DIR:-./workspaces-test}:/workspaces
+
+    # Hardware overlays work here too, e.g.
+    # COMPOSE_FILE=compose.test.yml:hardware/kvm.yml:hardware/gpu.yml

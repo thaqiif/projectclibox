@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
+  <title>CLIBox terminal</title>
+  <g data-mark="clibox">
+    <rect width="64" height="64" rx="15" fill="#13213A"/>
+    <!-- An isometric box: amber lid, a prompt on the left face, the cursor on the right. -->
+    <path d="M32 7 53.5 19.5 32 32 10.5 19.5Z" fill="#F5A524"/>
+    <path d="M10.5 19.5 32 32v25L10.5 44.5Z" fill="#0B1424"/>
+    <path d="M32 32 53.5 19.5v25L32 57Z" fill="#1E3356"/>
+    <path d="m16.5 30.5 5.5 7.2-5.5 3.6" fill="none" stroke="#5CC8E0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="m38.5 46 8.5-4.9" stroke="#F4F6FA" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

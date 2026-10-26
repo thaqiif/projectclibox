@@ -1,0 +1,7 @@
+# AMD ROCm/OpenCL compute (/dev/kfd). Use with gpu.yml on an amdgpu host.
+# The ROCm stack itself is not in the image: install it, or a ROCm build of
+# your tool (PyTorch, Ollama), from a terminal.
+services:
+  clibox:
+    devices:
+      - /dev/kfd:/dev/kfd

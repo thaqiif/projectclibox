@@ -1,0 +1,6 @@
+# Hardware virtualization for QEMU/KVM guests, Android emulators and
+# microVMs started from a CLIBox terminal. Needs /dev/kvm on the host.
+services:
+  clibox:
+    devices:
+      - /dev/kvm:/dev/kvm

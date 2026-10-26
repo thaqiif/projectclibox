@@ -1,0 +1,11 @@
+# One GPU (Intel or AMD) through the kernel DRM interface: VA-API/QSV video,
+# Vulkan, OpenCL, and GPU-accelerated Chromium.
+#
+# The chosen GPU always appears as card0/renderD128 inside the container,
+# the node most tools open by default, whatever its host numbering.
+# ./install.sh finds it; by hand, see `ls -l /sys/class/drm/*/device/driver`.
+services:
+  clibox:
+    devices:
+      - ${CLIBOX_GPU_CARD:-/dev/dri/card0}:/dev/dri/card0
+      - ${CLIBOX_GPU_RENDER:-/dev/dri/renderD128}:/dev/dri/renderD128

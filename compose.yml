@@ -1,0 +1,47 @@
+services:
+  clibox:
+    # The published image. `docker compose build` (or a PaaS that builds
+    # from the repository) builds the same image from this checkout instead.
+    image: ghcr.io/thaqiif/clibox:${CLIBOX_VERSION:-latest}
+    build:
+      context: .
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CLIBOX_PORT: 3011
+      CLIBOX_NANOBREW_ROOT: /opt/nanobrew
+      CLIBOX_NANOBREW_BIN: /usr/local/bin/nb
+      CHROMIUM_PATH: /usr/bin/chromium
+      NANOBREW_NO_TELEMETRY: "1"
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      SHELL: /bin/bash
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      # User-local package installs and nanobrew state are written below the
+      # host bind mount and therefore survive container recreation and rebuilds.
+      NPM_CONFIG_PREFIX: /home/clibox/.local
+      NPM_CONFIG_USERCONFIG: /home/clibox/.npmrc
+      PIP_USER: "1"
+      PYTHONUSERBASE: /home/clibox/.local
+    ports:
+      # Localhost-only is the safe default. Set HOST_BIND=0.0.0.0 only when
+      # you intentionally want to reach the UI from another device.
+      - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3011}:3011"
+    extra_hosts:
+      # Linux does not provide host.docker.internal automatically. This lets
+      # CLIBox call APIs from sibling containers through their host ports.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # The persisted home: shell config, installed tools, CLIBox's database.
+      # Deployments from before the rename set CLIBOX_HOME_DIR=/home/cliweb.
+      - ${CLIBOX_HOME_DIR:-./data/home}:/home/clibox
+      - ${CLIBOX_HOME_DIR:-./data/home}/nanobrew:/opt/nanobrew
+      - ${WORKSPACE_DIR:-./workspaces}:/workspaces
+
+    # No host devices by default, so this file runs on any Docker host.
+    # KVM and GPUs are opt-in overlays in hardware/, listed in COMPOSE_FILE
+    # in .env (./install.sh detects them and writes it for you).

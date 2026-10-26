@@ -1,8 +1,9 @@
 {
-  "name": "cliweb-docker",
+  "name": "clibox",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
-    "lint": "cd cliweb && npm run lint",
-    "test": "cd cliweb && npm test"
+    "lint": "cd web && npm run lint",
+    "test": "cd web && npm test"
   }
 }
