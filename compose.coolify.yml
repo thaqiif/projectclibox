@@ -1,0 +1,49 @@
+# Single-file compose for Coolify (and other PaaS that read one compose file
+# and ignore COMPOSE_FILE overlays). Same service as compose.yml, with KVM and
+# both DRM GPUs plus AMD compute passed through, as the CLIWeb deployment had.
+# Every listed device must exist on the host, or the container will not start.
+services:
+  clibox:
+    build:
+      context: .
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CLIBOX_PORT: 3011
+      CLIBOX_NANOBREW_ROOT: /opt/nanobrew
+      CLIBOX_NANOBREW_BIN: /usr/local/bin/nb
+      CHROMIUM_PATH: /usr/bin/chromium
+      NANOBREW_NO_TELEMETRY: "1"
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      SHELL: /bin/bash
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      NPM_CONFIG_PREFIX: /home/clibox/.local
+      NPM_CONFIG_USERCONFIG: /home/clibox/.npmrc
+      PIP_USER: "1"
+      PYTHONUSERBASE: /home/clibox/.local
+    ports:
+      - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3011}:3011"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Defaults to the CLIWeb-era home, so an upgraded deployment keeps its
+      # data without extra configuration.
+      - ${CLIBOX_HOME_DIR:-/home/cliweb}:/home/clibox
+      - ${CLIBOX_HOME_DIR:-/home/cliweb}/nanobrew:/opt/nanobrew
+      - ${WORKSPACE_DIR:-./workspaces}:/workspaces
+    devices:
+      # Hardware virtualization (QEMU/KVM, Android emulators, microVMs).
+      - /dev/kvm:/dev/kvm
+      # Host card1 (primary GPU) appears as card0/renderD128, the node tools
+      # open by default; host card0 becomes the second GPU.
+      - ${CLIBOX_GPU_CARD:-/dev/dri/card1}:/dev/dri/card0
+      - ${CLIBOX_GPU_RENDER:-/dev/dri/renderD129}:/dev/dri/renderD128
+      - ${CLIBOX_GPU2_CARD:-/dev/dri/card0}:/dev/dri/card1
+      - ${CLIBOX_GPU2_RENDER:-/dev/dri/renderD128}:/dev/dri/renderD129
+      # AMD ROCm/OpenCL compute.
+      - /dev/kfd:/dev/kfd

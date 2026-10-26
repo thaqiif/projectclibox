@@ -113,6 +113,11 @@ queries and unchanged pre-existing row data.
 Pre-deploy checks and steps for merging develop into master and letting
 Coolify rebuild production. Read end to end before deploying.
 
+Coolify reads a single compose file and ignores the `hardware/` overlays, so
+point the application's Docker Compose Location at `/compose.coolify.yml`. It
+passes through KVM, both GPUs and `/dev/kfd`, and mounts `/home/cliweb` as the
+home unless `CLIBOX_HOME_DIR` is set. Remove any device the host lacks.
+
 ### 1. Back up first (rollback anchor)
 
 ```sh
