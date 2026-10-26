@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CLIBox installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/thaqiif/clibox/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/thaqiif/projectclibox/master/install.sh | bash
 #   ./install.sh            # from a checkout
 #
 # Detects KVM and GPUs, writes .env (keeping any lines you added), then pulls
@@ -15,7 +15,7 @@
 #   --no-start   write the configuration but do not start the container
 set -euo pipefail
 
-REPO_SLUG="thaqiif/clibox"
+REPO_SLUG="thaqiif/projectclibox"
 REF="master"
 INSTALL_DIR=""
 ASSUME_YES=0
@@ -243,7 +243,9 @@ if [ "${#drm_candidates[@]}" -gt 1 ] && [ -n "$TTY" ]; then
         say "  $((i + 1))) $(gpu_label "$kind") at $card"
     done
     ask choice "Which should be primary?" 1
-    primary="${drm_candidates[$((choice - 1))]:-${drm_candidates[0]}}"
+    case "$choice" in ''|*[!0-9]*) choice=1 ;; esac
+    if [ "$choice" -lt 1 ] || [ "$choice" -gt "${#drm_candidates[@]}" ]; then choice=1; fi
+    primary="${drm_candidates[$((choice - 1))]}"
 elif [ "${#drm_candidates[@]}" -ge 1 ]; then
     primary="${drm_candidates[0]}"
 fi

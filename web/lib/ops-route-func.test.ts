@@ -12,7 +12,10 @@ import { OPS_TMP_ROOT } from "./ops-test-env";
 import { POST as opsPost } from "../app/api/files/ops/route";
 import { GET as listGet } from "../app/api/files/route";
 import { GET as downloadGet } from "../app/api/files/download/route";
-import { POST as contentPost, GET as contentGet } from "../app/api/files/content/route";
+import {
+  POST as contentPost,
+  GET as contentGet,
+} from "../app/api/files/content/route";
 import { GET as zipGet } from "../app/api/files/zip/route";
 import {
   chmodSync,
@@ -212,7 +215,9 @@ test("ops: path traversal is rejected", async () => {
 // --- showHidden parameter ----------------------------------------------------
 
 test("list: (characterisation) shows .secret by default and with showHidden=true", async () => {
-  const res = await listGet(getReq(`http://x/api/files?path=${encodeURIComponent(WS)}`));
+  const res = await listGet(
+    getReq(`http://x/api/files?path=${encodeURIComponent(WS)}`)
+  );
   const body = await data(res);
   assert.ok(
     (body.files as { name: string }[]).some((f) => f.name === ".secret")
@@ -221,13 +226,17 @@ test("list: (characterisation) shows .secret by default and with showHidden=true
     getReq(`http://x/api/files?path=${encodeURIComponent(WS)}&showHidden=true`)
   );
   const hbody = await data(hidden);
-  assert.ok((hbody.files as { name: string }[]).some((f) => f.name === ".secret"));
+  assert.ok(
+    (hbody.files as { name: string }[]).some((f) => f.name === ".secret")
+  );
 });
 
 test("list: showHidden=<garbage> does not act as truthy", async () => {
   mkdirSync(`${WS}/.git`, { recursive: true });
   const res = await listGet(
-    getReq(`http://x/api/files?path=${encodeURIComponent(WS)}&showHidden=garbage`)
+    getReq(
+      `http://x/api/files?path=${encodeURIComponent(WS)}&showHidden=garbage`
+    )
   );
   const gbody = await data(res);
   assert.ok(
@@ -382,9 +391,7 @@ test("delete: unicode filename trashes, restores with meta intact", async () => 
   assert.equal(await status(res), 200);
   const body = await data(res);
   assert.ok(existsSync(body.trashPath as string), "trashed file exists");
-  const meta = JSON.parse(
-    readFileSync(`${body.trashPath}.meta.json`, "utf8")
-  );
+  const meta = JSON.parse(readFileSync(`${body.trashPath}.meta.json`, "utf8"));
   assert.equal(meta.origPath, weird);
   const rres = await opsPost(
     jsonReq("http://x/api/files/ops", { op: "restore", path: body.trashPath })
@@ -397,10 +404,20 @@ test("delete: unicode filename trashes, restores with meta intact", async () => 
 
 test("createFile: two concurrent creates -> one 200 and one 409", async () => {
   const [a, b] = await Promise.all([
-    opsPost(jsonReq("http://x/api/files/ops", { op: "createFile", path: `${WS}/racefile` })),
-    opsPost(jsonReq("http://x/api/files/ops", { op: "createFile", path: `${WS}/racefile` })),
+    opsPost(
+      jsonReq("http://x/api/files/ops", {
+        op: "createFile",
+        path: `${WS}/racefile`,
+      })
+    ),
+    opsPost(
+      jsonReq("http://x/api/files/ops", {
+        op: "createFile",
+        path: `${WS}/racefile`,
+      })
+    ),
   ]);
-  const statuses = [(await status(a)), (await status(b))].sort();
+  const statuses = [await status(a), await status(b)].sort();
   assert.deepEqual(statuses, [200, 409]);
   assert.equal(readFileSync(`${WS}/racefile`, "utf8"), "");
 });
@@ -411,10 +428,7 @@ const TRASH = `${HOME}/.clibox/.trash`;
 
 /** Same stamp the route uses to name a trash slot for the given time. */
 function slotStamp(date: Date): string {
-  return date
-    .toISOString()
-    .replace(/[-:]/g, "")
-    .replace(/\..+$/, "");
+  return date.toISOString().replace(/[-:]/g, "").replace(/\..+$/, "");
 }
 
 test("delete: an orphaned trash meta cannot hijack the next delete of that name", async () => {
@@ -425,11 +439,18 @@ test("delete: an orphaned trash meta cannot hijack the next delete of that name"
   const staleOrig = `${WS}/stale-location/${base}`;
   const orphanSlots: string[] = [];
   for (let ahead = 0; ahead < 4; ahead++) {
-    const slot = join(TRASH, `${base}.${slotStamp(new Date(Date.now() + ahead * 1000))}`);
+    const slot = join(
+      TRASH,
+      `${base}.${slotStamp(new Date(Date.now() + ahead * 1000))}`
+    );
     mkdirSync(TRASH, { recursive: true });
     writeFileSync(
       `${slot}.meta.json`,
-      JSON.stringify({ origPath: staleOrig, trashPath: slot, deletedAt: "2020-01-01T00:00:00.000Z" })
+      JSON.stringify({
+        origPath: staleOrig,
+        trashPath: slot,
+        deletedAt: "2020-01-01T00:00:00.000Z",
+      })
     );
     orphanSlots.push(slot);
   }
@@ -445,7 +466,10 @@ test("delete: an orphaned trash meta cannot hijack the next delete of that name"
   assert.equal(await status(res), 200);
   const body = await data(res);
   const trashPath = body.trashPath as string;
-  assert.ok(!orphanSlots.includes(trashPath), "must not reuse the orphaned slot");
+  assert.ok(
+    !orphanSlots.includes(trashPath),
+    "must not reuse the orphaned slot"
+  );
   assert.equal(existsSync(trashPath), true);
 
   // The recorded original path describes THIS item, not the orphaned one.
@@ -457,7 +481,11 @@ test("delete: an orphaned trash meta cannot hijack the next delete of that name"
   );
   assert.equal(await status(rres), 200);
   assert.equal(readFileSync(source, "utf8"), "real content\n");
-  assert.equal(existsSync(staleOrig), false, "never restored to the stale location");
+  assert.equal(
+    existsSync(staleOrig),
+    false,
+    "never restored to the stale location"
+  );
 });
 
 test("delete: concurrent same-name deletes keep both items and their own metadata", async () => {
@@ -490,8 +518,10 @@ test("delete: concurrent same-name deletes keep both items and their own metadat
 
   // ...and each slot's metadata points at the item that is really in it.
   const origByTrash: Record<string, string> = {
-    [firstTrash]: JSON.parse(readFileSync(`${firstTrash}.meta.json`, "utf8")).origPath,
-    [secondTrash]: JSON.parse(readFileSync(`${secondTrash}.meta.json`, "utf8")).origPath,
+    [firstTrash]: JSON.parse(readFileSync(`${firstTrash}.meta.json`, "utf8"))
+      .origPath,
+    [secondTrash]: JSON.parse(readFileSync(`${secondTrash}.meta.json`, "utf8"))
+      .origPath,
   };
   assert.deepEqual(
     [origByTrash[firstTrash], origByTrash[secondTrash]].sort(),
@@ -499,27 +529,36 @@ test("delete: concurrent same-name deletes keep both items and their own metadat
   );
 });
 
-test("delete: a failed move releases its reserved slot instead of stranding metadata", async () => {
-  const base = "unmovable.txt";
-  const locked = `${WS}/readonly-parent`;
-  mkdirSync(locked, { recursive: true });
-  const source = join(locked, base);
-  writeFileSync(source, "stuck\n");
-  // Renaming out of a directory needs write permission on that directory.
-  chmodSync(locked, 0o555);
-  try {
-    const res = await opsPost(
-      jsonReq("http://x/api/files/ops", { op: "delete", path: source })
-    );
-    assert.notEqual(await status(res), 200, "the delete must report the failure");
-    assert.ok(existsSync(source), "source stays put");
-  } finally {
-    chmodSync(locked, 0o755);
-  }
+// Root ignores directory permissions, so the move cannot be made to fail.
+test(
+  "delete: a failed move releases its reserved slot instead of stranding metadata",
+  { skip: process.getuid?.() === 0 },
+  async () => {
+    const base = "unmovable.txt";
+    const locked = `${WS}/readonly-parent`;
+    mkdirSync(locked, { recursive: true });
+    const source = join(locked, base);
+    writeFileSync(source, "stuck\n");
+    // Renaming out of a directory needs write permission on that directory.
+    chmodSync(locked, 0o555);
+    try {
+      const res = await opsPost(
+        jsonReq("http://x/api/files/ops", { op: "delete", path: source })
+      );
+      assert.notEqual(
+        await status(res),
+        200,
+        "the delete must report the failure"
+      );
+      assert.ok(existsSync(source), "source stays put");
+    } finally {
+      chmodSync(locked, 0o755);
+    }
 
-  // No metadata for an item that never arrived.
-  const strays = existsSync(TRASH)
-    ? readdirSync(TRASH).filter((name) => name.startsWith(`${base}.`))
-    : [];
-  assert.deepEqual(strays, [], "no stranded metadata or item");
-});
+    // No metadata for an item that never arrived.
+    const strays = existsSync(TRASH)
+      ? readdirSync(TRASH).filter((name) => name.startsWith(`${base}.`))
+      : [];
+    assert.deepEqual(strays, [], "no stranded metadata or item");
+  }
+);

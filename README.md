@@ -11,8 +11,8 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-13213A"></a>
-  <a href="https://github.com/thaqiif/clibox/releases"><img alt="Version" src="https://img.shields.io/github/v/release/thaqiif/clibox?color=F5A524"></a>
-  <a href="https://github.com/thaqiif/clibox/pkgs/container/clibox"><img alt="Container image" src="https://img.shields.io/badge/ghcr.io-thaqiif%2Fclibox-5CC8E0"></a>
+  <a href="https://github.com/thaqiif/projectclibox/releases"><img alt="Version" src="https://img.shields.io/github/v/release/thaqiif/projectclibox?color=F5A524"></a>
+  <a href="https://github.com/thaqiif/projectclibox/pkgs/container/clibox"><img alt="Container image" src="https://img.shields.io/badge/ghcr.io-thaqiif%2Fclibox-5CC8E0"></a>
 </p>
 
 CLIBox runs in one Docker container on your server. It gives you a monitor of
@@ -49,7 +49,7 @@ anywhere.
 On a Linux host with Docker and Docker Compose v2:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thaqiif/clibox/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/thaqiif/projectclibox/master/install.sh | bash
 ```
 
 The installer asks where to keep your data and projects, detects KVM and your
@@ -60,7 +60,7 @@ again later to change any answer. Add `--yes` to accept the defaults, or
 To install from a checkout instead:
 
 ```bash
-git clone https://github.com/thaqiif/clibox.git && cd clibox
+git clone https://github.com/thaqiif/projectclibox.git && cd projectclibox
 ./install.sh
 ```
 
