@@ -61,9 +61,12 @@ curl -fsSL https://raw.githubusercontent.com/thaqiif/projectclibox/master/instal
 ```
 
 The installer asks where to keep your data and projects, detects KVM and your
-GPUs, writes `.env`, and starts CLIBox at <http://localhost:3011>. Run it
-again later to change any answer. Add `--yes` to accept the defaults, or
-`--dry-run` to see the `.env` without changing anything.
+GPUs, writes `.env`, and starts CLIBox at <http://localhost:3011>. It uses
+the published image `ghcr.io/thaqiif/clibox` when it can pull it, and
+otherwise builds the image from source on your machine (that takes several
+minutes and a few GB of RAM). Run it again later to change any answer. Add
+`--yes` to accept the defaults, or `--dry-run` to see the `.env` without
+changing anything.
 
 To install from a checkout instead:
 
@@ -72,7 +75,9 @@ git clone https://github.com/thaqiif/projectclibox.git && cd projectclibox
 ./install.sh
 ```
 
-Or do it by hand: `cp .env.example .env`, edit it, then `docker compose up -d`.
+Or do it by hand from a checkout: `cp .env.example .env`, edit it, then
+`docker compose up -d`. To build the image yourself instead of pulling it,
+run `docker compose up -d --build`.
 
 > [!CAUTION]
 > Keep CLIBox private. It has no login, so publishing its port gives a shell
@@ -112,8 +117,16 @@ The installer turns on the ones your host supports. See
 
 ## Upgrading
 
+With the published image:
+
 ```bash
 docker compose pull && docker compose up -d
+```
+
+If you build from a git checkout, update it and rebuild:
+
+```bash
+git pull && docker compose up -d --build
 ```
 
 Your home directory, database and projects live in host folders, so upgrades
