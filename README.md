@@ -6,7 +6,7 @@
 
 <p align="center">
   Persistent terminals for all your projects, in any browser.<br>
-  Self-hosted, phone-friendly, with KVM and GPU passthrough.
+  Self-hosted, installable on mobile, with KVM and GPU passthrough.
 </p>
 
 <p align="center">
@@ -24,6 +24,14 @@ what's running.
 Use it to keep coding agents (Claude Code, Codex, OpenCode), dev servers,
 builds and emulators running on a machine that stays on, and check in from
 anywhere.
+
+> [!CAUTION]
+> **CLIBox has no login of its own, and never will.** Anyone who can reach it
+> gets a full shell on your server, with your files, keys and tokens.
+> Never expose its port to the internet directly. Put it behind
+> [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/)
+> or reach it only over [Tailscale](https://tailscale.com/). See
+> [Security](#security).
 
 ## Features
 
@@ -66,11 +74,25 @@ git clone https://github.com/thaqiif/projectclibox.git && cd projectclibox
 
 Or do it by hand: `cp .env.example .env`, edit it, then `docker compose up -d`.
 
-> [!WARNING]
-> CLIBox gives full shell access to anyone who can reach it. By default it
-> listens on localhost only. Before exposing it, put it behind an
-> authenticating proxy or VPN (for example Cloudflare Access, Tailscale or
-> Authelia).
+> [!CAUTION]
+> Keep CLIBox private. It has no login, so publishing its port gives a shell
+> to the whole internet. See [Security](#security).
+
+## Security
+
+CLIBox leaves authentication to the network in front of it. It listens on
+`127.0.0.1` by default; keep it that way unless one of these sits in front:
+
+- **Cloudflare Tunnel + Cloudflare Access.** Publish CLIBox through a tunnel
+  and add an Access application with a policy that allows only your
+  identity (email, SSO or a hardware key). Requests without an Access login
+  never reach the server.
+- **Tailscale.** Bind CLIBox to the server's Tailscale address (set
+  `HOST_BIND` to it) or use `tailscale serve`, so only devices on your
+  tailnet can connect.
+
+Do not publish the port on a public address, and do not rely on an
+unguessable URL. Treat everyone who can open CLIBox as having your shell.
 
 ## Hardware
 
