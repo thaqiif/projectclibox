@@ -15,10 +15,16 @@ FROM node:22-trixie-slim
 # compute on AMD hosts; the full ROCm stack itself is intentionally not baked
 # in — install it or use a ROCm-enabled tool (PyTorch ROCm, Ollama ROCm) when
 # needed.
+# Intel's media driver and oneVPL are packaged for amd64 only.
 RUN set -eu; \
+    intel_packages=""; \
+    if [ "$(dpkg --print-architecture)" = amd64 ]; then \
+        intel_packages="intel-media-va-driver libvpl2"; \
+    fi; \
     for attempt in 1 2 3; do \
         if apt-get -o Acquire::Retries=3 update \
             && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
+        $intel_packages \
         bash \
         build-essential \
         ca-certificates \
@@ -30,13 +36,11 @@ RUN set -eu; \
         file \
         git \
         gosu \
-        intel-media-va-driver \
         jq \
         less \
         libdrm-amdgpu1 \
         libva-drm2 \
         libva2 \
-        libvpl2 \
         mesa-opencl-icd \
         mesa-va-drivers \
         mesa-vdpau-drivers \
