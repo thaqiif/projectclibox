@@ -5,12 +5,13 @@
 #   ./install.sh            # from a checkout
 #
 # Detects KVM and GPUs, writes .env (keeping any lines you added), then pulls
-# and starts the container. Re-run it any time to change the answers.
+# the published image (or builds it from source when it cannot) and starts
+# the container. Re-run it any time to change the answers.
 #
 # Options:
 #   --yes        accept every default and detected device without asking
 #   --dir DIR    where to install when not run from a checkout (default ./clibox)
-#   --ref REF    git ref to download compose files from (default master)
+#   --ref REF    git ref (branch or tag) to download (default master)
 #   --dry-run    print the .env it would write, change nothing
 #   --no-start   write the configuration but do not start the container
 set -euo pipefail
@@ -79,15 +80,15 @@ if [ -z "$INSTALL_DIR" ] && [ -n "$script_dir" ] && [ -f "$script_dir/compose.ym
 fi
 INSTALL_DIR="${INSTALL_DIR:-$PWD/clibox}"
 
-fetch_compose_files() {
-    local base="https://raw.githubusercontent.com/${REPO_SLUG}/${REF}" file
+# The whole source tree, not just the compose files, so the image can be
+# built here when the published one cannot be pulled.
+fetch_source() {
+    local url="https://codeload.github.com/${REPO_SLUG}/tar.gz/${REF}"
     command -v curl >/dev/null || die "curl is required to download CLIBox."
-    mkdir -p "$INSTALL_DIR/hardware"
-    for file in compose.yml .env.example hardware/kvm.yml hardware/gpu.yml \
-        hardware/gpu-secondary.yml hardware/amd-compute.yml hardware/nvidia.yml; do
-        curl -fsSL "$base/$file" -o "$INSTALL_DIR/$file" \
-            || die "could not download $file from $base"
-    done
+    command -v tar >/dev/null || die "tar is required to download CLIBox."
+    mkdir -p "$INSTALL_DIR"
+    curl -fsSL "$url" | tar -xz -C "$INSTALL_DIR" --strip-components=1 \
+        || die "could not download CLIBox from $url"
 }
 
 # --- Hardware detection -----------------------------------------------------
@@ -167,7 +168,7 @@ fi
 if [ ! -f "$INSTALL_DIR/compose.yml" ]; then
     [ "$DRY_RUN" -eq 1 ] && die "no compose.yml in $INSTALL_DIR (a dry run does not download)."
     step "Downloading CLIBox ($REF) into $INSTALL_DIR"
-    fetch_compose_files
+    fetch_source
 fi
 
 ENV_DRAFT="$(mktemp)"
@@ -192,7 +193,9 @@ ask host_port "Port" "${current:-3011}"
 host_bind="$(env_get HOST_BIND)"
 host_bind="${host_bind:-127.0.0.1}"
 if [ "$host_bind" = "127.0.0.1" ]; then
-    if confirm "Reach CLIBox from other devices on your network? It runs a shell: only do this behind a firewall or auth proxy" n; then
+    say "CLIBox has no login: anyone who can reach it gets a shell on this machine."
+    say "Keep it on localhost and reach it through Cloudflare Access or Tailscale."
+    if confirm "Listen on every network interface anyway (only on a network you fully trust)?" n; then
         host_bind=0.0.0.0
     fi
 fi
@@ -313,10 +316,14 @@ if [ "$START" -eq 0 ]; then
 fi
 
 step "Starting CLIBox"
-# Pulls the published image; from a checkout, Compose builds it instead when
-# the pull fails (for example before the first release is published).
-docker compose pull --ignore-pull-failures || true
-docker compose up -d
+# Uses the published image when it can be pulled, and builds it from this
+# source tree otherwise (no release yet, a private image, or no network).
+if docker compose pull --quiet 2>/dev/null; then
+    docker compose up -d
+else
+    say "The published image is not available; building it here (this takes a while)."
+    docker compose up -d --build
+fi
 
 url_host="localhost"
 [ "$host_bind" = "0.0.0.0" ] && url_host="$(hostname -I 2>/dev/null | awk '{print $1}')"
